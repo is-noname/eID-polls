@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% set active = 'index' %}
+{% block title %}Board {{ poll.poll_id }} — eID-Umfrage{% endblock %}
+
+{% block content %}
+<h1>{{ poll.question }}</h1>
+<p class="lead">
+  Hier liegen alle abgegebenen Stimmen offen — nachzählbar von jedem, ohne dass erkennbar wird, wer
+  wie gestimmt hat. <a href="/poll/{{ poll.poll_id }}">Zurück zur Umfrage</a>
+</p>
+
+{% if status.ok and status.signatures_ok and accounting.ok %}
+  <div class="banner ok">
+    Alle Prüfungen bestanden.
+    <small>
+      Nichts wurde nachträglich verändert, jede Stimme stammt von einer berechtigten Person, und es
+      liegen nicht mehr Stimmen vor als Berechtigungen ausgegeben wurden.
+    </small>
+  </div>
+{% endif %}
+
+<div class="stats">
+  <div class="stat">
+    <div class="value {{ 'good' if status.ok else 'bad' }}">{{ 'OK' if status.ok else 'BRUCH' }}</div>
+    <div class="label">Kette — nichts nachträglich geändert{% if not status.ok %} (ab #{{ status.broken_at }}){% endif %}</div>
+  </div>
+  <div class="stat">
+    <div class="value {{ 'good' if status.signatures_ok else 'bad' }}">{{ 'OK' if status.signatures_ok else 'FEHLER' }}</div>
+    <div class="label">Jede Stimme von einer berechtigten Person</div>
+  </div>
+  <div class="stat">
+    <div class="value">{{ accounting.n_eligible }}</div>
+    <div class="label">Personen durften abstimmen</div>
+  </div>
+  <div class="stat">
+    <div class="value">{{ accounting.n_votes }}</div>
+    <div class="label">Stimmen abgegeben</div>
+  </div>
+  <div class="stat">
+    <div class="value {{ 'good' if accounting.ok else 'bad' }}">{{ 'OK' if accounting.ok else '+' ~ accounting.surplus }}</div>
+    <div class="label">Ledger-Abrechnung — nicht mehr Stimmen als Berechtigte</div>
+  </div>
+</div>
+
+{% if not accounting.ok %}
+  <div class="banner err">
+    Mehr Stimmen als Berechtigte — hier ist etwas manipuliert worden.
+    <small>{{ accounting.n_votes }} Stimmen bei nur {{ accounting.n_eligible }} ausgegebenen Berechtigungen.</small>
+  </div>
+{% endif %}
+{% if not status.ok %}
+  <div class="banner err">
+    Ein Eintrag wurde nachträglich verändert — ab Nummer {{ status.broken_at }} stimmt die Kette nicht mehr.
+    <small>
+      Reichweite dieser Prüfung: Sie entlarvt nur einen Angreifer, der die Hashes stehen lässt. Ein
+      Betreiber mit Schreibzugriff rechnet die Kette dahinter neu und bleibt hier unsichtbar. Dagegen
+      hilft erst ein Anker außerhalb dieses Servers.
+    </small>
+  </div>
+{% endif %}
+
+<h2>Ergebnis</h2>
+{% if result %}
+  {# Anteil an den Abstimmenden, nicht an der staerksten Option: bei Gleichstand
+     waere sonst jeder Balken randvoll und die Grafik sagte nichts aus. Weil
+     Mehrfachauswahl erlaubt ist, koennen sich die Anteile auf ueber 100 % summieren. #}
+  {% set voters = accounting.n_votes %}
+  <div class="rows">
+    {% for option, count in result.items() %}
+      {% set share = (100 * count / voters) if voters else 0 %}
+      <div class="bar-row">
+        <div class="bar-head">
+          <span class="bar-label">{{ option }}</span>
+          <span class="bar-count">{{ count }} <span class="muted small">({{ share | round | int }} %)</span></span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill" style="width: {{ [share, 100] | min | round(1) }}%"></div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+  <p class="faint small" style="margin-top:10px">
+    Anteil der {{ voters }} Abstimmenden. Da mehrere Antworten möglich sind, kann die Summe über
+    100 % liegen.
+  </p>
+{% else %}
+  <div class="card"><div class="card-body muted">{{ result_error }}</div></div>
+{% endif %}
+
+<h2>Selbst nachprüfen</h2>
+<div class="rows" style="margin-bottom:20px">
+  <div class="row">
+    <div class="grow">
+      <div class="row-title">Hast du selbst abgestimmt?</div>
+      <div class="muted small">Mit dem Stimm-Token aus deinem Beleg findest du deine eigene Stimme wieder.</div>
+    </div>
+    <a href="/verify?poll={{ poll.poll_id }}"><button class="ghost">Stimme prüfen</button></a>
+  </div>
+</div>
+
+<details class="explain">
+  <summary>Alle {{ entries | length }} Einträge im Detail ansehen</summary>
+  <div class="explain-body">
+    <p>
+      Jede Zeile ist ein Eintrag, der nur angehängt und nie geändert werden kann. Jeder trägt den
+      Fingerabdruck des vorherigen — deshalb fällt jede nachträgliche Änderung auf.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>#</th><th>Typ</th><th>Inhalt</th><th>prev</th><th>hash</th></tr>
+        </thead>
+        <tbody>
+          {% for entry in entries %}
+            <tr class="{{ 'broken' if status.broken_at is not none and entry.index >= status.broken_at }}">
+              <td class="mono">{{ entry.index }}</td>
+              <td><span class="tag">{{ entry.kind }}</span></td>
+              <td class="mono">{{ entry.payload }}</td>
+              <td class="mono hash">{{ entry.prev_hash[:12] }}…</td>
+              <td class="mono hash">{{ entry.entry_hash[:12] }}…</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</details>
+
+<details class="explain">
+  <summary>Unabhängig nachrechnen (für Fachleute)</summary>
+  <div class="explain-body">
+    <p>
+      Mit diesem öffentlichen Schlüssel lässt sich jede Stimme unabhängig prüfen: RSASSA-PSS über
+      SHA-384 mit Salt-Länge 0 (RFC 9474, RSABSSA-SHA384-PSS-Deterministic). Die Kette rechnet sich
+      nach über <code>sha256("index|prev_hash|payload")</code>.
+    </p>
+    <div class="receipt">{{ public_key }}</div>
+  </div>
+</details>
+{% endblock %}

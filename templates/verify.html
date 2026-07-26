@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% set active = 'verify' %}
+{% block title %}Verifikation — eID-Umfrage{% endblock %}
+
+{% block content %}
+<h1>Deine Stimme prüfen</h1>
+<p class="lead">
+  Nimm das Stimm-Token aus deinem Beleg. Damit siehst du, was tatsächlich gezählt wird — ohne dass
+  jemand anderes erfährt, dass die Stimme dir gehört.
+</p>
+
+{% if searched %}
+  {% if found %}
+    <div class="banner ok">
+      Token gefunden — so ist deine Stimme eingetragen: <strong>{{ found | join(', ') }}</strong>
+      <small>Genau das geht in die Auszählung ein, denn ausgezählt wird die öffentliche Liste.</small>
+    </div>
+  {% else %}
+    <div class="banner err">
+      Zu diesem Token gibt es keinen Eintrag in „{{ sel_poll }}".
+      <small>
+        Möglich ist: damit wurde noch nicht abgestimmt, es gehört zu einer anderen Umfrage, oder es
+        hat sich beim Kopieren ein Zeichen verändert. Prüfe die Umfrage und das Token noch einmal.
+      </small>
+    </div>
+  {% endif %}
+{% endif %}
+
+<div class="card">
+  <div class="card-body">
+    <form method="get" action="/verify">
+      <div class="field">
+        <label for="poll">Welche Umfrage?</label>
+        <select name="poll" id="poll">
+          {% for p in polls %}
+            <option value="{{ p.poll_id }}" {{ 'selected' if p.poll_id == sel_poll }}>{{ p.question }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="token">Dein Stimm-Token aus dem Beleg</label>
+        <input type="text" name="token" id="token" value="{{ token }}" placeholder="64 Zeichen aus Ziffern und Buchstaben" autocomplete="off">
+      </div>
+      <button type="submit">Stimme suchen</button>
+    </form>
+  </div>
+</div>
+
+<p class="faint small">
+  Kein Beleg zur Hand? Dann lässt sich die Stimme nicht wiederfinden — das Token ist der einzige
+  Bezug zu ihr, und genau deshalb bleibt die Abstimmung geheim.
+</p>
+{% endblock %}

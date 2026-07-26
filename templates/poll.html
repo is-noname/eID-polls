@@ -1,0 +1,353 @@
+{% extends "base.html" %}
+{% set active = 'index' %}
+{% block title %}{{ poll.question }} — eID-Umfrage{% endblock %}
+
+{% block content %}
+<h1>{{ poll.question }}</h1>
+<p class="sub">
+  <span class="tag {{ 'closed' if poll.closed else 'open' }}">{{ 'GESCHLOSSEN' if poll.closed else 'OFFEN' }}</span>
+  <span id="participation">{{ participation }}</span> haben abgestimmt ·
+  <a href="/board/{{ poll.poll_id }}">öffentliche Nachweise</a>
+</p>
+
+{% if poll.closed %}
+  <div class="banner">
+    Diese Umfrage ist beendet — abstimmen geht nicht mehr.
+    <small>Wie ausgezählt wurde, steht auf der <a href="/board/{{ poll.poll_id }}">Nachweis-Seite</a>.</small>
+  </div>
+{% endif %}
+
+<!-- Schritt 1 — Identität (Phase A, Teil 1) -->
+<div class="step {{ 'done' if pseudonym }}" id="step-auth">
+  <div class="step-head">
+    <span class="step-num">1</span> Ausweisen
+    {% if pseudonym %}<span class="step-note">erledigt</span>{% endif %}
+  </div>
+  <div class="step-body">
+    {% if pseudonym %}
+      <div class="muted">Ausweis erfolgreich ausgelesen. Ab hier bist du anonym.</div>
+    {% else %}
+      <p class="step-hint">
+        Der Online-Ausweis belegt nur, dass du abstimmen darfst. Dein Name wird nirgends gespeichert.
+      </p>
+      <button class="big" id="auth-open-button">Mit Online-Ausweis anmelden</button>
+    {% endif %}
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="auth-modal-backdrop">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
+    <div class="modal-header" id="auth-modal-title">Ausweis auslesen</div>
+    <div class="modal-body">
+      <div class="field">
+        <label for="credential">Ausweisnummer</label>
+        <input type="text" id="credential" autocomplete="off">
+      </div>
+      <div class="faint small" id="auth-modal-error"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="ghost" id="auth-cancel-button">Abbrechen</button>
+      <button id="auth-confirm-button">Bestätigen</button>
+    </div>
+  </div>
+</div>
+
+<!-- Schritt 2 — Stimmabgabe. Stimmberechtigung (Phase A, Teil 2) und Stimme
+     (Phase B) entstehen hier in einem Zug: MC-ADR-20260725-002. -->
+<div class="step {{ 'blocked' if not pseudonym }}" id="step-vote">
+  <div class="step-head"><span class="step-num">2</span> Abstimmen</div>
+  <div class="step-body">
+    <p class="step-hint">Du kannst auch mehrere Antworten auswählen.</p>
+    <div class="rows" style="margin-bottom:18px">
+      {% for option in poll.options %}
+        <label class="choice">
+          <input type="checkbox" name="choice" value="{{ option }}">
+          <span>{{ option }}</span>
+        </label>
+      {% endfor %}
+    </div>
+    <button class="big" id="vote-button" {{ 'disabled' if not pseudonym or poll.closed }}>Stimme abgeben</button>
+
+    <details class="explain" style="margin-top:20px">
+      <summary>Warum kann mir meine Stimme niemand zuordnen?</summary>
+      <div class="explain-body">
+        <p>
+          Beim Absenden erzeugt dieser Browser deine Stimmberechtigung. Bevor sie zur Bestätigung
+          an den Server geht, wird sie hier unkenntlich gemacht — der Server bestätigt also etwas,
+          das er selbst nicht lesen kann. Erst zurück in deinem Browser wird sie wieder sichtbar
+          und geht zusammen mit deiner Auswahl los.
+        </p>
+        <p>
+          Dadurch existieren zwei getrennte Listen: eine über <em>wer</em> abstimmen durfte und eine
+          über <em>was</em> gewählt wurde. Zwischen beiden gibt es keine Verbindung. Fachlich heißt
+          das Verfahren blinde Signatur (RSA nach RFC 9474).
+        </p>
+      </div>
+    </details>
+  </div>
+</div>
+
+<!-- Schritt 3 — Beleg -->
+<div class="step hidden" id="step-receipt">
+  <div class="step-head"><span class="step-num">3</span> Dein Beleg</div>
+  <div class="step-body">
+    <div class="banner ok" id="receipt-head">
+      Deine Stimme ist eingetragen.
+      <small>Mit diesem Beleg kannst du jederzeit nachsehen, dass sie unverändert gezählt wird.</small>
+    </div>
+    <div class="receipt" id="receipt-body"></div>
+    <div class="button-row" style="margin-top:16px">
+      <button id="receipt-download">Beleg speichern</button>
+      <a href="/verify?poll={{ poll.poll_id }}" id="receipt-verify"><button class="ghost">Stimme jetzt prüfen</button></a>
+    </div>
+    <details class="explain" style="margin-top:20px">
+      <summary>Wer diesen Beleg hat, sieht meine Stimme</summary>
+      <div class="explain-body">
+        <p>
+          Ja — der Beleg ist zugleich eine Quittung über die eigene Stimme. Das ist bei diesem
+          Verfahren bewusst in Kauf genommen, damit du selbst nachprüfen kannst, dass richtig
+          gezählt wurde. Gib ihn nicht weiter und bewahre ihn so auf, wie du es mit einer Quittung
+          tun würdest.
+        </p>
+      </div>
+    </details>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+  import { postJSON, toast, download } from "/static/app.js";
+  import { newToken, blindToken, finalizeSignature, bytesToHex } from "/static/blind.js";
+  import { qrSvg } from "/static/qr.js";
+
+  const POLL_ID = {{ poll.poll_id | tojson }};
+  const N_HEX = {{ n | tojson }};
+  const E_HEX = {{ e | tojson }};
+  const STORE_KEY = `eidpoll:${POLL_ID}`;
+
+  const stepVote = document.getElementById("step-vote");
+  const stepReceipt = document.getElementById("step-receipt");
+  const voteButton = document.getElementById("vote-button");
+
+  // Token und Signatur der laufenden Sitzung. Nach der Abgabe stehen sie
+  // absichtlich nicht mehr im localStorage (EIP-T-011), werden hier aber
+  // weiter gehalten: fuer den Beleg-Download und damit ein zweiter
+  // Abstimmversuch regulaer als "Token verbraucht" abgewiesen wird, statt
+  // eine neue Berechtigung anzufordern.
+  let held = null;
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(STORE_KEY) || "null"); } catch { return null; }
+  }
+  function save(state) { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+
+  function render() {
+    const state = load();
+    if (!state) return;
+    // Unverbrauchte Berechtigung aus einem abgebrochenen Versuch - siehe vote().
+    if (state.token && state.sig && !held) held = { token: state.token, sig: state.sig };
+    if (state.voted) {
+      stepVote.classList.add("done");
+      voteButton.disabled = false; // zweiter Versuch muss moeglich sein und abgewiesen werden
+      showReceipt(state);
+    }
+  }
+
+  /** Direktlink auf die Pruefseite, Token schon eingesetzt. */
+  function verifyUrl(token) {
+    return `${location.origin}/verify?poll=${encodeURIComponent(POLL_ID)}&token=${encodeURIComponent(token)}`;
+  }
+
+  function receiptText(state) {
+    const tokenLine = state.token
+      ? `Stimm-Token:  ${state.token}`
+      : "Stimm-Token:  nicht mehr in diesem Browser — nur noch in deinem gespeicherten Beleg.";
+    return [
+      "DEIN BELEG — eID-Umfrage",
+      `Umfrage:      ${POLL_ID}`,
+      `Eintrag Nr.:  ${state.index}`,
+      `Prüfsumme:    ${state.entryHash}`,
+      tokenLine,
+      "",
+      "So prüfst du deine Stimme:",
+      `  1. ${location.origin}/verify aufrufen`,
+      "  2. Umfrage wählen und das Stimm-Token oben einfügen",
+      "  3. Die angezeigte Auswahl muss deiner Stimme entsprechen",
+      "",
+      "Bewahre den Beleg wie eine Quittung auf: Wer das Stimm-Token hat, kann deine",
+      "Stimme nachschlagen. Es ist zugleich der einzige Weg, sie selbst zu prüfen.",
+    ].join("\n");
+  }
+
+  /** Baut den Beleg als Kassenbon (Design 1). Inhalt identisch zu receiptText(). */
+  function renderReceipt(state) {
+    const paper = document.createElement("div");
+    paper.className = "receipt-paper";
+
+    const el = (tag, cls, text) => {
+      const node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    };
+    const row = (k, v) => {
+      const r = el("div", "rc-row");
+      r.append(el("span", "k", k), el("span", "v", v));
+      return r;
+    };
+
+    paper.append(el("div", "rc-title", "DEIN BELEG"), el("div", "rc-sub", "eID-Umfrage"));
+    paper.append(row("Umfrage", POLL_ID));
+    paper.append(row("Eintrag Nr.", String(state.index)));
+    paper.append(el("div", "rc-divider"));
+    paper.append(el("div", "rc-label", "Prüfsumme"), el("div", "rc-hex", state.entryHash));
+    paper.append(el("div", "rc-divider"));
+
+    paper.append(el("div", "rc-label", "Stimm-Token"));
+    if (state.token) {
+      const tokenValue = el("div", "rc-hex", state.token);
+      tokenValue.id = "receipt-token"; // stabiler Hook fuer browser_test.py
+      paper.append(tokenValue);
+    } else {
+      paper.append(el("div", "rc-text",
+        "nicht mehr in diesem Browser — nur noch in deinem gespeicherten Beleg."));
+    }
+
+    paper.append(el("div", "rc-divider"));
+    paper.append(el("div", "rc-label", "So prüfst du deine Stimme:"));
+    const steps = el("ol", "rc-steps");
+    for (const text of [
+      `${location.origin}/verify aufrufen`,
+      "Umfrage wählen und das Stimm-Token oben einfügen",
+      "Die angezeigte Auswahl muss deiner Stimme entsprechen",
+    ]) steps.append(el("li", null, text));
+    paper.append(steps);
+
+    // Der Code traegt Umfrage und Token, ersetzt also Schritt 1 und 2. Ohne
+    // Token gibt es nichts zu verlinken - dann entfaellt er.
+    if (state.token) {
+      const qr = el("div", "rc-qr");
+      qr.innerHTML = qrSvg(verifyUrl(state.token));
+      paper.append(qr, el("div", "rc-qr-caption", "oder diesen Code scannen"));
+    }
+
+    paper.append(el("div", "rc-note",
+      "Bewahre den Beleg wie eine Quittung auf: Wer das Stimm-Token hat, kann deine "
+      + "Stimme nachschlagen. Es ist zugleich der einzige Weg, sie selbst zu prüfen."));
+
+    return paper;
+  }
+
+  function showReceipt(state) {
+    const full = state.token ? state : (held ? { ...state, token: held.token } : state);
+    stepReceipt.classList.remove("hidden");
+    const body = document.getElementById("receipt-body");
+    body.replaceChildren(renderReceipt(full));
+    const verifyLink = document.getElementById("receipt-verify");
+    if (full.token) {
+      verifyLink.href = verifyUrl(full.token);
+      verifyLink.classList.remove("hidden");
+    } else {
+      verifyLink.classList.add("hidden");
+    }
+  }
+
+  const authOpenButton = document.getElementById("auth-open-button");
+  if (authOpenButton) {
+    const modalBackdrop = document.getElementById("auth-modal-backdrop");
+    const credentialInput = document.getElementById("credential");
+    const modalError = document.getElementById("auth-modal-error");
+    const cancelButton = document.getElementById("auth-cancel-button");
+    const confirmButton = document.getElementById("auth-confirm-button");
+
+    function openModal() {
+      modalError.textContent = "";
+      credentialInput.value = "";
+      modalBackdrop.classList.remove("hidden");
+      credentialInput.focus();
+    }
+    function closeModal() { modalBackdrop.classList.add("hidden"); }
+
+    authOpenButton.addEventListener("click", openModal);
+
+    cancelButton.addEventListener("click", async () => {
+      closeModal();
+      try { await postJSON("/api/auth/abort"); } catch (_) { /* Abbruch selbst darf nicht scheitern */ }
+    });
+
+    const submit = async () => {
+      try {
+        await postJSON("/api/auth", { credential: credentialInput.value });
+        closeModal();
+        location.reload();
+      } catch (err) {
+        modalError.textContent = err.message;
+        toast(err.message, "err");
+      }
+    };
+    confirmButton.addEventListener("click", submit);
+    credentialInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") submit();
+      if (e.key === "Escape") cancelButton.click();
+    });
+  }
+
+  /** Holt die Stimmberechtigung: Token erzeugen, verblinden, signieren lassen, entblinden.
+   *
+   * Vor der Rueckgabe landen Token und Signatur im localStorage. Das ist der
+   * einzige Grund, warum hier ueberhaupt noch etwas gespeichert wird: Bricht der
+   * anschliessende Vote-Aufruf ab (Netz weg, Tab zu), ist die Berechtigung im
+   * Eligibility-Ledger verbraucht, waehrend die Stimme nicht steht. Ohne diesen
+   * Zwischenstand waere die Person raus - der Server gibt kein zweites Token aus
+   * und kann das auch nicht (MC-ADR-20260725-002).
+   */
+  async function obtainBallot() {
+    const token = newToken();
+    const { blindedHex, inv } = await blindToken(token, N_HEX, E_HEX);
+    const { blind_sig } = await postJSON(`/api/token/${POLL_ID}`, { blinded: blindedHex });
+    const record = { token: bytesToHex(token), sig: finalizeSignature(blind_sig, inv, N_HEX) };
+    save(record);
+    held = record;
+    return record;
+  }
+
+  voteButton.addEventListener("click", async () => {
+    const choices = [...document.querySelectorAll("input[name=choice]:checked")].map((c) => c.value);
+    if (!choices.length) { toast("Bitte mindestens eine Option wählen.", "err"); return; }
+
+    voteButton.disabled = true;
+    try {
+      const stored = load();
+      const reusable = held || (stored && stored.token && stored.sig ? stored : null);
+      const record = reusable || await obtainBallot();
+
+      const result = await postJSON(`/api/vote/${POLL_ID}`, {
+        token: record.token, sig: record.sig, choices,
+      });
+
+      const receipt = { voted: true, index: result.board_index, entryHash: result.entry_hash };
+      // Das Token verlaesst den Speicher, sobald es verbraucht ist - danach
+      // traegt nur noch der Beleg den Bezug zur Stimme (EIP-T-011).
+      save(receipt);
+      showReceipt(receipt);
+      document.getElementById("participation").textContent = result.participation;
+      toast("Stimme abgegeben.", "ok");
+      stepVote.classList.add("done");
+    } catch (err) {
+      toast(err.message, "err");
+    } finally {
+      voteButton.disabled = false; // zweiter Versuch muss moeglich sein und abgewiesen werden
+    }
+  });
+
+  document.getElementById("receipt-download").addEventListener("click", () => {
+    const state = load();
+    if (!state || !state.voted) return;
+    const full = held ? { ...state, token: held.token } : state;
+    download(`beleg_${POLL_ID}.txt`, receiptText(full));
+  });
+
+  render();
+</script>
+{% endblock %}

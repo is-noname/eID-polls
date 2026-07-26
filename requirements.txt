@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+jinja2
+cryptography
+
+# Nur fuer browser_test.py:
+# playwright

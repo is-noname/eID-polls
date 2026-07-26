@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% set active = 'admin' %}
+{% block title %}Admin — eID-Umfrage{% endblock %}
+
+{% block content %}
+<h1>Admin</h1>
+<p class="sub">Single-Tenant: ein Admin legt Umfragen an und schließt sie (§3).</p>
+
+{% if not admin %}
+  <div class="card">
+    <div class="card-header">Anmelden</div>
+    <div class="card-body">
+      <div class="field-row">
+        <div class="field grow" style="flex:1">
+          <label for="admin-token">Admin-Token</label>
+          <input type="password" id="admin-token" autocomplete="off">
+        </div>
+        <button id="login-button">Anmelden</button>
+      </div>
+      {# Die Voreinstellung nur auf dem Betreiberrechner nennen - im Netz waere das
+         eine Einladung zum Ausprobieren (EIP-T-018). #}
+      {% if is_local %}
+      <div class="faint">Voreinstellung: <code>admin</code> — änderbar über <code>EIDPOLL_ADMIN_TOKEN</code>.</div>
+      {% endif %}
+    </div>
+  </div>
+{% else %}
+  <div class="card">
+    <div class="card-header">Neue Umfrage</div>
+    <div class="card-body">
+      <div class="field"><label for="poll-id">Umfrage-ID</label><input type="text" id="poll-id" placeholder="test-1"></div>
+      <div class="field"><label for="question">Frage</label><input type="text" id="question" placeholder="Soll X passieren?"></div>
+      <div class="field">
+        <label for="options">Optionen (eine pro Zeile, mindestens zwei)</label>
+        <textarea id="options" rows="4" placeholder="Ja&#10;Nein&#10;Enthaltung"></textarea>
+      </div>
+      <button id="create-button">Anlegen</button>
+      <span class="faint" style="margin-left:10px">Eine Frage, feste Optionen, kein Freitext (§8).</span>
+    </div>
+  </div>
+
+  <h2>Umfragen</h2>
+  <div class="rows">
+    {% for p in polls %}
+      <div class="row">
+        <div class="grow">
+          <div>{{ p.question }}</div>
+          <div class="faint mono">{{ p.poll_id }}</div>
+        </div>
+        <span class="tag {{ 'closed' if p.closed else 'open' }}">{{ 'GESCHLOSSEN' if p.closed else 'OFFEN' }}</span>
+        <a href="/board/{{ p.poll_id }}">Board</a>
+        {% if not p.closed %}
+          <button class="ghost close-button" data-poll="{{ p.poll_id }}">Schließen</button>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="row muted">Noch keine Umfrage.</div>
+    {% endfor %}
+  </div>
+
+  <h2>Testzugang zurücksetzen</h2>
+  <div class="card">
+    <div class="card-header">Eigenen Zugangscode für eine Umfrage wieder freischalten</div>
+    <div class="card-body">
+      <p class="muted">
+        Nur Testbetrieb: Nach dem Abholen des Stimm-Tokens ist ein Zugangscode für die Umfrage
+        gesperrt (§6, dauerhaft gewollt im echten eID-Verfahren). Zum wiederholten Testen hier den
+        Eligibility-Eintrag für diesen Code löschen — die Umfrage-Statistik bleibt unverändert.
+      </p>
+      <div class="field-row">
+        <div class="field" style="flex:1">
+          <label for="reset-poll">Umfrage</label>
+          <select id="reset-poll">
+            {% for p in polls %}<option value="{{ p.poll_id }}">{{ p.poll_id }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field" style="flex:1">
+          <label for="reset-code">Zugangscode</label>
+          <input type="text" id="reset-code" placeholder="testperson1">
+        </div>
+        <button id="reset-button">Zurücksetzen</button>
+      </div>
+    </div>
+  </div>
+
+  <h2>Angriffsdemos</h2>
+  <div class="card">
+    <div class="card-header">Was das Board sichtbar macht — und was nicht</div>
+    <div class="card-body">
+      <p class="muted">
+        Beide Angriffe laufen absichtlich durch die normalen Pfade. Ergebnis danach auf dem Board und
+        im <a href="/debug">Debug-Modul</a> ansehen.
+      </p>
+      <div class="field-row">
+        <div class="field" style="flex:1">
+          <label for="demo-poll">Umfrage</label>
+          <select id="demo-poll">
+            {% for p in polls %}<option value="{{ p.poll_id }}">{{ p.poll_id }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field" style="flex:1">
+          <label for="demo-choice">Option</label>
+          <input type="text" id="demo-choice" placeholder="exakter Optionstext">
+        </div>
+      </div>
+      <div class="field-row">
+        <button class="danger" id="stuff-button">Ballot-Stuffing (Stimme ohne Berechtigung)</button>
+        <button class="danger" id="tamper-button">Board-Eintrag umschreiben</button>
+        <div class="field" style="width:120px">
+          <label for="demo-index">Eintrag-Index</label>
+          <input type="text" id="demo-index" placeholder="z. B. 3">
+        </div>
+      </div>
+      <div class="faint">
+        Stuffing ist kryptografisch nicht von einer echten Stimme zu unterscheiden — nur die
+        Ledger-Abrechnung entlarvt es. Das Umschreiben bricht die Kette, weil die Hashes stehen
+        bleiben; ein Betreiber würde sie neu rechnen (§9, Prototyp-Fund 2).
+      </div>
+    </div>
+  </div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+  import { postJSON, toast } from "/static/app.js";
+
+  const login = document.getElementById("login-button");
+  if (login) {
+    login.addEventListener("click", async () => {
+      try {
+        await postJSON("/api/admin/login", { token: document.getElementById("admin-token").value });
+        location.reload();
+      } catch (err) { toast(err.message, "err"); }
+    });
+  }
+
+  const create = document.getElementById("create-button");
+  if (create) {
+    create.addEventListener("click", async () => {
+      const options = document.getElementById("options").value.split("\n").map((o) => o.trim()).filter(Boolean);
+      try {
+        await postJSON("/api/admin/create", {
+          poll_id: document.getElementById("poll-id").value,
+          question: document.getElementById("question").value,
+          options,
+        });
+        location.reload();
+      } catch (err) { toast(err.message, "err"); }
+    });
+
+    document.querySelectorAll(".close-button").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (!confirm("Umfrage schließen? Danach keine Stimmen mehr.")) return;
+        try {
+          await postJSON(`/api/admin/close/${button.dataset.poll}`);
+          location.reload();
+        } catch (err) { toast(err.message, "err"); }
+      });
+    });
+
+    document.getElementById("reset-button").addEventListener("click", async () => {
+      try {
+        const res = await postJSON(`/api/admin/reset/${document.getElementById("reset-poll").value}`, {
+          credential: document.getElementById("reset-code").value,
+        });
+        toast(res.removed ? "Testzugang zurückgesetzt." : "Für diesen Code gab es keine Sperre.", res.removed ? "ok" : "err");
+      } catch (err) { toast(err.message, "err"); }
+    });
+
+    document.getElementById("stuff-button").addEventListener("click", async () => {
+      try {
+        await postJSON(`/api/admin/demo/stuff/${document.getElementById("demo-poll").value}`, {
+          choice: document.getElementById("demo-choice").value,
+        });
+        toast("Stimme ohne Berechtigung eingeschleust — Board prüfen.", "err");
+      } catch (err) { toast(err.message, "err"); }
+    });
+
+    document.getElementById("tamper-button").addEventListener("click", async () => {
+      try {
+        await postJSON(`/api/admin/demo/tamper/${document.getElementById("demo-poll").value}`, {
+          index: parseInt(document.getElementById("demo-index").value, 10),
+          choice: document.getElementById("demo-choice").value,
+        });
+        toast("Board-Eintrag umgeschrieben — Kette prüfen.", "err");
+      } catch (err) { toast(err.message, "err"); }
+    });
+  }
+</script>
+{% endblock %}

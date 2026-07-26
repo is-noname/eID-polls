@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% set active = 'debug' %}
+{% block title %}Debug — eID-Umfrage{% endblock %}
+
+{% block content %}
+<h1>Debug</h1>
+<p class="sub">
+  Funktionsfehler, abgewiesene Anfragen und Dateninkonsistenzen in Echtzeit. Bei diesem Projekt die
+  Stelle, an der Manipulation auffällt — deshalb kein Komfort-Feature.
+  <label style="display:inline; margin-left:8px"><input type="checkbox" id="autorefresh" checked style="width:auto"> alle 3 s neu laden</label>
+</p>
+
+<div class="stats">
+  <div class="stat"><div class="value">{{ counts.info }}</div><div class="label">info</div></div>
+  <div class="stat"><div class="value">{{ counts.reject }}</div><div class="label">abgewiesen</div></div>
+  <div class="stat"><div class="value {{ 'bad' if counts.error }}">{{ counts.error }}</div><div class="label">Fehler</div></div>
+  <div class="stat"><div class="value {{ 'bad' if counts.inconsistency }}">{{ counts.inconsistency }}</div><div class="label">Inkonsistenzen</div></div>
+</div>
+
+<h2>Konsistenzprüfung (live gerechnet)</h2>
+{% if findings %}
+  {% for poll_id, items in findings.items() %}
+    <div class="banner err">
+      {{ poll_id }}
+      {% for item in items %}<small>{{ item }}</small>{% endfor %}
+    </div>
+  {% endfor %}
+{% else %}
+  <div class="card"><div class="card-body">
+    <span class="tag open">SAUBER</span>
+    <span class="muted" style="margin-left:8px">
+      Für {{ polls | length }} Umfrage(n) geprüft: Hash-Kette, Token-Signaturen, Ledger-Abrechnung,
+      Board gegen Vote-Ledger, Board gegen Eligibility-Ledger.
+    </span>
+  </div></div>
+{% endif %}
+
+<h2>Ereignisse</h2>
+<p>
+  {% for lvl in ['all', 'inconsistency', 'error', 'reject', 'info'] %}
+    <a href="/debug?level={{ lvl }}"><span class="tag {{ 'open' if level == lvl }}">{{ lvl }}</span></a>
+  {% endfor %}
+  <button class="ghost" id="clear-button" style="margin-left:10px">Leeren</button>
+</p>
+
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>Zeit</th><th>Level</th><th>Kategorie</th><th>Meldung</th><th>Detail</th></tr></thead>
+    <tbody>
+      {% for event in events %}
+        <tr>
+          <td class="mono faint">{{ event.ts }}</td>
+          <td>
+            <span class="tag {{ {'error': 'err', 'inconsistency': 'err', 'reject': 'warn', 'info': 'info'}[event.level] }}">
+              {{ event.level }}
+            </span>
+          </td>
+          <td class="mono">{{ event.category }}</td>
+          <td>{{ event.message }}</td>
+          <td class="mono faint">{% for k, v in event.detail.items() %}{{ k }}={{ v }} {% endfor %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="muted">Noch keine Ereignisse.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+  import { postJSON } from "/static/app.js";
+
+  document.getElementById("clear-button").addEventListener("click", async () => {
+    await postJSON("/api/debug/clear");
+    location.reload();
+  });
+
+  const box = document.getElementById("autorefresh");
+  box.checked = sessionStorage.getItem("debug-autorefresh") !== "off";
+  box.addEventListener("change", () => {
+    sessionStorage.setItem("debug-autorefresh", box.checked ? "on" : "off");
+  });
+  setInterval(() => { if (box.checked) location.reload(); }, 3000);
+</script>
+{% endblock %}

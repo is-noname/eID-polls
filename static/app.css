@@ -1,0 +1,670 @@
+/* eID-Umfrage — helles Standardtheme.
+   Die Anwendung erklaert Leuten direkte Demokratie und soll Vertrauen ausstrahlen,
+   deshalb ist hell die Voreinstellung und nicht das dunkle Werkzeugthema. Dunkel
+   bleibt als Umschaltung erhalten (html[data-theme=dark]) - fuer Betreiber, die
+   lange auf Debug und Board schauen.
+
+   Zwei Dichten:
+     Standard  - Buergerseiten: 16px, luftig, grosse Klickflaechen.
+     .dense    - Admin und Debug: 13px, kompakte Zeilen, gleiche Farben. */
+
+:root {
+  /* Aktionsgruen: Canto Green ist auf Weiss unlesbar (Kontrast 1.4:1), deshalb
+     traegt eine abgedunkelte Variante alles Bedienbare. Das Neon bleibt als
+     Markenakzent in Linien und Glanzkanten. */
+  --accent: #0a6e46;
+  --accent-strong: #075437;
+  --accent-soft: #e8f7f0;
+  --accent-tint: #f2fbf7;
+  --accent-line: #06fc99;
+  --accent-on: #ffffff;
+
+  --bg: #f6f8f7;
+  --surface: #ffffff;
+  --raised: #f1f5f3;
+  --topbar-bg: #ffffff;
+
+  --border: #e4eae7;
+  --border-mid: #cfd8d4;
+  --border-hi: #a7b4ae;
+
+  --text: #15231d;
+  --muted: #576860;
+  --faint: #8a968f;
+
+  --red: #b3261e;
+  --red-bg: #fdeceb;
+  --red-border: #eebbb7;
+  --yellow: #8a5300;
+  --yellow-bg: #fff4e2;
+  --yellow-border: #f0d6a6;
+  --blue: #10559a;
+  --blue-bg: #e9f1fb;
+
+  --shadow-sm: 0 1px 2px rgba(15, 40, 30, 0.05);
+  --shadow-md: 0 2px 10px rgba(15, 40, 30, 0.07);
+  --shadow-lg: 0 12px 40px rgba(15, 40, 30, 0.18);
+
+  --r: 12px;
+  --r-sm: 8px;
+  --r-xs: 5px;
+}
+
+html[data-theme="dark"] {
+  --accent: #06fc99;
+  --accent-strong: #4dffb8;
+  --accent-soft: rgba(6, 252, 153, 0.09);
+  --accent-tint: rgba(6, 252, 153, 0.05);
+  --accent-line: #06fc99;
+  --accent-on: #06210f;
+
+  --bg: #111111;
+  --surface: #191919;
+  --raised: #212121;
+  --topbar-bg: #0c0c0c;
+
+  --border: #272727;
+  --border-mid: #363636;
+  --border-hi: #484848;
+
+  --text: #ededed;
+  --muted: #9a9a9a;
+  --faint: #6b6b6b;
+
+  --red: #f87171;
+  --red-bg: rgba(180, 58, 58, 0.18);
+  --red-border: #6b2222;
+  --yellow: #fbbf24;
+  --yellow-bg: rgba(217, 119, 6, 0.15);
+  --yellow-border: #7a5a12;
+  --blue: #60a5fa;
+  --blue-bg: rgba(96, 165, 250, 0.12);
+
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); text-decoration: none; font-weight: 600; }
+a:hover { text-decoration: underline; }
+
+code, .mono {
+  font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+  font-size: 0.85em;
+}
+code {
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  padding: 1px 5px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+/* -- Topbar --------------------------------------------------------------- */
+.topbar {
+  background: var(--topbar-bg);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 20px;
+  height: 60px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  overflow-x: auto;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  font-size: 16px;
+  margin-right: 20px;
+  letter-spacing: -0.02em;
+  flex: none;
+  color: var(--text);
+}
+.brand:hover { text-decoration: none; }
+.brand span { font-weight: 300; color: var(--muted); }
+.brand-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  flex: none;
+}
+.topbar nav { display: flex; gap: 4px; flex: 1; white-space: nowrap; }
+.topbar nav a {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 14px;
+  padding: 8px 13px;
+  border-radius: var(--r-sm);
+  transition: all 0.15s ease;
+}
+.topbar nav a:hover { background: var(--raised); color: var(--text); text-decoration: none; }
+.topbar nav a.active { background: var(--accent-soft); color: var(--accent); }
+.topbar .spacer { flex: 1; }
+.topbar #quit-button, .topbar #theme-button { flex: none; }
+.nav-badge {
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 6px;
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.icon-button {
+  background: transparent;
+  border: 1px solid var(--border-mid);
+  color: var(--muted);
+  border-radius: var(--r-sm);
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: none;
+}
+/* :not(:disabled) muss mit, sonst gewinnt button:hover:not(:disabled) per Spezifitaet
+   und der Knopf leuchtet beim Ueberfahren in der Akzentfarbe auf. */
+.icon-button:hover:not(:disabled) { border-color: var(--border-hi); color: var(--text); background: var(--raised); }
+.icon-button svg { width: 17px; height: 17px; }
+body.dense .icon-button { padding: 0; width: 32px; height: 32px; border-radius: var(--r-xs); }
+/* Gezeigt wird, wohin der Klick fuehrt: hell -> Mond, dunkel -> Sonne. */
+html[data-theme="dark"] .icon-moon { display: none; }
+html:not([data-theme="dark"]) .icon-sun { display: none; }
+
+/* -- Layout --------------------------------------------------------------- */
+.content { padding: 32px 24px 72px; max-width: 800px; margin: 0 auto; }
+body.dense .content { max-width: 1060px; margin: 0; padding: 20px 24px; }
+
+h1 {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin: 0 0 8px;
+}
+h2 { font-size: 19px; font-weight: 700; margin: 32px 0 12px; letter-spacing: -0.01em; }
+.sub { color: var(--muted); margin: 0 0 28px; font-size: 16px; }
+.lead { font-size: 17px; color: var(--muted); margin: 0 0 28px; max-width: 62ch; }
+.faint { color: var(--faint); }
+.muted { color: var(--muted); }
+.small { font-size: 14px; }
+
+/* -- Manifest: Fliesstext-Seite --------------------------------------------- */
+.prose { max-width: 68ch; }
+.prose p { margin: 0 0 16px; line-height: 1.6; }
+.prose ul, .prose ol { margin: 0 0 16px; padding-left: 22px; line-height: 1.6; }
+.prose li { margin: 0 0 8px; }
+.prose h2:first-of-type { margin-top: 8px; }
+
+body.dense h1 { font-size: 20px; margin-bottom: 4px; }
+body.dense h2 { font-size: 14px; margin: 20px 0 8px; }
+body.dense .sub { font-size: 13px; margin-bottom: 16px; }
+
+/* -- Banner --------------------------------------------------------------- */
+.banner {
+  border: 1px solid var(--yellow-border);
+  background: var(--yellow-bg);
+  color: var(--yellow);
+  border-radius: var(--r-sm);
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  font-weight: 600;
+}
+.banner a { color: inherit; text-decoration: underline; }
+.banner.err { border-color: var(--red-border); background: var(--red-bg); color: var(--red); }
+.banner.ok { border-color: var(--border); background: var(--accent-soft); color: var(--accent); }
+.banner small {
+  display: block;
+  font-weight: 400;
+  font-size: 14px;
+  opacity: 0.9;
+  margin-top: 5px;
+  line-height: 1.5;
+}
+body.dense .banner { padding: 10px 14px; margin-bottom: 16px; }
+body.dense .banner small { font-size: 12px; }
+
+/* -- Karten und Zeilen ---------------------------------------------------- */
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 20px;
+}
+.card-header {
+  padding: 13px 18px;
+  background: var(--raised);
+  border-bottom: 1px solid var(--border);
+  font-weight: 700;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.card-body { padding: 18px; }
+body.dense .card { border-radius: var(--r-sm); margin-bottom: 16px; }
+body.dense .card-header { padding: 10px 14px; }
+body.dense .card-body { padding: 12px 14px; }
+
+.rows {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.row {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.row:last-child { border-bottom: none; }
+.row:hover { background: var(--raised); }
+.row .grow { flex: 1; min-width: 0; }
+.row .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-title { font-weight: 700; font-size: 17px; }
+.row-title a { color: var(--text); }
+.row-title a:hover { color: var(--accent); }
+body.dense .rows { border-radius: var(--r-sm); }
+body.dense .row { padding: 8px 12px; gap: 12px; }
+body.dense .row-title { font-size: 13px; font-weight: 400; }
+
+/* -- Stats ---------------------------------------------------------------- */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  /* Trennlinien entstehen aus den Zell-Schatten, nicht aus einem durchgefaerbten
+     Container: bei 5 Kacheln in 4 Spalten bliebe sonst ein grauer Restblock stehen. */
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 20px;
+}
+.stat { background: var(--surface); padding: 18px; box-shadow: 0 0 0 1px var(--border); }
+.stat .value { font-size: 1.7rem; font-weight: 800; line-height: 1.15; letter-spacing: -0.02em; }
+.stat .label { color: var(--muted); font-size: 13px; line-height: 1.4; }
+.stat .value.good { color: var(--accent); }
+.stat .value.bad { color: var(--red); }
+body.dense .stats { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); border-radius: var(--r-sm); }
+body.dense .stat { padding: 14px 16px; }
+body.dense .stat .value { font-size: 1.4rem; }
+body.dense .stat .label { font-size: 11px; }
+
+/* -- Tags ----------------------------------------------------------------- */
+.tag {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  border: 1px solid var(--border-mid);
+  color: var(--muted);
+  background: var(--surface);
+  white-space: nowrap;
+}
+.tag.open { color: var(--accent); border-color: var(--border); background: var(--accent-soft); }
+.tag.closed { color: var(--muted); background: var(--raised); }
+.tag.err { color: var(--red); border-color: var(--red-border); background: var(--red-bg); }
+.tag.warn { color: var(--yellow); border-color: var(--yellow-border); background: var(--yellow-bg); }
+.tag.info { color: var(--blue); border-color: var(--border-mid); background: var(--blue-bg); }
+body.dense .tag { border-radius: var(--r-xs); font-size: 10px; padding: 2px 7px; }
+
+/* -- Formulare ------------------------------------------------------------ */
+input[type=text], input[type=password], input[type=file], select, textarea {
+  background: var(--surface);
+  border: 1px solid var(--border-mid);
+  color: var(--text);
+  border-radius: var(--r-sm);
+  padding: 11px 13px;
+  font-family: inherit;
+  font-size: 16px;
+  width: 100%;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+label { display: block; color: var(--muted); font-size: 14px; font-weight: 600; margin-bottom: 5px; }
+.field { margin-bottom: 16px; }
+.field-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+body.dense input[type=text], body.dense input[type=password], body.dense input[type=file],
+body.dense select, body.dense textarea { padding: 6px 9px; font-size: 13px; border-radius: var(--r-xs); }
+body.dense label { font-size: 11px; margin-bottom: 3px; font-weight: 400; }
+body.dense .field { margin-bottom: 10px; }
+body.dense .field-row { gap: 10px; }
+
+button {
+  background: var(--accent);
+  color: var(--accent-on);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  padding: 12px 22px;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+button:hover:not(:disabled) { background: var(--accent-strong); }
+button:disabled { background: var(--raised); color: var(--faint); cursor: not-allowed; border-color: var(--border); }
+button.ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border-mid);
+}
+button.ghost:hover:not(:disabled) { border-color: var(--border-hi); color: var(--text); background: var(--raised); }
+button.danger { background: transparent; color: var(--red); border: 1px solid var(--red-border); }
+button.danger:hover:not(:disabled) { background: var(--red-bg); color: var(--red); }
+button.big { width: 100%; padding: 16px 22px; font-size: 17px; }
+body.dense button { padding: 7px 14px; font-size: 13px; border-radius: var(--r-xs); }
+body.dense button.big { width: auto; padding: 7px 14px; font-size: 13px; }
+
+.button-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+
+/* Auswahlflaechen: bewusst gross, damit niemand danebentippt. */
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  background: var(--surface);
+  font-size: 17px;
+  font-weight: 600;
+  transition: background 0.12s ease;
+}
+.choice:last-child { border-bottom: none; }
+.choice:hover { background: var(--accent-tint); }
+.choice input {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.choice:has(input:checked) { background: var(--accent-soft); }
+.choice:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* -- Schritte ------------------------------------------------------------- */
+.step {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  margin-bottom: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s ease, opacity 0.15s ease;
+}
+.step.done { border-color: var(--accent); }
+/* Nur optisch zurueckgenommen, nicht gesperrt: in einem blockierten Schritt 2
+   muss die Wiederherstellung aus der Sicherungsdatei erreichbar bleiben, denn
+   dafuer ist absichtlich keine neue Anmeldung noetig (EIP-T-016). */
+.step.blocked { opacity: 0.6; }
+.step-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+.step-head .step-note { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--faint); }
+.step-num {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--raised);
+  border: 1px solid var(--border-mid);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  flex: none;
+}
+.step.done .step-num { background: var(--accent); color: var(--accent-on); border-color: var(--accent); }
+.step-body { padding: 0 18px 20px; }
+.step-body > :first-child { margin-top: 0; }
+.step-body p { margin: 0 0 14px; }
+.step-hint { color: var(--muted); margin: 0 0 16px; max-width: 58ch; }
+
+/* Aufklappbare Vertiefung: die Kryptografie steht drin, nicht davor. */
+details.explain {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--raised);
+  margin: 0 0 16px;
+}
+details.explain > summary {
+  cursor: pointer;
+  padding: 11px 14px;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--accent);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+details.explain > summary::-webkit-details-marker { display: none; }
+details.explain > summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.15s ease;
+  flex: none;
+}
+details.explain[open] > summary::before { transform: rotate(90deg); }
+details.explain > summary:hover { text-decoration: underline; }
+.explain-body {
+  padding: 0 14px 14px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.explain-body p { margin: 0 0 10px; }
+.explain-body p:last-child { margin-bottom: 0; }
+
+/* -- Tabellen ------------------------------------------------------------- */
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th {
+  text-align: left;
+  padding: 11px 14px;
+  background: var(--raised);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: var(--raised); }
+td.mono { font-family: 'JetBrains Mono', Consolas, monospace; font-size: 12px; }
+tr.broken td { background: var(--red-bg); color: var(--red); }
+body.dense .table-wrap { border-radius: var(--r-sm); }
+body.dense table { font-size: 12px; }
+body.dense th, body.dense td { padding: 8px 12px; }
+body.dense th { font-size: 11px; }
+body.dense td.mono { font-size: 11px; }
+
+/* -- Ergebnisbalken (nur Board, nach Schliessung) -------------------------- */
+.bar-row { padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.bar-row:last-child { border-bottom: none; }
+.bar-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+.bar-label { font-weight: 700; font-size: 16px; }
+.bar-count { font-weight: 800; font-size: 16px; color: var(--accent); white-space: nowrap; }
+.bar-track { height: 10px; border-radius: 999px; background: var(--raised); overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 999px; background: var(--accent); min-width: 2px; }
+
+/* -- Modal ---------------------------------------------------------------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(12, 30, 24, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+}
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-lg);
+  width: 420px;
+  max-width: 100%;
+}
+.modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 700;
+  font-size: 18px;
+}
+.modal-body { padding: 20px; }
+.modal-footer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* -- Beleg, Toast, Sonstiges ---------------------------------------------- */
+.hash { color: var(--faint); }
+.toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border-mid);
+  border-left: 4px solid var(--border-hi);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-md);
+  padding: 14px 18px;
+  max-width: 400px;
+  font-weight: 600;
+  z-index: 50;
+}
+.toast.err { border-color: var(--red-border); border-left-color: var(--red); color: var(--red); }
+.toast.ok { border-color: var(--border); border-left-color: var(--accent); color: var(--accent); }
+.hidden { display: none; }
+/* Beleg im Kassenbon-Look (Design 1 aus Quittung-Designs.html).
+   Eigene Farbwerte statt Theme-Tokens: der Beleg soll in Light und Dark
+   gleich wie ein Papierbon aussehen. */
+.receipt { display: flex; justify-content: center; }
+.receipt-paper {
+  --notch: 12px;  /* Abstand der Perforation, die Breite muss ein Vielfaches sein */
+  --depth: 4px;   /* Tiefe der Kerben - bei 6px beruehren sich die Kerben und die Kante wird glatt */
+  width: 360px;
+  background: #fdfdf8;
+  color: #1a1a1a;
+  font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.65;
+  padding: 20px 18px 24px;
+  /* Kerben werden aus dem Papier ausgestanzt, statt als schwarze Punkte
+     obendrauf zu liegen - so nimmt die Kante die Farbe der Karte an und
+     funktioniert in Light und Dark. Jede Maskenebene deckt einen eigenen
+     Streifen ab, deshalb stoert das additive Zusammenrechnen nicht. */
+  mask:
+    radial-gradient(circle var(--depth) at 50% 0, #0000 98%, #000) 0 0 / var(--notch) var(--notch) repeat-x,
+    radial-gradient(circle var(--depth) at 50% 100%, #0000 98%, #000) 0 100% / var(--notch) var(--notch) repeat-x,
+    linear-gradient(#000, #000) 0 var(--notch) / 100% calc(100% - 2 * var(--notch)) no-repeat;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .16));
+}
+.receipt-paper .rc-title { text-align: center; font-weight: 700; letter-spacing: .1em; }
+.receipt-paper .rc-sub {
+  text-align: center;
+  font-size: 9px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #767066;
+  margin-bottom: 14px;
+}
+.receipt-paper .rc-divider { border-top: 1px dashed #c9c4b8; margin: 10px 0; }
+.receipt-paper .rc-row { display: flex; justify-content: space-between; gap: 12px; }
+.receipt-paper .rc-row .k { color: #767066; flex: none; }
+.receipt-paper .rc-row .v { text-align: right; }
+/* Hex-Werte: eigene Zeile unter dem Label, sonst flattert der Umbruch
+   rechtsbuendig aus. Bewusst break-all - der Wert hat keine Wortgrenzen. */
+.receipt-paper .rc-label { color: #767066; }
+.receipt-paper .rc-hex { word-break: break-all; letter-spacing: .02em; }
+.receipt-paper .rc-text { overflow-wrap: anywhere; }
+.receipt-paper .rc-steps { margin: 4px 0 0; padding-left: 18px; }
+.receipt-paper .rc-steps li { overflow-wrap: anywhere; }
+.receipt-paper .rc-steps li::marker { color: #767066; }
+.receipt-paper .rc-qr { display: flex; justify-content: center; margin: 14px 0 4px; }
+.receipt-paper .rc-qr svg { display: block; }
+.receipt-paper .rc-qr-caption { text-align: center; font-size: 9px; color: #767066; }
+.receipt-paper .rc-note {
+  font-size: 9px;
+  line-height: 1.55;
+  color: #4a4640;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px dashed #c9c4b8;
+}
+body.dense .receipt-paper { font-size: 10px; padding: 16px 14px 20px; }
+
+@media (max-width: 640px) {
+  .content { padding: 22px 16px 56px; }
+  h1 { font-size: 25px; }
+  .topbar { padding: 0 12px; height: 54px; }
+  .brand { margin-right: 10px; }
+  .row { flex-wrap: wrap; gap: 8px 12px; }
+  .field-row { flex-direction: column; align-items: stretch; }
+}

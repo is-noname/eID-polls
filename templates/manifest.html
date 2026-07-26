@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% set active = 'manifest' %}
+{% block title %}Manifest — eID-Umfrage{% endblock %}
+
+{% block content %}
+<div class="prose">
+  <h1>Manifest</h1>
+  <p class="lead">Wir bauen einen Ort, an dem sich zeigen lässt, was die Menschen in diesem Land wirklich denken — so, dass niemand es wegdiskutieren kann.</p>
+
+  <h2>Das Problem</h2>
+  <p>Es gibt keinen Mangel an Umfragen. Es gibt einen Mangel an Umfragen, denen jemand glaubt.</p>
+  <p><strong>Institute</strong> befragen tausend Menschen und rechnen hoch. Methodisch sauber, aber die Gewichtung ist die eigentliche Aussage, und sie ist nicht nachprüfbar. Wer bezahlt, wählt die Frage.</p>
+  <p><strong>Websites</strong> befragen ihre eigenen Leser. Eine Umfrage auf einem Boulevardportal misst Boulevardleser, eine auf einem linken Blog misst dessen Publikum. Beide messen korrekt — nur eben nicht das Land. Und weil niemand prüft, wer abstimmt, stimmt ab, wer will: so oft er will, notfalls automatisiert.</p>
+  <p><strong>Die Folge:</strong> Jedes Ergebnis ist bestreitbar. Und solange jedes Ergebnis bestreitbar ist, muss sich niemand dazu verhalten. Der Zweifel an der Zahl ist der bequemste Ausweg aus der Rechenschaft — und Politik nutzt ihn, völlig zu Recht, weil die Zahlen es hergeben.</p>
+  <p>Wir halten das für den Kern des Problems: Nicht dass niemand fragt. Sondern dass die Antworten folgenlos bleiben dürfen.</p>
+
+  <h2>Was wir dagegen bauen</h2>
+  <p>Eine einzige Umfrage-Instanz, die drei Dinge zusammenbringt, die es bisher nur getrennt gibt:</p>
+  <p><strong>Ein Mensch, eine Stimme.</strong> Authentifizierung über den Online-Ausweis. Keine Bots, keine Zweitaccounts, keine Mehrfachstimmen — keine Heuristik, die man umgehen kann, sondern eine harte kryptografische Schranke.</p>
+  <p><strong>Trotzdem geheim.</strong> Wir wissen, <em>dass</em> du abgestimmt hast, und wir wissen, <em>was</em> abgestimmt wurde. Wir können beides nicht verbinden — auch nicht, wenn wir wollten. Das ist keine Zusage, der man vertrauen muss, sondern Mathematik: deine Stimme wird blind signiert, wir sehen sie nie.</p>
+  <p><strong>Öffentlich nachzählbar.</strong> Jede Stimme steht in einem öffentlichen Register. Jeder kann das Ergebnis selbst nachrechnen. Jeder kann die eigene Stimme wiederfinden. Wir bitten niemanden, uns zu glauben.</p>
+
+  <h2>Warum das etwas ändert</h2>
+  <p>Weil zum ersten Mal ein <strong>Nenner</strong> existiert.</p>
+  <p>„12.000 Leser haben abgestimmt" heißt nichts — von wie vielen? Und wie viele davon waren dieselbe Person?</p>
+  <p>„12.000 von M Berechtigten, jeder genau einmal, öffentlich nachgezählt" ist eine andere Art von Satz. Er liest sich wie ein Wahlergebnis, weil er eines ist: absolut statt hochgerechnet, gezählt statt geschätzt.</p>
+  <p>Gegen eine solche Zahl kann man sich entscheiden. Das ist legitim — wir leben in einer repräsentativen Demokratie, und niemand muss einer Mehrheit folgen. Aber man muss es dann <strong>sichtbar</strong> tun, und man muss es begründen. Genau das ist unser Ziel: nicht Bindung, sondern Begründungslast.</p>
+
+  <h2>Warum viele Seiten, ein Ergebnis</h2>
+  <p>Identitätsprüfung allein macht eine Umfrage nicht repräsentativ. Wer teilnimmt, entscheidet weiter jeder selbst.</p>
+  <p>Deshalb ist unsere Instanz einbettbar: dieselbe Frage auf dem Boulevardportal, in der überregionalen Zeitung, beim Fachverband, auf der Gemeindeseite, im linken Blog — aber <strong>ein gemeinsamer Topf</strong>, in dem jeder Mensch genau einmal liegt. Die Färbungen heben sich gegeneinander auf, statt sich zu addieren. Wer sein Publikum mobilisiert, holt sein Publikum, einmal.</p>
+  <p>Das kann heute niemand, und zwar aus einem prinzipiellen Grund: Ohne Deduplizierung sind zwei Umfragen nicht zusammenführbar. Mit ihr sind sie es.</p>
+
+  <h2>Wofür wir uns verbürgen</h2>
+  <ul>
+    <li><strong>Wir fragen nur das Pseudonym ab.</strong> Keinen Namen, kein Geburtsdatum, keine Adresse. Wir könnten mehr, wir wollen nicht.</li>
+    <li><strong>Wir schreiben keine eigene Ausweis-Kryptografie.</strong> Niemals. Wir sind Nutzer zertifizierter Komponenten, nicht ihr Erfinder.</li>
+    <li><strong>Wir veröffentlichen unseren Code.</strong> Wer prüfen will, was in seinem Browser läuft, muss es prüfen können.</li>
+    <li><strong>Wir veröffentlichen die Beteiligungsquote immer mit</strong> — auch wenn sie niedrig ist. Besonders dann.</li>
+    <li><strong>Wir sagen, was wir nicht können,</strong> bevor jemand anders es findet.</li>
+  </ul>
+
+  <h2>Was wir nicht sind</h2>
+  <p>Wir halten diesen Abschnitt für den wichtigsten des Dokuments. Ein Projekt, das mit Vertrauen wirbt, verliert es genau hier zuerst.</p>
+  <p><strong>Kein Volksentscheid.</strong> Unsere Ergebnisse haben keine Rechtswirkung. Sie erzeugen Öffentlichkeit, sonst nichts.</p>
+  <p><strong>Kein Ersatz für Wahlen.</strong> Es fehlen die Schutzmechanismen des Wahlrechts. Vor allem eines: Wer neben dir steht, während du abstimmst, kann dich beeinflussen, und unsere individuelle Nachprüfbarkeit ist zugleich eine Quittung, die man vorzeigen kann. Das ist eine bewusste Entscheidung gegen ein Verfahren, das nirgends auf der Welt produktiv funktioniert — und es schließt jeden Einsatz als Wahl aus.</p>
+  <p><strong>Kein Ersatz für Meinungsforschung.</strong> Institute liefern Zeitreihen und Untergruppenanalysen, die wir nicht liefern. Wir liefern eine Sache, die sie nicht liefern können. Andere Gattung, nicht bessere Version.</p>
+  <p><strong>Nicht repräsentativ im statistischen Sinn.</strong> Wer teilnimmt, wählt sich selbst aus. Heute ist unsere mögliche Teilnehmerschaft zusätzlich jünger, männlicher, städtischer und höher gebildet als das Land, weil die Online-Ausweisfunktion so verteilt ist. Wir sagen deshalb nie „die Bevölkerung denkt X", sondern immer „von den Teilnehmenden — N von M Berechtigten — denken X".</p>
+
+  <h2>Wo wir stehen</h2>
+  <p>Ehrlich: am Anfang, und mit einem harten Deckel über dem Kopf.</p>
+  <p>Rund <strong>18 Prozent</strong> der Erwachsenen haben die Online-Ausweisfunktion aktiviert <em>und</em> kennen ihre PIN. Das ist die reale Obergrenze der Beteiligung, nicht die Zahl der Ausweisinhaber. Eine Beteiligung von 80 Prozent ist ein Mehrjahresziel, kein Startzustand, und wir werden das in keiner Zahl verschweigen, die wir veröffentlichen.</p>
+  <p>Was existiert: eine lauffähige Anwendung mit Blindsignaturen, zwei getrennten Registern und öffentlichem Bulletin Board. Was fehlt: die Anbindung an den echten eID-Flow.</p>
+
+  <h2>Warum wir trotzdem anfangen</h2>
+  <p>Weil der Deckel selbst das zweite Ziel ist.</p>
+  <p>Die Online-Ausweisfunktion wird nicht genutzt, weil es zu wenig Gründe gibt, sie zu nutzen. Alles, was es bisher gibt, ist Pflicht: Steuererklärung, Kfz-Zulassung, Rentenauskunft. Niemand richtet eine PIN ein aus Vorfreude auf ein Formular.</p>
+  <p>Seine Meinung zu sagen ist keine Pflicht. Es ist freiwillig, es wiederholt sich, man kann darüber reden, und man sieht sofort, was es bewirkt hat. Das ist der erste Grund, die eID einzurichten, der Spaß macht.</p>
+  <p>Und weiter: 21 Prozent haben die Funktion bereits aktiviert und nur die PIN vergessen — ein Schritt, kein Behördengang. Der kostenlose Rücksetzdienst des Bundes startet in der zweiten Jahreshälfte 2026 neu.</p>
+  <p>Wir sind also nicht nur Leidtragende der niedrigen Verbreitung. Wir sind ein Grund, sie zu ändern.</p>
+
+  <h2>Was uns selbst gefährlich werden kann</h2>
+  <p>Die Kryptografie schützt die Auszählung. Sie schützt nicht die <strong>Frage</strong>.</p>
+  <p>Wer formuliert, wer die Antwortmöglichkeiten festlegt, wer den Zeitpunkt wählt und wer entscheidet, welche Fragen überhaupt gestellt werden, hat mehr Macht über das Ergebnis als jeder denkbare Manipulator — legal und unsichtbar. Eine Instanz, die groß genug wird, um politisch zu zählen, ist damit selbst eine Machtkonzentration. Es wäre absurd, dem Meinungsforschungsauftraggeber diese Macht zu nehmen, um sie uns selbst zu geben.</p>
+  <p>Wir haben dafür noch keine fertige Antwort. Wir halten die Frage für wichtiger als unser Wachstum, und wir werden sie beantworten, bevor die Instanz groß genug ist, dass sie zählt — nicht danach.</p>
+  <p>Zwei Dinge sagen wir schon jetzt zu: Wir machen kein Spiel aus dem Abstimmen. Keine Punkte, keine Serien, keine Belohnung für Menge — das erzeugt Klicks statt Meinungen und liefert jedem Kritiker die Munition frei Haus. Und wir werden nicht wachsen, indem wir die Fragen stellen, die am meisten aufregen. Das wäre exakt die Parteilichkeit, die wir anderen vorwerfen.</p>
+
+  <h2>Woran wir uns messen lassen</h2>
+  <ol>
+    <li>Läuft der vollständige Ablauf mit einem echten Ausweis?</li>
+    <li>Ist die Beteiligungsquote bei jedem Ergebnis sichtbar — auch bei einer schlechten?</li>
+    <li>Kann jemand außerhalb unseres Projekts das Ergebnis nachrechnen, ohne uns zu fragen?</li>
+    <li>Ist die Entscheidung, welche Fragen gestellt werden, aus unserer Hand?</li>
+    <li>Haben Menschen wegen uns ihre eID aktiviert?</li>
+  </ol>
+</div>
+{% endblock %}
