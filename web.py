@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator
 
+import markdown
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -258,9 +259,44 @@ async def debug_page(request: Request, level: str = "all") -> HTMLResponse:
     )
 
 
+MANIFEST_PATH = BASE_DIR / "MANIFEST.md"
+_manifest_cache: tuple[float, str] | None = None
+
+
+def manifest_html() -> str:
+    """Rendert MANIFEST.md, gecacht bis die Datei sich aendert.
+
+    Die Prosa steht bewusst nicht im Template: Sie lief dort schon einmal
+    gegenueber dem Manifest auseinander und behauptete Zusagen, die das Manifest
+    zurueckgenommen hatte (EIP-T-044). Nach KODEX.md bindet das Manifest jede
+    Oberflaeche - eine zweite, handgepflegte Fassung ist deshalb kein
+    Duplikat, sondern eine Fehlerquelle mit Aussenwirkung.
+
+    MANIFEST.md hier ist eine abgeleitete Kopie; erzeugt wird sie von
+    scripts/sync_manifest.py im Elternordner, der nicht Teil dieses Repos ist.
+    """
+    global _manifest_cache
+    try:
+        stamp = MANIFEST_PATH.stat().st_mtime
+    except OSError as exc:
+        log.error("manifest", f"MANIFEST.md nicht lesbar: {exc}")
+        return "<p>Das Manifest ist gerade nicht abrufbar.</p>"
+
+    if _manifest_cache is None or _manifest_cache[0] != stamp:
+        text = MANIFEST_PATH.read_text(encoding="utf-8")
+        # Der Sync-Hinweis am Dateikopf richtet sich an Bearbeiter, nicht an Besucher.
+        if text.lstrip().startswith("<!--"):
+            text = text.split("-->", 1)[1]
+        html = markdown.markdown(text)
+        # Erster Absatz nach der Ueberschrift ist die Lead-Zeile der Seite.
+        html = html.replace("</h1>\n<p>", '</h1>\n<p class="lead">', 1)
+        _manifest_cache = (stamp, html)
+    return _manifest_cache[1]
+
+
 @app.get("/manifest", response_class=HTMLResponse)
 async def manifest_page(request: Request) -> HTMLResponse:
-    return page(request, "manifest.html")
+    return page(request, "manifest.html", manifest=manifest_html())
 
 
 @app.get("/admin", response_class=HTMLResponse)
