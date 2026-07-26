@@ -10,6 +10,14 @@ Ausführliche Bedienung, Begriffe und Grenzen: **[DOKU.md](DOKU.md)**.
 > nicht gebaut — und der Betreiber hält den Signaturschlüssel allein. Was sie zeigt, ist das
 > Verfahren dahinter: Blindsignatur, zwei getrennte Ledger, nachprüfbares Board.
 
+### Verweise auf `EIP-RFC-…` und `EIP-ADR-…`
+
+Code und Doku begründen Entscheidungen mit Paragrafen aus den Konzeptdokumenten (`EIP-RFC-20260725-001`
+§4/§6/§7/§9 und weiteren). **Diese Dokumente liegen nicht in diesem Repo** — hier steht nur die App.
+Die Verweise sind trotzdem stehen geblieben, weil sie sagen, *woraus* eine Regel folgt, statt sie als
+Geschmacksfrage erscheinen zu lassen. Was zum Verstehen des Codes nötig ist, steht vollständig in
+[DOKU.md](DOKU.md).
+
 ## Starten
 
 ```bash

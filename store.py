@@ -1,6 +1,6 @@
 """SQLite-Persistenz: Eligibility-Ledger, Vote-Ledger, Board-Hash-Kette.
 
-Datenmodell nach MC-RFC-20260725-001 §6/§9 und dem Prototyp-Fund aus
+Datenmodell nach EIP-RFC-20260725-001 §6/§9 und dem Prototyp-Fund aus
 PROTOTYPE_two-ledger/NOTES.md:
 
   eligibility  gehashte Pseudonyme - weiss "hat abgeholt", nicht "wie gestimmt"

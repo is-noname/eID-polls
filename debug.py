@@ -1,7 +1,7 @@
 """Debug-Modul - Echtzeitsicht auf Fehler, Abweisungen und Dateninkonsistenzen.
 
 Bei diesem Projekt ist das kein Komfort. Die Sicherheitsaussagen aus
-MC-RFC-20260725-001 §9 halten nur, solange zwei Dinge sichtbar werden:
+EIP-RFC-20260725-001 §9 halten nur, solange zwei Dinge sichtbar werden:
 gebrochene Board-Ketten und eine Ledger-Abrechnung, die nicht aufgeht. Genau
 diese beiden Faelle landen hier als `inconsistency` - zusammen mit jeder
 regelkonformen Abweisung (`reject`) und jedem unerwarteten Fehler (`error`).

@@ -1,6 +1,6 @@
 """Authentifizierung hinter einer Schnittstelle - Stub jetzt, SAML-SP spaeter.
 
-MC-RFC-20260725-001 §4/§5: Die App implementiert niemals eigene eID-Krypto. Sie
+EIP-RFC-20260725-001 §4/§5: Die App implementiert niemals eigene eID-Krypto. Sie
 ist reiner SAML-Service-Provider und sieht ausschliesslich das Pseudonym
 (Restricted Identification) aus der signierten Assertion des eID-Servers.
 

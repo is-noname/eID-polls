@@ -1,6 +1,6 @@
 """RSA-Blindsignaturen nach RFC 9474, Variante RSABSSA-SHA384-PSS-Deterministic.
 
-DOKUMENTIERTE ABWEICHUNG von MC-RFC-20260725-001 §4 ("niemals handgeschriebene
+DOKUMENTIERTE ABWEICHUNG von EIP-RFC-20260725-001 §4 ("niemals handgeschriebene
 Krypto"): Fuer Python existiert keine gepruefte RFC-9474-Implementierung. Die
 PyPI-Suche am 2026-07-25 lieferte fuer blind-rsa-signatures, blind_signatures,
 blindsig, rsa-blind-signatures und pyblindsig jeweils "No matching distribution
