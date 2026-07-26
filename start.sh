@@ -7,7 +7,11 @@ set -euo pipefail
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PORT="${EIDPOLL_PORT:-8731}"
 HOST="${EIDPOLL_HOST:-127.0.0.1}"
+# Lokal bleibt "admin" bequem und vertretbar - es hoert nur 127.0.0.1 zu. Der
+# Wert muss aber exportiert werden: ohne gesetzte Variable erzeugt config.py
+# ein Zufallstoken, und dieses Skript wuerde ein falsches anzeigen.
 ADMIN_TOKEN="${EIDPOLL_ADMIN_TOKEN:-admin}"
+export EIDPOLL_ADMIN_TOKEN="$ADMIN_TOKEN"
 LOCAL_URL="http://127.0.0.1:${PORT}/"
 
 # Sichtbar im LAN, aber noch das Standard-Admin-Token? Das ist im LAN keine

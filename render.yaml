@@ -1,0 +1,31 @@
+# Render Blueprint - "New > Blueprint" im Dashboard, Repo waehlen, fertig.
+#
+# Gratis-Tarif, mit seinen Grenzen bewusst akzeptiert:
+#   - keine persistente Platte -> SQLite lebt nur bis zum naechsten Neustart
+#   - Ruhezustand nach 15 Minuten ohne Aufruf -> erster Aufruf danach dauert
+#     etwa eine halbe Minute (Kaltstart)
+#   - 750 Instanzstunden pro Monat und Workspace
+# Fuer eine Vorfuehrung ist das tragbar; fuer eine Umfrage, deren Ergebnis
+# jemand ernst nimmt, ist es das nicht (siehe DEPLOY.md).
+
+services:
+  - type: web
+    name: eid-poll
+    runtime: python
+    plan: free
+    region: frankfurt
+    branch: prototype
+    buildCommand: pip install -r requirements.txt
+    # --proxy-headers: hinter Renders TLS-Endpunkt kommt die Anfrage sonst als
+    # http und mit Proxy-IP an; beides braucht die App richtig.
+    startCommand: uvicorn web:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
+    healthCheckPath: /
+    envVars:
+      - key: EIDPOLL_PUBLIC
+        value: "1"
+      # Kein Wert im Repo: Render erzeugt beim ersten Deploy einen Zufallswert
+      # und zeigt ihn im Dashboard unter Environment.
+      - key: EIDPOLL_ADMIN_TOKEN
+        generateValue: true
+      - key: PYTHON_VERSION
+        value: "3.12"

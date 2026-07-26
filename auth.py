@@ -38,6 +38,10 @@ class Authenticator(Protocol):
         """Gibt das Pseudonym zurueck oder wirft AuthError."""
         ...
 
+    def sample_codes(self) -> list[str]:
+        """Beispiel-Zugangsdaten fuer die Oberflaeche - leer, wo es keine gibt."""
+        ...
+
 
 class AuthError(Exception):
     """Authentifizierung fehlgeschlagen."""
@@ -85,6 +89,16 @@ class CodeAuthenticator:
         digest = hashlib.sha256(credential.casefold().encode()).hexdigest()[:32]
         return f"{STUB_PREFIX}{digest}"
 
+    def sample_codes(self) -> list[str]:
+        """Die ersten Codes zum Vorzeigen.
+
+        Auf einer oeffentlichen Demo sind die Codes kein Geheimnis, sondern der
+        Zugang: Ohne sie kann niemand den Ablauf durchspielen. Dass sie hier
+        stehen, ist deshalb kein Leck - es ist die Ansage, dass diese Instanz
+        keine Identitaeten prueft.
+        """
+        return sorted(self._codes, key=lambda c: (len(c), c))[:3]
+
 
 class SamlEidAuthenticator:
     """Echter eID-Flow nach TR-03124 / TR-03130 (RFC §5). NOCH NICHT GEBAUT.
@@ -106,6 +120,9 @@ class SamlEidAuthenticator:
 
     name = "eID (SAML-Service-Provider)"
     is_real_identity = True
+
+    def sample_codes(self) -> list[str]:
+        return []
 
     def authenticate(self, credential: str) -> str:
         raise NotImplementedError(

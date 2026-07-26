@@ -46,6 +46,24 @@
   </div>
 
   <div class="content">
+    {# Oeffentliche Instanz: Der Hinweis steht hier fuer alle, nicht nur auf den
+       Betreiberseiten. Wer die Demo im Netz findet, hat den Kontext nicht, in
+       dem "Testbetrieb" selbstverstaendlich waere - und ein Verfahren, das
+       Vertrauen zum Thema hat, darf ueber sich selbst nicht vage sein. #}
+    {% if public %}
+      <div class="banner">
+        Öffentliche Demo — keine echte Abstimmung
+        <small>
+          Es wird <strong>keine Identität geprüft</strong>: Statt des Online-Ausweises genügt ein
+          offener Zugangscode
+          {%- if demo_codes %} (z.&nbsp;B. <code>{{ demo_codes|join('</code>, <code>')|safe }}</code>){% endif %}.
+          Der echte eID-Flow (AusweisApp → eID-Server → SAML-Assertion) ist nicht gebaut.
+          Die Instanz läuft ohne dauerhaften Speicher: Umfragen, Stimmen und Belege
+          <strong>verschwinden bei jedem Neustart</strong>. Blindsignatur, getrennte Ledger und das
+          öffentliche Board arbeiten dagegen echt — sie sind der Gegenstand dieser Demo.
+        </small>
+      </div>
+    {% endif %}
     {% if active in ('admin', 'debug') %}
       <div class="banner {{ 'ok' if authenticator.is_real_identity }}">
         Authentifizierungsmodus: {{ authenticator.name }}

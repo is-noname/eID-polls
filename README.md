@@ -4,6 +4,11 @@ Umsetzung von `EIP-RFC-20260725-001` §6/§7/§9 als lauffähige Web-App: Blinds
 zwei getrennte Ledger, öffentliches Bulletin Board als einzige Auszählungsquelle.
 
 Ausführliche Bedienung, Begriffe und Grenzen: **[DOKU.md](DOKU.md)**.
+Öffentlich stellen (Anbieter, Gratis-Grenzen, Vorführablauf): **[DEPLOY.md](DEPLOY.md)**.
+
+> **Diese App führt keine echte Abstimmung durch.** Sie prüft keine Identitäten — der eID-Flow ist
+> nicht gebaut — und der Betreiber hält den Signaturschlüssel allein. Was sie zeigt, ist das
+> Verfahren dahinter: Blindsignatur, zwei getrennte Ledger, nachprüfbares Board.
 
 ## Starten
 

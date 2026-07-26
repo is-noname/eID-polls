@@ -12,22 +12,25 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import config
 from auth import AuthError, CodeAuthenticator
 from debug import log
 from poll_service import PollService, Rejected
 
 BASE_DIR = Path(__file__).parent
 DB_PATH = Path(os.environ.get("EIDPOLL_DB", BASE_DIR / "data" / "eidpoll.sqlite3"))
-ADMIN_TOKEN = os.environ.get("EIDPOLL_ADMIN_TOKEN", "admin")
+ADMIN_TOKEN = config.ADMIN_TOKEN
 
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 service = PollService(DB_PATH)
 authenticator = CodeAuthenticator()
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -48,7 +51,23 @@ class RevalidatingStatics(StaticFiles):
         return response
 
 
-app = FastAPI(title="eID-Umfrage", docs_url=None, redoc_url=None)
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    for line in config.startup_banner():
+        log.info("system", line)
+        print(f"[eidpoll] {line}", flush=True)
+    # Ohne persistente Platte (Gratis-Hosting) ist die Datenbank nach jedem
+    # Neustart leer. Eine leere Startseite waere fuer einen Besucher nicht von
+    # einer kaputten Instanz zu unterscheiden.
+    if config.SEED_DEMO and not service.polls():
+        try:
+            service.create_poll(config.SEED_POLL_ID, config.SEED_QUESTION, config.SEED_OPTIONS)
+        except Rejected as exc:
+            log.reject("system", f"Demo-Umfrage nicht angelegt: {exc}")
+    yield
+
+
+app = FastAPI(title="eID-Umfrage", docs_url=None, redoc_url=None, lifespan=lifespan)
 app.mount("/static", RevalidatingStatics(directory=str(BASE_DIR / "static")), name="static")
 
 SESSION_COOKIE = "eidpoll_session"
@@ -84,7 +103,15 @@ LOCAL_HOSTS = {"127.0.0.1", "::1"}
 
 
 def is_local(request: Request) -> bool:
-    """Nur der Rechner, auf dem der Server laeuft - nicht jedes LAN-Geraet (EIP-T-009)."""
+    """Nur der Rechner, auf dem der Server laeuft - nicht jedes LAN-Geraet (EIP-T-009).
+
+    Oeffentlich ist niemand "lokal": Hinter einem Reverse Proxy ist die
+    Absender-IP nicht mehr die des Besuchers, und die daran haengenden Rechte
+    (Beenden, Admin-Link) waeren dann an eine Angabe geknuepft, die der Proxy
+    setzt statt der Bediener.
+    """
+    if config.PUBLIC:
+        return False
     return request.client is not None and request.client.host in LOCAL_HOSTS
 
 
@@ -118,8 +145,12 @@ async def _auth_handler(request: Request, exc: AuthError) -> JSONResponse:
 
 @app.exception_handler(Exception)
 async def _error_handler(request: Request, exc: Exception) -> JSONResponse:
+    # Der Wortlaut einer Ausnahme traegt Pfade, SQL und Feldnamen nach aussen.
+    # Lokal ist das die schnellste Diagnose, oeffentlich eine Auskunft ueber den
+    # Server an Unbeteiligte - der Text bleibt dann im Debug-Modul.
     log.exception(f"unerwartet {request.url.path}", exc)
-    return JSONResponse({"error": f"Interner Fehler: {exc}"}, status_code=500)
+    detail = "Interner Fehler." if config.PUBLIC else f"Interner Fehler: {exc}"
+    return JSONResponse({"error": detail}, status_code=500)
 
 
 def page(request: Request, template: str, status_code: int = 200, **context: Any) -> HTMLResponse:
@@ -128,6 +159,8 @@ def page(request: Request, template: str, status_code: int = 200, **context: Any
     context.setdefault("authenticator", authenticator)
     context.setdefault("debug_counts", log.counts())
     context.setdefault("is_local", is_local(request))
+    context.setdefault("public", config.PUBLIC)
+    context.setdefault("demo_codes", authenticator.sample_codes())
     return templates.TemplateResponse(request, template, context, status_code=status_code)
 
 
@@ -245,7 +278,9 @@ async def api_auth(payload: dict) -> JSONResponse:
     pseudonym = authenticator.authenticate(str(payload.get("credential", "")))
     log.info("auth", f"Authentifiziert ueber: {authenticator.name}")
     response = JSONResponse({"ok": True, "real_identity": authenticator.is_real_identity})
-    response.set_cookie(SESSION_COOKIE, _sign(pseudonym), httponly=True, samesite="lax")
+    response.set_cookie(
+        SESSION_COOKIE, _sign(pseudonym), httponly=True, samesite="lax", secure=config.PUBLIC
+    )
     return response
 
 
@@ -325,7 +360,11 @@ async def api_admin_login(payload: dict) -> JSONResponse:
     if not hmac.compare_digest(str(payload.get("token", "")), ADMIN_TOKEN):
         raise Rejected("Admin-Token falsch.")
     response = JSONResponse({"ok": True})
-    response.set_cookie(ADMIN_COOKIE, _sign("admin"), httponly=True, samesite="lax")
+    # secure=True nur oeffentlich: lokal laeuft die App ueber http, dort wuerde
+    # das Flag das Cookie verwerfen und die Anmeldung unmoeglich machen.
+    response.set_cookie(
+        ADMIN_COOKIE, _sign("admin"), httponly=True, samesite="lax", secure=config.PUBLIC
+    )
     return response
 
 
@@ -385,8 +424,12 @@ async def api_shutdown(request: Request) -> JSONResponse:
     """Beenden-Knopf - damit kein Terminal haengen bleibt.
 
     Nur vom Rechner aus, auf dem der Server laeuft: Im LAN (EIP-T-009) darf kein
-    Teilnehmergeraet die App fuer alle anderen beenden koennen.
+    Teilnehmergeraet die App fuer alle anderen beenden koennen. Oeffentlich gibt
+    es den Weg gar nicht - dort beendet die Plattform den Prozess, und eine
+    erreichbare Abschaltroute waere nur eine Angriffsflaeche.
     """
+    if config.PUBLIC:
+        raise Rejected("Diese Instanz wird von der Plattform verwaltet.", status_code=404)
     if not is_local(request):
         raise Rejected("Beenden ist nur auf dem Rechner moeglich, auf dem die App laeuft.")
     log.info("system", "Server wird beendet (Beenden-Knopf).")
