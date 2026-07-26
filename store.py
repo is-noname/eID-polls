@@ -11,19 +11,37 @@ PROTOTYPE_two-ledger/NOTES.md:
 Board-Payloads sind kanonisches JSON (sortierte Schluessel, keine Leerzeichen)
 statt der String-Zeile des Prototyps. Damit faellt dessen Grenze weg, dass
 Optionen kein Leerzeichen, '+' oder '=' enthalten duerfen.
+
+Das Board-*Format* selbst steht nicht hier, damit ein Dritter es ohne diese
+Datei - und damit ohne Datenbank - nachrechnen kann (§7): kanonisches JSON,
+Eintrags-Hash und BoardEntry in board_eintrag.py (EIP-T-046), die Kettenpruefung
+in verifikation.py (EIP-T-045). Hier bleibt die Persistenz. Die Namen werden
+weiter re-exportiert, weil sie zum Board gehoeren und Aufrufer sie neben board()
+erwarten.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-GENESIS = "0" * 64
+from board_eintrag import GENESIS, BoardEntry, canonical, entry_hash
+from verifikation import verify_chain
+
+__all__ = [
+    "GENESIS",
+    "BoardEntry",
+    "PollRow",
+    "Store",
+    "canonical",
+    "entry_hash",
+    "verify_chain",
+]
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS config (
@@ -58,35 +76,6 @@ CREATE TABLE IF NOT EXISTS board (
 """
 
 
-def canonical(payload: dict[str, Any]) -> str:
-    """Kanonische Serialisierung einer Board-Zeile - Teil des oeffentlichen Boards."""
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-
-
-def entry_hash(index: int, prev_hash: str, payload: str) -> str:
-    return hashlib.sha256(f"{index}|{prev_hash}|{payload}".encode()).hexdigest()
-
-
-@dataclass(frozen=True)
-class BoardEntry:
-    index: int
-    prev_hash: str
-    payload: str
-    entry_hash: str
-
-    @property
-    def data(self) -> dict[str, Any]:
-        try:
-            parsed = json.loads(self.payload)
-            return parsed if isinstance(parsed, dict) else {}
-        except json.JSONDecodeError:
-            return {}  # manipulierte Zeile - die Kettenpruefung schlaegt ohnehin an
-
-    @property
-    def kind(self) -> str:
-        return str(self.data.get("type", "UNPARSEABLE"))
-
-
 @dataclass(frozen=True)
 class PollRow:
     poll_id: str
@@ -114,21 +103,28 @@ class Store:
         # Deshalb steht auch jeder *Lesezugriff* unter dem Lock, nicht nur die
         # Schreiber: zwei Anfragen gleichzeitig auf derselben Connection liefern
         # sonst vertauschte oder leere Zeilen zurueck - unter Last hiess das
-        # "Umfrage gibt es nicht" mitten im Betrieb (EIP-T-019). RLock, damit die
-        # zusammengesetzten Operationen in poll_service.py weiter schachteln
-        # koennen. Bei der Groessenordnung dieser Umfrage (rund 100 Teilnehmende)
-        # kostet die Serialisierung nichts Spuerbares; eine Verbindung pro Thread
-        # waere der naechste Schritt, wenn das je knapp wird.
-        self.lock = threading.RLock()
+        # "Umfrage gibt es nicht" mitten im Betrieb (EIP-T-019).
+        #
+        # Das Lock ist privat (EIP-T-047): es sichert diese eine Verbindung, es
+        # ist *nicht* der Grund, warum ein Ausweis nur ein Token bekommt. Diese
+        # Regel setzen beanspruche_berechtigung und verbrauche_token selbst
+        # durch. Frueher klammerte poll_service.py "pruefen + einfuegen" von
+        # aussen in dieses Lock - ein Vertrag, dessen Verlust keine Pruefung
+        # ueber die Schnittstelle bemerkt haette. RLock bleibt, weil die
+        # zusammengesetzten Operationen hier drin schachteln (momentaufnahme).
+        # Bei der Groessenordnung dieser Umfrage (rund 100 Teilnehmende) kostet
+        # die Serialisierung nichts Spuerbares; eine Verbindung pro Thread waere
+        # der naechste Schritt, wenn das je knapp wird.
+        self._lock = threading.RLock()
 
     # -- config ------------------------------------------------------------
     def get_config(self, key: str) -> str | None:
-        with self.lock:
+        with self._lock:
             row = self._conn.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()
         return row["value"] if row else None
 
     def set_config(self, key: str, value: str) -> None:
-        with self.lock:
+        with self._lock:
             self._conn.execute(
                 "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, value)
             )
@@ -136,7 +132,7 @@ class Store:
 
     # -- polls -------------------------------------------------------------
     def create_poll(self, poll_id: str, question: str, options: list[str], created: str) -> None:
-        with self.lock:
+        with self._lock:
             self._conn.execute(
                 "INSERT INTO polls (poll_id, question, options, closed, created) "
                 "VALUES (?, ?, ?, 0, ?)",
@@ -145,14 +141,14 @@ class Store:
             self._conn.commit()
 
     def poll(self, poll_id: str) -> PollRow | None:
-        with self.lock:
+        with self._lock:
             row = self._conn.execute(
                 "SELECT * FROM polls WHERE poll_id = ?", (poll_id,)
             ).fetchone()
         return self._poll_row(row) if row else None
 
     def polls(self) -> list[PollRow]:
-        with self.lock:
+        with self._lock:
             rows = self._conn.execute("SELECT * FROM polls ORDER BY created DESC").fetchall()
         return [self._poll_row(r) for r in rows]
 
@@ -167,70 +163,124 @@ class Store:
         )
 
     def close_poll(self, poll_id: str) -> None:
-        with self.lock:
+        with self._lock:
             self._conn.execute("UPDATE polls SET closed = 1 WHERE poll_id = ?", (poll_id,))
             self._conn.commit()
 
-    # -- Eligibility-Ledger ------------------------------------------------
-    def has_eligibility(self, poll_id: str, voter_key: str) -> bool:
-        with self.lock:
-            row = self._conn.execute(
-                "SELECT 1 FROM eligibility WHERE poll_id = ? AND voter_key = ?",
+    # -- Eligibility-Ledger: ein Ausweis, ein Token (§6) --------------------
+    def beanspruche_berechtigung(
+        self, poll_id: str, voter_key: str, eintrag: Callable[[int], dict[str, Any]]
+    ) -> BoardEntry | None:
+        """Erhebt den Anspruch auf genau ein Stimm-Token und vermerkt die
+        Ausgabe auf dem Board.
+
+        Rueckgabe: der Board-Eintrag der Ausgabe, oder ``None``, wenn fuer
+        diesen Ausweis in dieser Umfrage schon eine Berechtigung ausgegeben
+        wurde.
+
+        Pruefen und Eintragen sind *ein* Schritt, durchgesetzt vom PRIMARY KEY
+        der Tabelle: ``INSERT OR IGNORE`` traegt ein oder tut nichts, und
+        ``rowcount`` sagt, was davon passiert ist. Ein zweiter Anspruch kann
+        sich deshalb nicht zwischen Pruefung und Einfuegen schieben - die
+        Datenbank entscheidet, nicht die Aufmerksamkeit des Aufrufers
+        (EIP-T-047, §9).
+
+        Der Board-Eintrag gehoert in denselben Schritt: sonst zeigt die
+        Abrechnung fuer einen Moment einen Ledger-Eintrag ohne Board-Eintrag,
+        und das Debug-Modul meldet eine Inkonsistenz, die es nicht gibt.
+
+        ``eintrag`` baut den Board-Payload aus der laufenden Nummer der
+        Ausgabe - die steht erst hier fest. Als Rueckruf, damit das
+        Board-*Format* ausserhalb dieser Datei bleibt (Modul-Docstring).
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT OR IGNORE INTO eligibility (poll_id, voter_key) VALUES (?, ?)",
                 (poll_id, voter_key),
-            ).fetchone()
-        return row is not None
-
-    def add_eligibility(self, poll_id: str, voter_key: str) -> None:
-        with self.lock:
-            self._conn.execute(
-                "INSERT INTO eligibility (poll_id, voter_key) VALUES (?, ?)", (poll_id, voter_key)
             )
-            self._conn.commit()
-
-    def count_eligibility(self, poll_id: str) -> int:
-        with self.lock:
+            if cur.rowcount == 0:
+                return None
             row = self._conn.execute(
                 "SELECT COUNT(*) AS n FROM eligibility WHERE poll_id = ?", (poll_id,)
             ).fetchone()
-        return int(row["n"])
+            try:
+                # append_board committet - und damit auch den Anspruch oben.
+                return self.append_board(poll_id, eintrag(int(row["n"])))
+            except Exception:
+                self._conn.rollback()  # kein Board-Eintrag, kein Anspruch
+                raise
 
     def remove_eligibility(self, poll_id: str, voter_key: str) -> bool:
         """Nur fuer den Testbetrieb (EIP-Reset): Eligibility-Eintrag loeschen,
         damit derselbe Testcode erneut ein Token abholen kann. Im echten
         eID-Verfahren gibt es diesen Weg nicht - dort ist die Sperre nach dem
         ersten Token endgueltig gewollt (§6)."""
-        with self.lock:
+        with self._lock:
             cur = self._conn.execute(
                 "DELETE FROM eligibility WHERE poll_id = ? AND voter_key = ?", (poll_id, voter_key)
             )
             self._conn.commit()
             return cur.rowcount > 0
 
-    # -- Vote-Ledger (nur verbrauchte Tokens) ------------------------------
-    def is_spent(self, poll_id: str, token_hex: str) -> bool:
-        with self.lock:
-            row = self._conn.execute(
-                "SELECT 1 FROM spent WHERE poll_id = ? AND token_hex = ?", (poll_id, token_hex)
-            ).fetchone()
-        return row is not None
+    # -- Vote-Ledger: ein Token, eine Stimme (§9) --------------------------
+    def verbrauche_token(
+        self, poll_id: str, token_hex: str, eintrag: dict[str, Any]
+    ) -> BoardEntry | None:
+        """Verbraucht ein Stimm-Token und schreibt die Stimme aufs Board.
 
-    def add_spent(self, poll_id: str, token_hex: str) -> None:
-        with self.lock:
-            self._conn.execute(
-                "INSERT INTO spent (poll_id, token_hex) VALUES (?, ?)", (poll_id, token_hex)
+        Rueckgabe: der Board-Eintrag der Stimme, oder ``None``, wenn dieses
+        Token in dieser Umfrage schon verbraucht war.
+
+        Wie beanspruche_berechtigung ein einziger Schritt ueber den PRIMARY
+        KEY - und aus demselben Grund zusammen mit dem Board-Eintrag. Der
+        Ledger haelt nur den Token-Hash, keine Stimme: was gestimmt wurde,
+        steht ausschliesslich im Board (§7).
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT OR IGNORE INTO spent (poll_id, token_hex) VALUES (?, ?)",
+                (poll_id, token_hex),
             )
-            self._conn.commit()
+            if cur.rowcount == 0:
+                return None
+            try:
+                return self.append_board(poll_id, eintrag)
+            except Exception:
+                self._conn.rollback()  # keine Stimme, kein verbrauchtes Token
+                raise
 
-    def count_spent(self, poll_id: str) -> int:
-        with self.lock:
+    # -- Ledger-Stand fuer die Abrechnung (§9) -----------------------------
+    def ledger_stand(self, poll_id: str) -> tuple[int, int]:
+        """(ausgegebene Berechtigungen, verbrauchte Tokens) in einem Zug.
+
+        Beide Zahlen zusammen, damit die Abrechnung nicht zwei Zeitpunkte
+        vergleicht: dazwischen abgegebene Stimmen saehen sonst wie eine
+        Inkonsistenz aus - eine Falschmeldung ausgerechnet an der Stelle, die
+        echte Manipulation anzeigen soll.
+        """
+        with self._lock:
             row = self._conn.execute(
-                "SELECT COUNT(*) AS n FROM spent WHERE poll_id = ?", (poll_id,)
+                "SELECT (SELECT COUNT(*) FROM eligibility WHERE poll_id = ?) AS eligible, "
+                "       (SELECT COUNT(*) FROM spent WHERE poll_id = ?) AS spent",
+                (poll_id, poll_id),
             ).fetchone()
-        return int(row["n"])
+        return int(row["eligible"]), int(row["spent"])
+
+    def momentaufnahme(self, poll_id: str) -> tuple[list[BoardEntry], int, int]:
+        """(Board, ausgegebene Berechtigungen, verbrauchte Tokens) in einem Zug.
+
+        Board und Ledger unter einem Schritt gelesen und erst danach geprueft:
+        die teuren Signaturpruefungen duerfen nicht zwischen den Lesezugriffen
+        liegen (siehe ledger_stand).
+        """
+        with self._lock:
+            entries = self.board(poll_id)
+            eligible, spent = self.ledger_stand(poll_id)
+        return entries, eligible, spent
 
     # -- Board -------------------------------------------------------------
     def board(self, poll_id: str) -> list[BoardEntry]:
-        with self.lock:
+        with self._lock:
             rows = self._conn.execute(
                 "SELECT idx, prev_hash, payload, entry_hash FROM board "
                 "WHERE poll_id = ? ORDER BY idx",
@@ -240,7 +290,7 @@ class Store:
 
     def board_head(self, poll_id: str) -> tuple[int, str]:
         """(naechster_index, head_hash)."""
-        with self.lock:
+        with self._lock:
             row = self._conn.execute(
                 "SELECT idx, entry_hash FROM board WHERE poll_id = ? ORDER BY idx DESC LIMIT 1",
                 (poll_id,),
@@ -248,7 +298,7 @@ class Store:
         return (0, GENESIS) if row is None else (row["idx"] + 1, row["entry_hash"])
 
     def append_board(self, poll_id: str, payload: dict[str, Any]) -> BoardEntry:
-        with self.lock:
+        with self._lock:
             index, prev = self.board_head(poll_id)
             line = canonical(payload)
             digest = entry_hash(index, prev, line)
@@ -262,21 +312,10 @@ class Store:
 
     def overwrite_board_payload(self, poll_id: str, index: int, payload: str) -> bool:
         """Nur fuer die Manipulationsdemo (§9): Payload aendern, Hashes stehen lassen."""
-        with self.lock:
+        with self._lock:
             cur = self._conn.execute(
                 "UPDATE board SET payload = ? WHERE poll_id = ? AND idx = ?",
                 (payload, poll_id, index),
             )
             self._conn.commit()
             return cur.rowcount > 0
-
-
-def verify_chain(entries: list[BoardEntry]) -> tuple[bool, int | None]:
-    """Prueft die Kette. Gibt (ok, erster_defekter_index) zurueck."""
-    prev = GENESIS
-    for entry in entries:
-        expected = entry_hash(entry.index, prev, entry.payload)
-        if entry.prev_hash != prev or entry.entry_hash != expected:
-            return False, entry.index
-        prev = entry.entry_hash
-    return True, None

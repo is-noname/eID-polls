@@ -12,13 +12,18 @@ Tokens, keine Stimmen. Die Stimmen liegen ausschliesslich im Board, und tally()
 rechnet ueber die verifizierte Kette - sonst prueft die Oeffentlichkeit eine
 Struktur, die fuer das veroeffentlichte Ergebnis nicht massgeblich ist
 (§7, Prototyp-Fund 1).
+
+Die Auszaehlung selbst steht seit EIP-T-045 nicht mehr hier, sondern in
+verifikation.py: eine reine Funktion ueber Board-Eintraege und den
+*oeffentlichen* Schluessel, die jeder Dritte ohne diese Datenbank ausfuehren
+kann. Dieser Kern liest das Board und uebersetzt Befunde in Abweisungen - was
+gilt, entscheidet das Pruefmodul.
 """
 
 from __future__ import annotations
 
 import hashlib
 import secrets
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -26,8 +31,11 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 import blind
+import board_eintrag
+from board_eintrag import BoardEntry, Vote, canonical, parse
 from debug import log
-from store import BoardEntry, PollRow, Store, canonical, verify_chain
+from store import PollRow, Store
+from verifikation import Accounting, ChainStatus, Pruefbericht, pruefe
 
 
 class Rejected(Exception):
@@ -43,32 +51,7 @@ class Rejected(Exception):
         self.status_code = status_code
 
 
-@dataclass(frozen=True)
-class Accounting:
-    """Oeffentliche Ledger-Abrechnung gegen Ballot-Stuffing (§9)."""
-
-    n_eligible: int
-    n_votes: int
-
-    @property
-    def ok(self) -> bool:
-        return self.n_votes <= self.n_eligible
-
-    @property
-    def surplus(self) -> int:
-        return max(0, self.n_votes - self.n_eligible)
-
-
-@dataclass(frozen=True)
-class ChainStatus:
-    ok: bool
-    broken_at: int | None
-    signatures_ok: bool
-    bad_signature_at: int | None
-
-    @property
-    def sound(self) -> bool:
-        return self.ok and self.signatures_ok
+__all__ = ["Accounting", "ChainStatus", "PollService", "Pruefbericht", "Rejected"]
 
 
 class PollService:
@@ -152,9 +135,7 @@ class PollService:
             raise Rejected(f"Umfrage '{poll_id}' existiert bereits.")
 
         self.store.create_poll(poll_id, question, options, datetime.now().isoformat(timespec="seconds"))
-        self.store.append_board(
-            poll_id, {"type": "POLL_OPEN", "poll": poll_id, "question": question, "options": options}
-        )
+        self.store.append_board(poll_id, board_eintrag.poll_open(poll_id, question, options))
         log.info("poll", f"Umfrage '{poll_id}' angelegt.", options=options)
         return self.poll(poll_id)
 
@@ -163,7 +144,7 @@ class PollService:
         if poll.closed:
             raise Rejected("Umfrage ist bereits geschlossen.")
         self.store.close_poll(poll_id)
-        self.store.append_board(poll_id, {"type": "POLL_CLOSED", "poll": poll_id})
+        self.store.append_board(poll_id, board_eintrag.poll_closed(poll_id))
         log.info("poll", f"Umfrage '{poll_id}' geschlossen.")
 
     # -- Phase A: Wahlberechtigung (mit Pseudonym) -------------------------
@@ -176,27 +157,26 @@ class PollService:
             )
 
         key = self.voter_key(pseudonym, poll_id)
-        with self.store.lock:
-            if self.store.has_eligibility(poll_id, key):
-                raise Rejected(
-                    "Fuer diesen Ausweis wurde bereits eine Stimmberechtigung ausgegeben - eine "
-                    "zweite ist bewusst nicht vorgesehen: Der Server sieht das Stimm-Token nie in "
-                    "Klarschrift und kann einen ehrlichen Verlust nicht von einem nur versteckten "
-                    "Token unterscheiden. Wurde damit abgestimmt, steht die Stimme im "
-                    "oeffentlichen Board und laesst sich mit dem Beleg unter /verify pruefen."
-                )
-            try:
-                blind_sig = blind.blind_sign(blinded_msg, self.n, self._d)
-            except ValueError as exc:
-                raise Rejected(f"Verblindete Anfrage ungueltig: {exc}") from exc
-            self.store.add_eligibility(poll_id, key)
-            self.store.append_board(
-                poll_id,
-                {
-                    "type": "TOKEN_ISSUED",
-                    "poll": poll_id,
-                    "n_eligible": self.store.count_eligibility(poll_id),
-                },
+        # Signieren steht vor dem Anspruch: es aendert nichts und darf deshalb
+        # folgenlos scheitern. Umgekehrt waere bei einer ungueltigen Anfrage die
+        # Berechtigung verbraucht, ohne dass jemand ein Token bekommen haette.
+        try:
+            blind_sig = blind.blind_sign(blinded_msg, self.n, self._d)
+        except ValueError as exc:
+            raise Rejected(f"Verblindete Anfrage ungueltig: {exc}") from exc
+
+        # Ein Ausweis, ein Token: pruefen, eintragen und aufs Board vermerken
+        # sind ein Schritt (store.beanspruche_berechtigung, EIP-T-047).
+        vermerkt = self.store.beanspruche_berechtigung(
+            poll_id, key, lambda nummer: board_eintrag.token_issued(poll_id, nummer)
+        )
+        if vermerkt is None:
+            raise Rejected(
+                "Fuer diesen Ausweis wurde bereits eine Stimmberechtigung ausgegeben - eine "
+                "zweite ist bewusst nicht vorgesehen: Der Server sieht das Stimm-Token nie in "
+                "Klarschrift und kann einen ehrlichen Verlust nicht von einem nur versteckten "
+                "Token unterscheiden. Wurde damit abgestimmt, steht die Stimme im "
+                "oeffentlichen Board und laesst sich mit dem Beleg unter /verify pruefen."
             )
         # Bewusst ohne voter_key: fuer die Fehlersuche reicht "ein Token wurde
         # ausgegeben". Wer es war, zusammen mit dem Zeitstempel, waere die halbe
@@ -224,23 +204,16 @@ class PollService:
         if not blind.verify(self._key.public_key(), token, sig):
             raise Rejected("Token-Signatur ungueltig.")
 
-        with self.store.lock:
-            if self.store.is_spent(poll_id, token.hex()):
-                raise Rejected(
-                    "Dieses Stimm-Token ist bereits verbraucht - es wurde damit schon "
-                    "abgestimmt. Die erste Abgabe steht im oeffentlichen Board; eine zweite "
-                    "Stimme mit demselben Token ist nicht moeglich."
-                )
-            self.store.add_spent(poll_id, token.hex())
-            entry = self.store.append_board(
-                poll_id,
-                {
-                    "type": "VOTE",
-                    "poll": poll_id,
-                    "token": token.hex(),
-                    "sig": sig.hex(),
-                    "choices": sorted(choices),
-                },
+        # Ein Token, eine Stimme: verbrauchen und aufs Board schreiben sind ein
+        # Schritt (store.verbrauche_token, EIP-T-047).
+        entry = self.store.verbrauche_token(
+            poll_id, token.hex(), board_eintrag.vote(poll_id, token, sig, choices)
+        )
+        if entry is None:
+            raise Rejected(
+                "Dieses Stimm-Token ist bereits verbraucht - es wurde damit schon "
+                "abgestimmt. Die erste Abgabe steht im oeffentlichen Board; eine zweite "
+                "Stimme mit demselben Token ist nicht moeglich."
             )
         log.info("phase-b", f"Stimme im Board vermerkt (#{entry.index}).", poll=poll_id)
         self.check_consistency(poll_id)
@@ -251,45 +224,36 @@ class PollService:
         self.poll(poll_id)
         return self.store.board(poll_id)
 
+    def pruefbericht(self, poll_id: str) -> Pruefbericht:
+        """Ein Durchlauf ueber das Board, alle Aussagen darin (§7).
+
+        Bewusst mit dem *oeffentlichen* Schluessel: was hier gerechnet wird,
+        rechnet ein Dritter mit verifikation.py und board.json genauso nach -
+        der private Schluessel kommt in der Pruefung nicht mehr vor.
+        """
+        poll = self.poll(poll_id)
+        return pruefe(self.store.board(poll_id), self._key.public_key(), poll.options)
+
     def board_votes(self, poll_id: str) -> list[tuple[str, list[str]]]:
         """Stimmen so, wie sie oeffentlich im Board stehen. Jeder kann das nachrechnen."""
-        votes = []
-        for entry in self.board(poll_id):
-            data = entry.data
-            if data.get("type") == "VOTE" and "token" in data and "choices" in data:
-                votes.append((str(data["token"]), list(data["choices"])))
-        return votes
+        return [(token, list(choices)) for token, choices in self.pruefbericht(poll_id).votes]
 
     def participation(self, poll_id: str) -> int:
-        return len(self.board_votes(poll_id))
+        return self.pruefbericht(poll_id).accounting.n_votes
 
     def chain_status(self, poll_id: str) -> ChainStatus:
-        entries = self.board(poll_id)
-        ok, broken_at = verify_chain(entries)
+        return self.pruefbericht(poll_id).chain
 
-        sig_ok, bad_at = True, None
-        pub = self._key.public_key()
-        for entry in entries:
-            data = entry.data
-            if data.get("type") != "VOTE":
-                continue
-            try:
-                token = bytes.fromhex(str(data["token"]))
-                sig = bytes.fromhex(str(data["sig"]))
-            except (KeyError, ValueError):
-                sig_ok, bad_at = False, entry.index
-                break
-            if not blind.verify(pub, token, sig):
-                sig_ok, bad_at = False, entry.index
-                break
-
-        return ChainStatus(ok=ok, broken_at=broken_at, signatures_ok=sig_ok, bad_signature_at=bad_at)
-
-    def tally(self, poll_id: str) -> dict[str, int]:
+    def tally(self, poll_id: str, bericht: Pruefbericht | None = None) -> dict[str, int]:
         poll = self.poll(poll_id)
         if not poll.closed:
             raise Rejected("Die Verteilung wird erst nach dem Ende der Umfrage angezeigt.")
-        status = self.chain_status(poll_id)
+        return self.tally_von(bericht if bericht is not None else self.pruefbericht(poll_id))
+
+    @staticmethod
+    def tally_von(bericht: Pruefbericht) -> dict[str, int]:
+        """Uebersetzt Befunde in Abweisungen - die Zahlen kommen aus dem Bericht."""
+        status = bericht.chain
         if not status.ok:
             raise Rejected(
                 f"Board-Kette gebrochen ab Eintrag #{status.broken_at} - kein Ergebnis, solange "
@@ -300,28 +264,51 @@ class PollService:
                 f"Board-Eintrag #{status.bad_signature_at} traegt keine gueltige "
                 "Token-Signatur - kein Ergebnis, solange das nicht geklaert ist."
             )
-
-        counts = {opt: 0 for opt in poll.options}
-        for _token_hex, choices in self.board_votes(poll_id):
-            for choice in choices:
-                if choice not in counts:
-                    raise Rejected(f"Board enthaelt unbekannte Option '{choice}' - kein Ergebnis.")
-                counts[choice] += 1
-        return counts
+        if bericht.unlesbar is not None:
+            raise Rejected(
+                f"Board-Eintrag #{bericht.unlesbar.index} ist nicht lesbar "
+                f"({bericht.unlesbar.grund}) - kein Ergebnis, solange das nicht geklaert ist."
+            )
+        if bericht.unknown_choice is not None:
+            raise Rejected(
+                f"Board enthaelt unbekannte Option '{bericht.unknown_choice}' - kein Ergebnis."
+            )
+        return dict(bericht.counts)
 
     # -- Oeffentliche Abrechnung (§9) --------------------------------------
     def accounting(self, poll_id: str) -> Accounting:
         """Beide Zahlen aus dem Board - also aus dem, was jeder Dritte sieht."""
-        n_eligible = 0
-        for entry in self.board(poll_id):
-            if entry.data.get("type") == "TOKEN_ISSUED":
-                n_eligible += 1
-        return Accounting(n_eligible=n_eligible, n_votes=self.participation(poll_id))
+        return self.pruefbericht(poll_id).accounting
 
     def lookup(self, poll_id: str, token_hex: str) -> list[str] | None:
         """Individuelle Verifizierbarkeit: eigenes Token im Board finden."""
-        token_hex = token_hex.strip().lower()
-        return next((c for t, c in self.board_votes(poll_id) if t == token_hex), None)
+        return self.pruefbericht(poll_id).lookup(token_hex)
+
+    def board_export(self, poll_id: str) -> dict[str, object]:
+        """Das Board als Datei zum Selbernachrechnen (verifikation.py als CLI).
+
+        Enthaelt den oeffentlichen Schluessel der Bequemlichkeit halber mit.
+        Wer dem Betreiber nicht glaubt, nimmt ihn woanders her - genau darum
+        kennt das Pruefwerkzeug die Option --pubkey.
+        """
+        poll = self.poll(poll_id)
+        return {
+            "poll": poll.poll_id,
+            "question": poll.question,
+            "options": poll.options,
+            "closed": poll.closed,
+            "created": poll.created,
+            "public_key": self.public_key_pem,
+            "entries": [
+                {
+                    "index": e.index,
+                    "prev_hash": e.prev_hash,
+                    "payload": e.payload,
+                    "entry_hash": e.entry_hash,
+                }
+                for e in self.store.board(poll_id)
+            ],
+        }
 
     # -- Test-Reset (nur Testbetrieb, siehe store.remove_eligibility) ------
     def reset_eligibility(self, poll_id: str, pseudonym: str) -> bool:
@@ -333,29 +320,51 @@ class PollService:
         return removed
 
     # -- Inkonsistenzpruefung fuers Debug-Modul ----------------------------
-    def check_consistency(self, poll_id: str) -> list[str]:
-        """Vergleicht Board gegen internen Zustand. Findings gehen ins Debug-Modul."""
+    def check_consistency(self, poll_id: str, bericht: Pruefbericht | None = None) -> list[str]:
+        """Vergleicht Board gegen internen Zustand. Findings gehen ins Debug-Modul.
+
+        Der Bericht darf uebergeben werden, wenn der Aufrufer das Board ohnehin
+        schon geprueft hat - sonst laeuft dieselbe Pruefung ein zweites Mal.
+
+        Ohne uebergebenen Bericht werden Board und beide Ledger in einem Zug
+        gelesen (store.momentaufnahme) und erst danach geprueft. Sonst liegen
+        die teuren Signaturpruefungen zwischen den Lesezugriffen, und eine
+        Stimme, die in genau diesem Moment dazukommt, sieht wie eine
+        Inkonsistenz aus - eine Falschmeldung im Debug-Modul, ausgerechnet an
+        der Stelle, die echte Manipulation anzeigen soll.
+        """
         findings: list[str] = []
-        status = self.chain_status(poll_id)
+        if bericht is None:
+            options = self.poll(poll_id).options
+            entries, db_eligible, spent = self.store.momentaufnahme(poll_id)
+            bericht = pruefe(entries, self._key.public_key(), options)
+        else:
+            db_eligible, spent = self.store.ledger_stand(poll_id)
+
+        status = bericht.chain
         if not status.ok:
             findings.append(f"Board-Kette gebrochen ab Eintrag #{status.broken_at}")
         if not status.signatures_ok:
             findings.append(f"Ungueltige Token-Signatur in Eintrag #{status.bad_signature_at}")
 
-        acc = self.accounting(poll_id)
+        acc = bericht.accounting
         if not acc.ok:
             findings.append(
                 f"Ledger-Abrechnung schief: {acc.n_votes} Stimmen bei {acc.n_eligible} "
                 f"Berechtigten (+{acc.surplus})"
             )
+        if bericht.unlesbar is not None:
+            findings.append(
+                f"Board-Eintrag #{bericht.unlesbar.index} nicht lesbar: {bericht.unlesbar.grund}"
+            )
+        if bericht.unknown_choice is not None:
+            findings.append(f"Board enthaelt unbekannte Option '{bericht.unknown_choice}'")
 
-        board_votes = self.participation(poll_id)
-        spent = self.store.count_spent(poll_id)
+        board_votes = acc.n_votes
         if board_votes != spent:
             findings.append(
                 f"Board zeigt {board_votes} Stimmen, Vote-Ledger {spent} verbrauchte Tokens"
             )
-        db_eligible = self.store.count_eligibility(poll_id)
         if acc.n_eligible != db_eligible:
             findings.append(
                 f"Board zeigt {acc.n_eligible} Token-Ausgaben, Eligibility-Ledger {db_eligible}"
@@ -380,11 +389,13 @@ class PollService:
         entry = next((e for e in entries if e.index == index), None)
         if entry is None:
             raise Rejected(f"Kein Board-Eintrag #{index}.")
-        data = entry.data
-        if data.get("type") != "VOTE":
+        gestimmt = parse(entry)
+        if not isinstance(gestimmt, Vote):
             raise Rejected(f"Eintrag #{index} ist keine Stimme.")
-        data["choices"] = [new_choice]
-        self.store.overwrite_board_payload(poll_id, index, canonical(data))
+        umgeschrieben = board_eintrag.vote(
+            gestimmt.poll, gestimmt.token, gestimmt.sig, [new_choice]
+        )
+        self.store.overwrite_board_payload(poll_id, index, canonical(umgeschrieben))
         log.error("demo", f"Board-Eintrag #{index} manipuliert (Demo).", poll=poll_id)
         self.check_consistency(poll_id)
 

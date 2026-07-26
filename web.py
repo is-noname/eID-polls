@@ -200,12 +200,14 @@ async def poll_page(request: Request, poll_id: str) -> HTMLResponse:
 @app.get("/board/{poll_id}", response_class=HTMLResponse)
 async def board_page(request: Request, poll_id: str) -> HTMLResponse:
     poll = service.poll(poll_id)
-    status = service.chain_status(poll_id)
-    accounting = service.accounting(poll_id)
+    # Ein Pruefbericht fuer die ganze Seite: Kette, Signaturen, Abrechnung,
+    # Auszaehlung und die Eintraege selbst kommen aus demselben Durchlauf.
+    bericht = service.pruefbericht(poll_id)
+    status, accounting = bericht.chain, bericht.accounting
     if not status.sound or not accounting.ok:
-        service.check_consistency(poll_id)
+        service.check_consistency(poll_id, bericht)
     try:
-        result: dict[str, int] | None = service.tally(poll_id)
+        result: dict[str, int] | None = service.tally(poll_id, bericht)
         result_error = None
     except Rejected as exc:
         result, result_error = None, str(exc)
@@ -213,7 +215,7 @@ async def board_page(request: Request, poll_id: str) -> HTMLResponse:
         request,
         "board.html",
         poll=poll,
-        entries=service.board(poll_id),
+        entries=bericht.entries,
         status=status,
         accounting=accounting,
         result=result,
@@ -369,6 +371,19 @@ async def api_vote(poll_id: str, payload: dict) -> JSONResponse:
             "participation": service.participation(poll_id),
         }
     )
+
+
+@app.get("/api/board/{poll_id}")
+async def api_board(poll_id: str) -> JSONResponse:
+    """Das Board als Datei - Grundlage der Pruefung durch Dritte (§7).
+
+    Zusammen mit verifikation.py rechnet damit jeder das Ergebnis nach, ohne
+    diesem Server etwas zu glauben:
+
+        curl -sO http://.../api/board/{poll_id}
+        python3 verifikation.py board.json
+    """
+    return JSONResponse(service.board_export(poll_id))
 
 
 @app.get("/api/status/{poll_id}")

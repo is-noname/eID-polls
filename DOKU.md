@@ -113,6 +113,31 @@ Unten steht der **öffentliche Token-Schlüssel**. Damit lässt sich jede Stimme
 (RSASSA-PSS über SHA-384, Salt-Länge 0), und die Kette mit
 `sha256("index|prev_hash|payload")` nachrechnen.
 
+### Selbst nachrechnen, ohne diesem Server zu glauben
+
+Die Board-Seite zeigt einen Prüfbericht, den der Server rechnet. Genau denselben Bericht rechnet
+`verifikation.py` aus dem exportierten Board — ohne Datenbank und ohne den privaten
+Signaturschlüssel:
+
+```bash
+curl -o board.json http://127.0.0.1:8731/api/board/{poll_id}
+python3 app/verifikation.py board.json
+python3 app/verifikation.py board.json --token <mein-token-hex>   # eigene Stimme suchen
+```
+
+Ausgegeben werden Kettenstatus, Signaturstatus, Ledger-Abrechnung und Auszählung. Exit-Code 0
+heißt: nichts gefunden. Exit-Code 1 heißt: mindestens ein Befund — die Zahlen darüber sind dann
+nicht belastbar.
+
+Der Export enthält den öffentlichen Schlüssel mit, aus Bequemlichkeit. Wer dem Betreiber nicht
+glaubt, nimmt ihn aus einer unabhängigen Quelle und übergibt ihn mit `--pubkey key.pem`; sonst
+prüft man das Board nur gegen sich selbst.
+
+**Was das nicht leistet:** Der Export kommt weiterhin von diesem Server. Zwei Betrachter können
+zwei verschiedene, jeweils in sich stimmige Boards bekommen, und ein Betreiber mit Schreibzugriff
+rechnet die Kette nach einer Änderung neu durch. Dagegen hilft nur ein extern verankerter
+Merkle-Root und Gegenzeichner (§12).
+
 ### Debug-Modul
 
 `/debug`, Auto-Refresh alle 3 Sekunden. Erreichbar **nur mit Admin-Anmeldung** — das Log stellt
@@ -164,8 +189,10 @@ static/blind.js                          web.py          HTTP, Cookies
 | `auth.py` | `authenticate() -> pseudonym`. `CodeAuthenticator` aktiv (Zugangscode statt geprüftem Ausweis); `SamlEidAuthenticator` ist die Hülle für den echten eID-Flow. |
 | `blind.py` | Blindsignatur, Serverseite (RFC 9474, RSABSSA-SHA384-PSS-Deterministic, 2048 Bit). |
 | `static/blind.js` | Dieselbe Krypto im Browser. Beide Seiten müssen bitgenau gleich rechnen. |
-| `store.py` | SQLite: `polls`, `eligibility`, `spent`, `board`. Board-Payloads als kanonisches JSON. Alle Zugriffe — auch lesende — laufen über ein `RLock`, weil sich alle Threads eine Verbindung teilen (EIP-T-019). |
-| `poll_service.py` | Phasenlogik, Auszählung aus dem Board, Konsistenzprüfung, Angriffsdemos. |
+| `store.py` | SQLite: `polls`, `eligibility`, `spent`, `board`. Alle Zugriffe — auch lesende — laufen über ein `RLock`, weil sich alle Threads eine Verbindung teilen (EIP-T-019). |
+| `board_eintrag.py` | Das Eintragsformat: kanonisches JSON, Eintrags-Hash, Konstruktoren (`vote`, `token_issued`, `poll_open`, `poll_closed`) und `parse(entry) -> Vote \| TokenIssued \| PollOpen \| PollClosed \| Unlesbar`. Rohe Dicts baut und liest niemand mehr selbst. Ein Eintrag, den `parse` nicht deuten kann, wird zu `Unlesbar` — er zählt nirgends mit und macht das Ergebnis unbelastbar, statt still zu verschwinden. |
+| `verifikation.py` | Die gesamte Prüfung über das gelesene Board: `pruefe(entries, public_key, options) -> Pruefbericht` plus Kettenprüfung. Ohne Datenbank, ohne privaten Schlüssel, auch als Kommandozeilen-Werkzeug für Dritte lauffähig. |
+| `poll_service.py` | Phasenlogik, Regeln, Konsistenzprüfung, Angriffsdemos. Die Auszählung selbst delegiert es an `verifikation.py` und übersetzt Befunde in Abweisungen. |
 | `debug.py` | Ringpuffer im Prozessspeicher (500 Ereignisse), bewusst keine zweite Wahrheit. |
 | `web.py` | Seiten und JSON-API. |
 
@@ -190,6 +217,7 @@ die Datei gelöscht, werden alle ausgegebenen Tokens ungültig.**
 ```bash
 python3 app/blind.py         # Krypto-Roundtrip
 python3 app/smoke_test.py    # sieben Abnahmepunkte serverseitig, plus beide Angriffe
+                             # darin: Board-Prüfung ohne SQLite und ohne TestClient
 
 cd app && EIDPOLL_DB=/tmp/bt.sqlite3 python3 -m uvicorn web:app --port 8899 &
 python3 app/browser_test.py  # derselbe Durchlauf im echten Browser

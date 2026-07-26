@@ -134,6 +134,18 @@
       SHA-384 mit Salt-Länge 0 (RFC 9474, RSABSSA-SHA384-PSS-Deterministic). Die Kette rechnet sich
       nach über <code>sha256("index|prev_hash|payload")</code>.
     </p>
+    <p>
+      Nachrechnen muss man nichts selbst schreiben: <a href="/api/board/{{ poll.poll_id }}">Das
+      Board als Datei</a> und <code>verifikation.py</code> aus dem Quellcode ergeben denselben
+      Bericht, den diese Seite zeigt — ohne Zugriff auf die Datenbank dieses Servers.
+    </p>
+    <div class="receipt">curl -o board.json {{ request.url.scheme }}://{{ request.url.netloc }}/api/board/{{ poll.poll_id }}
+python3 verifikation.py board.json</div>
+    <p>
+      Der Export enthält den öffentlichen Schlüssel mit. Wer diesem Server nicht glauben will,
+      nimmt ihn woanders her und übergibt ihn mit <code>--pubkey</code> — sonst prüft man das Board
+      nur gegen sich selbst.
+    </p>
     <div class="receipt">{{ public_key }}</div>
   </div>
 </details>
