@@ -179,11 +179,11 @@ class PollService:
         with self.store.lock:
             if self.store.has_eligibility(poll_id, key):
                 raise Rejected(
-                    "Fuer diesen Ausweis wurde bereits ein Stimm-Token abgeholt - ein zweites ist "
-                    "bewusst nicht vorgesehen: Der Server sieht das Token nie in Klarschrift und "
-                    "kann einen ehrlichen Verlust nicht von einem nur versteckten Token "
-                    "unterscheiden. Geraet gewechselt oder Browserdaten geloescht? Die beim "
-                    "Abholen gesicherte Stimm-Token-Datei auf dieser Seite wieder einlesen."
+                    "Fuer diesen Ausweis wurde bereits eine Stimmberechtigung ausgegeben - eine "
+                    "zweite ist bewusst nicht vorgesehen: Der Server sieht das Stimm-Token nie in "
+                    "Klarschrift und kann einen ehrlichen Verlust nicht von einem nur versteckten "
+                    "Token unterscheiden. Wurde damit abgestimmt, steht die Stimme im "
+                    "oeffentlichen Board und laesst sich mit dem Beleg unter /verify pruefen."
                 )
             try:
                 blind_sig = blind.blind_sign(blinded_msg, self.n, self._d)

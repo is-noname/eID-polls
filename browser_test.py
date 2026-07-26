@@ -4,14 +4,16 @@ Prueft vor allem static/blind.js: nur hier zeigt sich, ob die Browser-Krypto
 bitgleich zu blind.py rechnet - sonst weist der Server die Stimme als
 "Token-Signatur ungueltig" ab.
 
-    # Server mit frischer Datenbank starten
-    EIDPOLL_DB=/tmp/bt.sqlite3 python3 -m uvicorn web:app --port 8899 &
+    # Server mit frischer Datenbank starten. Ohne EIDPOLL_ADMIN_TOKEN wuerde
+    # config.py ein Zufallstoken erzeugen und die Admin-Anmeldung scheitern.
+    EIDPOLL_DB=/tmp/bt.sqlite3 EIDPOLL_ADMIN_TOKEN=admin python3 -m uvicorn web:app --port 8899 &
     python3 browser_test.py            # optional: EIDPOLL_URL=http://127.0.0.1:8899
 
 Die Datenbank muss leer sein - der Test legt eine Umfrage 'browsertest' an und
 holt Tokens fuer feste Identitaeten.
 """
 
+import json
 import os
 import re
 import sys
@@ -76,35 +78,26 @@ with sync_playwright() as p:
     check("Punkt 2c: kein Wort ueber Test/Stub/Simulation/Code in der Teilnehmeransicht",
           not any(w in page.content() for w in ["Stub", "Simulation", "Zugangscode"]))
 
-    page.click("#token-button")
-    page.wait_for_selector("#token-state:not(.hidden)", timeout=20000)
-    state = page.evaluate(f"() => localStorage.getItem('eidpoll:{POLL}')")
-    check("Punkt 2b: im Browser verblindet, Token signiert im localStorage",
-          state is not None and '"sig"' in state)
+    check("Punkt 2d: kein eigener Schritt zum Abholen des Stimm-Tokens mehr (T-021)",
+          page.query_selector("#step-token") is None
+          and page.query_selector("#token-button") is None)
 
-    # --- EIP-T-016: Tab schliessen und zurueckkommen - Token bleibt da (localStorage)
-    page.evaluate("() => sessionStorage.clear()")
-    page.goto(f"{BASE}/poll/{POLL}")
-    page.wait_for_load_state("networkidle")
-    check("T-016: Token ueberlebt Tab-Schliessen (Schritt 2 bleibt erledigt)",
-          "done" in (page.get_attribute("#step-token", "class") or ""))
-
-    # --- EIP-T-016: Sicherungsdatei aus Schritt 2 herunterladbar
-    with page.expect_download() as dl_info:
-        page.click("#token-save-button")
-    download_backup = dl_info.value
-    backup_path = f"{SHOTS}/stimm-token_{POLL}.json"
-    download_backup.save_as(backup_path)
-    check("T-016: Stimm-Token-Sicherungsdatei aus Schritt 2 heruntergeladen",
-          os.path.exists(backup_path))
-
-    # --- Punkt 3: abstimmen
+    # --- Punkt 3: abstimmen. Ein Klick macht Token, Signatur und Stimmabgabe.
     check("Punkt 3: waehrend der Laufzeit keine Verteilung sichtbar", "Ergebnis" not in page.content())
     page.check("input[value='Ja']")
     page.click("#vote-button")
     page.wait_for_selector("#step-receipt:not(.hidden)", timeout=20000)
     check("Punkt 3b: Stimme angenommen (Server akzeptiert die PSS-Signatur)", True)
     page.screenshot(path=f"{SHOTS}/02_abgestimmt.png", full_page=True)
+
+    stored_after_vote = page.evaluate(f"() => localStorage.getItem('eidpoll:{POLL}')")
+    check(
+        "Punkt 3c: Token nach Abgabe aus dem Speicher entfernt, Belegdaten bleiben",
+        stored_after_vote is not None
+        and '"token"' not in stored_after_vote
+        and '"index"' in stored_after_vote,
+        stored_after_vote,
+    )
 
     # --- Punkt 4: Verifikations-Beleg
     page.wait_for_timeout(500)
@@ -134,8 +127,6 @@ with sync_playwright() as p:
     page2.wait_for_timeout(1500)
     page2.goto(f"{BASE}/poll/{POLL}")
     page2.wait_for_load_state("networkidle")
-    page2.click("#token-button")
-    page2.wait_for_selector("#token-state:not(.hidden)", timeout=20000)
     page2.check("input[value='Nein']")
     page2.click("#vote-button")
     page2.wait_for_selector("#step-receipt:not(.hidden)", timeout=20000)
@@ -150,10 +141,14 @@ with sync_playwright() as p:
     page3.wait_for_timeout(1500)
     page3.goto(f"{BASE}/poll/{POLL}")
     page3.wait_for_load_state("networkidle")
-    page3.click("#token-button")
+    page3.check("input[value='Nein']")
+    page3.click("#vote-button")
     page3.wait_for_selector(".toast.err", timeout=20000)
-    check("Punkt 5b: zweites Stimm-Token fuer dieselbe Identitaet abgewiesen",
-          "abgeholt" in page3.inner_text(".toast.err"), page3.inner_text(".toast.err"))
+    message3 = page3.inner_text(".toast.err")
+    check("Punkt 5b: zweite Stimmberechtigung fuer dieselbe Identitaet abgewiesen",
+          "Stimmberechtigung ausgegeben" in message3, message3)
+    check("Punkt 5c: Abweisung nennt keine abgeschaffte Sicherungsdatei",
+          "Datei" not in message3 and "abgeholt" not in message3, message3)
 
     # --- Fehlerfaelle im Dialog: unbekannte Nummer, leeres Feld, Abbruch
     page4 = browser.new_context().new_page()
@@ -177,7 +172,11 @@ with sync_playwright() as p:
     classes = page4.get_attribute("#auth-modal-backdrop", "class") or ""
     check("Fehlerfall: Dialog abbrechbar, schliesst sich wieder", "hidden" in classes, classes)
 
-    # --- EIP-T-016: Wiederherstellung nach Geraetewechsel aus der Sicherungsdatei
+    # --- EIP-T-021: Abbruch zwischen Signatur und Stimmabgabe
+    # Der einzige Moment, in dem die Berechtigung verbraucht ist, ohne dass die
+    # Stimme steht. Der Browser haelt Token und Signatur bis dahin fest; der
+    # naechste Klick muss dieselben wiederverwenden statt neue anzufordern -
+    # eine zweite Berechtigung gibt der Server bewusst nicht aus.
     page5 = browser.new_context().new_page()
     page5.goto(f"{BASE}/poll/{POLL}")
     page5.click("#auth-open-button")
@@ -187,33 +186,26 @@ with sync_playwright() as p:
     page5.wait_for_timeout(1200)
     page5.goto(f"{BASE}/poll/{POLL}")
     page5.wait_for_load_state("networkidle")
-    page5.click("#token-button")
-    page5.wait_for_selector("#token-state:not(.hidden)", timeout=20000)
-    with page5.expect_download() as dl5:
-        page5.click("#token-save-button")
-    restore_path = f"{SHOTS}/restore_{POLL}.json"
-    dl5.value.save_as(restore_path)
 
-    page6 = browser.new_context().new_page()  # "anderes Geraet" - keine Browserdaten von page5
-    page6.goto(f"{BASE}/poll/{POLL}")
-    page6.wait_for_load_state("networkidle")
-    page6.set_input_files("#token-restore-input", restore_path)
-    page6.wait_for_timeout(500)
-    check("T-016: Stimm-Token nach Geraetewechsel aus Datei wiederhergestellt",
-          "done" in (page6.get_attribute("#step-token", "class") or ""))
-    page6.check("input[value='Teilweise']")
-    page6.click("#vote-button")
-    page6.wait_for_selector("#step-receipt:not(.hidden)", timeout=20000)
-    check("T-016: nach Wiederherstellung erfolgreich abgestimmt", True)
-
-    stored_after_vote = page6.evaluate(f"() => localStorage.getItem('eidpoll:{POLL}')")
+    page5.route("**/api/vote/**", lambda route: route.abort())  # Netz weg nach der Signatur
+    page5.check("input[value='Teilweise']")
+    page5.click("#vote-button")
+    page5.wait_for_selector(".toast.err", timeout=20000)
+    stored_mid = page5.evaluate(f"() => localStorage.getItem('eidpoll:{POLL}')")
     check(
-        "T-016: Token nach Abgabe aus dem Speicher entfernt, Belegdaten bleiben",
-        stored_after_vote is not None
-        and '"token"' not in stored_after_vote
-        and '"index"' in stored_after_vote,
-        stored_after_vote,
+        "T-021: Berechtigung nach Abbruch im Browser gesichert, noch nicht abgestimmt",
+        stored_mid is not None and '"sig"' in stored_mid and '"voted"' not in stored_mid,
+        stored_mid,
     )
+    token_before = json.loads(stored_mid)["token"] if stored_mid else None
+
+    page5.unroute("**/api/vote/**")  # Netz wieder da, zweiter Versuch
+    page5.click("#vote-button")
+    page5.wait_for_selector("#step-receipt:not(.hidden)", timeout=20000)
+    node5 = page5.query_selector("#receipt-token")
+    token_after = (node5.text_content() or "").strip() if node5 else ""
+    check("T-021: zweiter Klick verwendet dasselbe Token, keine neue Berechtigung",
+          token_after != "" and token_after == token_before, token_after)
 
     # --- Punkt 6: schliessen, Ergebnis, eigenes Token wiederfinden
     page.goto(f"{BASE}/admin")

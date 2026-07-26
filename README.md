@@ -38,12 +38,12 @@ Die Oberfläche nennt die Schritte in Alltagssprache; in Klammern steht, was im 
 1. Umfrage auf der Startseite öffnen
 2. **Schritt 1 „Ausweisen"** (Phase A, Teil 1): „Mit Online-Ausweis anmelden" — öffnet einen Dialog
    „Ausweis auslesen". Dahinter steckt derzeit kein echter eID-Flow, siehe unten.
-3. **Schritt 2 „Stimmrecht abholen"** (Phase A, Teil 2): Stimm-Token wird im Browser erzeugt,
-   verblindet, vom Server blind signiert und im Browser wieder entblindet. Es liegt danach nur im
-   `localStorage`; die Sicherungsdatei ist der Weg über einen Gerätewechsel (EIP-T-016).
-4. **Schritt 3 „Abstimmen"** (Phase B): Während die Umfrage läuft, ist nur der Teilnahmezähler
-   sichtbar (§7).
-5. **Schritt 4 „Dein Beleg"** sichern (`.txt`) und unter `/verify` die eigene Stimme nachschlagen.
+3. **Schritt 2 „Abstimmen"**: ein Klick, hinter dem beides steckt. Erst der Rest von Phase A —
+   Stimm-Token im Browser erzeugen, verblinden, vom Server blind signieren lassen, im Browser
+   entblinden —, dann sofort Phase B, die Stimmabgabe. Das Token existiert damit nur für die
+   Sekunden dazwischen und muss keine Sitzung überleben (EIP-ADR-20260725-002, EIP-T-021).
+   Während die Umfrage läuft, ist nur der Teilnahmezähler sichtbar (§7).
+4. **Schritt 3 „Dein Beleg"** sichern (`.txt`) und unter `/verify` die eigene Stimme nachschlagen.
 
 Die Kryptografie steht auf den Teilnehmerseiten in aufklappbaren Blöcken, nicht im Fließtext:
 sichtbar ist nur, was zum Abstimmen nötig ist.

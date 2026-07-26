@@ -436,9 +436,9 @@ body.dense button.big { width: auto; padding: 7px 14px; font-size: 13px; }
   transition: border-color 0.15s ease, opacity 0.15s ease;
 }
 .step.done { border-color: var(--accent); }
-/* Nur optisch zurueckgenommen, nicht gesperrt: in einem blockierten Schritt 2
-   muss die Wiederherstellung aus der Sicherungsdatei erreichbar bleiben, denn
-   dafuer ist absichtlich keine neue Anmeldung noetig (EIP-T-016). */
+/* Nur optisch zurueckgenommen: den Knopf sperrt das Template selbst
+   (disabled), damit ein blockierter Schritt lesbar bleibt statt zu
+   verschwinden. */
 .step.blocked { opacity: 0.6; }
 .step-head {
   display: flex;

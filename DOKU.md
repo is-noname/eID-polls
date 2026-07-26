@@ -69,18 +69,21 @@ Freitext ist ausgeschlossen, weil er die maschinelle Auszählung bricht und dean
    auslesen". Dahinter steckt derzeit `CodeAuthenticator`: ein Zugangscode aus einer
    konfigurierten Liste ersetzt den geprüften Ausweis, siehe Abschnitt 5. Derselbe Code ergibt
    immer dasselbe Pseudonym.
-3. **Schritt 2 — Stimm-Token holen.** Der Browser erzeugt das Token, verblindet es, lässt es
-   signieren und entblindet es wieder. Es liegt danach im `sessionStorage` dieses Browsers.
-4. **Schritt 3 — Abstimmen.** Mehrfachauswahl ist möglich; die *Kombination* steht so im Board.
-5. **Schritt 4 — Beleg.** Als `.txt` sichern. Er enthält das Stimm-Token.
+3. **Schritt 2 — Abstimmen.** Ein Klick, hinter dem zwei Dinge stecken: Der Browser erzeugt das
+   Stimm-Token, verblindet es, lässt es signieren, entblindet es wieder — und gibt damit sofort
+   die Stimme ab. Mehrfachauswahl ist möglich; die *Kombination* steht so im Board.
+4. **Schritt 3 — Beleg.** Als `.txt` sichern. Er enthält das Stimm-Token.
 
 Während die Umfrage läuft, zeigt die Seite nur die Teilnahmezahl. Die Verteilung erscheint erst
 nach dem Schließen (§7) — Zwischenstände beeinflussen laufende Abstimmungen und erlauben
 Timing-Rückschlüsse.
 
-> **Achtung, Browserwechsel:** Das Token liegt nur im `sessionStorage`. Wer den Tab schließt,
-> bevor er abgestimmt hat, verliert es — und bekommt in Phase A kein zweites. Das ist kein Bug,
-> sondern die Doppelabstimmungs-Abwehr.
+> **Warum nur noch ein Schritt:** Früher war das Token-Holen ein eigener Schritt, und das Token
+> musste zwischen zwei Klicks im Browserspeicher überleben. Wer den Tab dazwischen schloss,
+> verlor es — und bekam in Phase A kein zweites. Heute existiert es nur für die Sekunden zwischen
+> Signatur und Stimmabgabe (EIP-ADR-20260725-002). Bricht ausgerechnet dieser Moment ab, liegt es
+> für den nächsten Versuch bereit; ein zweites wird weiterhin nicht ausgegeben, denn das ist die
+> Doppelabstimmungs-Abwehr.
 
 ### Eigene Stimme prüfen
 
