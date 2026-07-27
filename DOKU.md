@@ -154,6 +154,16 @@ Zuordnung Person → Stimme. Aus demselben Grund steht im Phase-A-Eintrag kein H
 Darüber läuft bei jedem Aufruf eine frisch gerechnete Konsistenzprüfung über alle Umfragen. Bei
 diesem Projekt ist das kein Komfort-Feature, sondern die Stelle, an der Manipulation auffällt.
 
+**Vollprüfung und laufende Prüfung** — die Board-Seite, das Ergebnis, der Export, `/debug` und das
+mitgelieferte Prüfwerkzeug prüfen jedes Mal *alles*: jede Hash-Verkettung und jede Token-Signatur,
+ohne Vorbedingung. Während des Abstimmens läuft eine verkürzte Variante: die Hash-Kette weiterhin
+ganz, die Signaturen nur für das, was seit der letzten Prüfung dazugekommen ist (EIP-T-051). Sonst
+prüft der Server bei der n-ten Stimme n Signaturen und wird genau dann langsam, wenn Beteiligung da
+ist. Was die Verkürzung kostet: wer eine alte Stimme fälscht **und** die Hashes dahinter neu rechnet,
+fällt nicht mehr beim nächsten Abstimmen auf, sondern erst beim nächsten vollen Durchlauf — also
+spätestens, sobald jemand die Board-Seite öffnet oder das Board selbst nachrechnet. Gegen einen
+Betreiber mit Schreibzugriff hilft ohnehin nur die externe Verankerung aus §12.
+
 ### Angriffsdemos (Admin)
 
 **Ballot-Stuffing** — der Betreiber signiert sich selbst ein Token und stimmt ab. Die Stimme läuft

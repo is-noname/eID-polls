@@ -60,6 +60,7 @@ __all__ = [
     "entries_from_export",
     "entry_hash",
     "pruefe",
+    "pruefe_weiter",
     "verify_chain",
 ]
 
@@ -157,19 +158,71 @@ def pruefe(
     landet in ``unknown_choice``. Ohne ``options`` zaehlt der Bericht nur, was
     tatsaechlich im Board steht - das ist die Sicht eines Dritten, der nur die
     Datei hat.
+
+    Diese Funktion prueft immer die ganze Kette ohne Vorbedingung. Sie ist die
+    Pruefung, auf die sich §7 beruft; ``pruefe_weiter`` ist eine Abkuerzung fuer
+    den laufenden Betrieb, kein Ersatz.
+    """
+    return _pruefe(list(entries), public_key, options, vorher=None)
+
+
+def pruefe_weiter(
+    vorher: Pruefbericht,
+    entries: Iterable[BoardEntry],
+    public_key: rsa.RSAPublicKey,
+    options: Sequence[str] | None = None,
+) -> Pruefbericht:
+    """Schreibt einen Bericht auf das gewachsene Board fort (EIP-T-051).
+
+    ``entries`` ist das **ganze** Board, nicht nur der Zuwachs. Die Hash-Kette
+    wird darueber vollstaendig neu geprueft - sie ist billig, und nur sie
+    entlarvt einen nachtraeglich umgeschriebenen Eintrag. Gespart werden die
+    Signaturpruefungen der Eintraege, die in ``vorher`` schon geprueft wurden:
+    RSASSA-PSS ueber jede Stimme bei jeder Stimme ist das quadratische Stueck.
+
+    Was das kostet, steht im Angriffsbild: wer eine alte Stimme faelscht *und*
+    die Hashes dahinter neu rechnet, faellt hier nicht mehr auf, sondern erst
+    bei der naechsten Vollpruefung (``pruefe``) - auf der Board-Seite, im
+    Pruefwerkzeug, bei jedem Dritten. Gegen einen Betreiber mit Schreibzugriff
+    hilft ohnehin nur die externe Verankerung aus §12, nicht die Haeufigkeit
+    der eigenen Pruefung.
+
+    Passt ``vorher`` nicht zum Board - kuerzer geworden, Kopf ausgetauscht -
+    laeuft die Vollpruefung. Der Aufrufer muss das nicht wissen.
     """
     entries = list(entries)
+    k = len(vorher.entries)
+    passt = len(entries) >= k and (k == 0 or entries[k - 1].entry_hash == vorher.entries[k - 1].entry_hash)
+    return _pruefe(entries, public_key, options, vorher=vorher if passt else None)
 
+
+def _pruefe(
+    entries: list[BoardEntry],
+    public_key: rsa.RSAPublicKey,
+    options: Sequence[str] | None,
+    vorher: Pruefbericht | None,
+) -> Pruefbericht:
+    """Gemeinsamer Durchlauf. Ohne ``vorher`` von vorn, sonst ab dessen Ende."""
     chain_ok, broken_at = verify_chain(entries)
-    sig_ok: bool = True
-    bad_sig_at: int | None = None
-    n_eligible = 0
-    votes: list[tuple[str, tuple[str, ...]]] = []
-    counts: dict[str, int] = {opt: 0 for opt in (options or [])}
-    unknown_choice: str | None = None
-    unlesbar: Unlesbar | None = None
+    if vorher is None:
+        ab = 0
+        sig_ok: bool = True
+        bad_sig_at: int | None = None
+        n_eligible = 0
+        votes: list[tuple[str, tuple[str, ...]]] = []
+        counts: dict[str, int] = {opt: 0 for opt in (options or [])}
+        unknown_choice: str | None = None
+        unlesbar: Unlesbar | None = None
+    else:
+        ab = len(vorher.entries)
+        sig_ok, bad_sig_at = vorher.chain.signatures_ok, vorher.chain.bad_signature_at
+        n_eligible = vorher.accounting.n_eligible
+        votes = list(vorher.votes)
+        counts = dict(vorher.counts)
+        unknown_choice = vorher.unknown_choice
+        unlesbar = vorher.unlesbar
 
-    for entry in entries:
+    for entry in entries[ab:]:
         eintrag = parse(entry)
 
         if isinstance(eintrag, Unlesbar):

@@ -35,7 +35,7 @@ import board_eintrag
 from board_eintrag import BoardEntry
 from debug import log
 from store import PollRow, Store
-from verifikation import Accounting, ChainStatus, Pruefbericht, pruefe
+from verifikation import Accounting, ChainStatus, Pruefbericht, pruefe, pruefe_weiter
 
 
 class Rejected(Exception):
@@ -57,6 +57,11 @@ __all__ = ["Accounting", "ChainStatus", "PollService", "Pruefbericht", "Rejected
 class PollService:
     def __init__(self, db_path: Path) -> None:
         self.store = Store(db_path)
+        # Letzter Bericht je Umfrage, damit der Abstimmpfad nicht bei jeder
+        # Stimme jede fruehere Signatur neu prueft (EIP-T-051). Nur eine
+        # Abkuerzung fuer den laufenden Betrieb: pruefbericht() prueft ohne
+        # Vorbedingung und setzt den Stand hier neu.
+        self._letzte_pruefung: dict[str, Pruefbericht] = {}
         self._secret = self._load_secret()
         self.cookie_key = self._load_cookie_key()
         self._key = self._load_key()
@@ -243,21 +248,50 @@ class PollService:
         return self.store.board(poll_id)
 
     def pruefbericht(self, poll_id: str) -> Pruefbericht:
-        """Ein Durchlauf ueber das Board, alle Aussagen darin (§7).
+        """Vollpruefung: ein Durchlauf ueber das ganze Board, alle Aussagen darin (§7).
 
         Bewusst mit dem *oeffentlichen* Schluessel: was hier gerechnet wird,
         rechnet ein Dritter mit verifikation.py und board.json genauso nach -
         der private Schluessel kommt in der Pruefung nicht mehr vor.
+
+        Ohne Vorbedingung und ohne Abkuerzung: jede Signatur wird geprueft,
+        auch wenn dieselbe Stimme vor einer Sekunde schon geprueft wurde. Was
+        veroeffentlicht wird - Ergebnis, Board-Seite, Export - haengt an dieser
+        Methode, nicht an der fortgeschriebenen (EIP-T-051).
         """
         poll = self.poll(poll_id)
-        return pruefe(self.store.board(poll_id), self._key.public_key(), poll.options)
+        bericht = pruefe(self.store.board(poll_id), self._key.public_key(), poll.options)
+        self._letzte_pruefung[poll_id] = bericht
+        return bericht
+
+    def laufender_bericht(self, poll_id: str) -> Pruefbericht:
+        """Bericht fuer den laufenden Betrieb - Kette ganz, Signaturen nur die neuen.
+
+        Fuer Anzeigen und die Aufsicht waehrend des Abstimmens. Die Grenzen
+        stehen bei verifikation.pruefe_weiter; wer eine Aussage
+        veroeffentlicht, nimmt pruefbericht().
+        """
+        return self._laufende_momentaufnahme(poll_id)[0]
+
+    def _laufende_momentaufnahme(self, poll_id: str) -> tuple[Pruefbericht, int, int]:
+        """(fortgeschriebener Bericht, Eligibility-Ledger, Vote-Ledger) in einem Zug."""
+        options = self.poll(poll_id).options
+        entries, db_eligible, spent = self.store.momentaufnahme(poll_id)
+        vorher = self._letzte_pruefung.get(poll_id)
+        bericht = (
+            pruefe(entries, self._key.public_key(), options)
+            if vorher is None
+            else pruefe_weiter(vorher, entries, self._key.public_key(), options)
+        )
+        self._letzte_pruefung[poll_id] = bericht
+        return bericht, db_eligible, spent
 
     def board_votes(self, poll_id: str) -> list[tuple[str, list[str]]]:
         """Stimmen so, wie sie oeffentlich im Board stehen. Jeder kann das nachrechnen."""
         return [(token, list(choices)) for token, choices in self.pruefbericht(poll_id).votes]
 
     def participation(self, poll_id: str) -> int:
-        return self.pruefbericht(poll_id).accounting.n_votes
+        return self.laufender_bericht(poll_id).accounting.n_votes
 
     def chain_status(self, poll_id: str) -> ChainStatus:
         return self.pruefbericht(poll_id).chain
@@ -295,8 +329,12 @@ class PollService:
 
     # -- Oeffentliche Abrechnung (§9) --------------------------------------
     def accounting(self, poll_id: str) -> Accounting:
-        """Beide Zahlen aus dem Board - also aus dem, was jeder Dritte sieht."""
-        return self.pruefbericht(poll_id).accounting
+        """Beide Zahlen aus dem Board - also aus dem, was jeder Dritte sieht.
+
+        Gezaehlt wird ueber das ganze Board; nur die Signaturpruefung nutzt den
+        laufenden Bericht. Die beiden Zahlen sind damit immer aktuell.
+        """
+        return self.laufender_bericht(poll_id).accounting
 
     def lookup(self, poll_id: str, token_hex: str) -> list[str] | None:
         """Individuelle Verifizierbarkeit: eigenes Token im Board finden."""
@@ -334,19 +372,18 @@ class PollService:
 
         Der Bericht darf uebergeben werden, wenn der Aufrufer das Board ohnehin
         schon geprueft hat - sonst laeuft dieselbe Pruefung ein zweites Mal.
+        Wer die Vollpruefung will, uebergibt ``pruefbericht(poll_id)``.
 
-        Ohne uebergebenen Bericht werden Board und beide Ledger in einem Zug
-        gelesen (store.momentaufnahme) und erst danach geprueft. Sonst liegen
-        die teuren Signaturpruefungen zwischen den Lesezugriffen, und eine
-        Stimme, die in genau diesem Moment dazukommt, sieht wie eine
-        Inkonsistenz aus - eine Falschmeldung im Debug-Modul, ausgerechnet an
-        der Stelle, die echte Manipulation anzeigen soll.
+        Ohne uebergebenen Bericht laeuft die laufende Pruefung: Board und beide
+        Ledger in einem Zug gelesen (store.momentaufnahme) und erst danach
+        geprueft. Sonst liegen die teuren Signaturpruefungen zwischen den
+        Lesezugriffen, und eine Stimme, die in genau diesem Moment dazukommt,
+        sieht wie eine Inkonsistenz aus - eine Falschmeldung im Debug-Modul,
+        ausgerechnet an der Stelle, die echte Manipulation anzeigen soll.
         """
         findings: list[str] = []
         if bericht is None:
-            options = self.poll(poll_id).options
-            entries, db_eligible, spent = self.store.momentaufnahme(poll_id)
-            bericht = pruefe(entries, self._key.public_key(), options)
+            bericht, db_eligible, spent = self._laufende_momentaufnahme(poll_id)
         else:
             db_eligible, spent = self.store.ledger_stand(poll_id)
 
@@ -384,4 +421,13 @@ class PollService:
         return findings
 
     def check_all(self) -> dict[str, list[str]]:
-        return {p.poll_id: self.check_consistency(p.poll_id) for p in self.polls()}
+        """Alle Umfragen, jede voll geprueft.
+
+        Das Debug-Modul ist die Stelle, an der ein Betreiber hinsieht, wenn er
+        etwas vermutet - hier waere die Abkuerzung aus dem Abstimmpfad
+        (EIP-T-051) an der falschen Stelle gespart.
+        """
+        return {
+            p.poll_id: self.check_consistency(p.poll_id, self.pruefbericht(p.poll_id))
+            for p in self.polls()
+        }

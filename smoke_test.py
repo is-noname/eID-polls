@@ -390,6 +390,76 @@ def pruefung_ohne_datenbank() -> None:
           not any(m in sys.modules["verifikation"].__dict__ for m in ("Store", "store")))
 
 
+def laufende_pruefung() -> None:
+    """Fortgeschriebene Pruefung im Abstimmpfad (EIP-T-051).
+
+    Der Abstimmpfad prueft nicht mehr jede fruehere Signatur bei jeder Stimme.
+    Die Ersparnis ist nur zulaessig, solange sie am Befund nichts aendert:
+    dieselben Zahlen wie die Vollpruefung, und eine gebrochene Kette faellt
+    weiterhin beim Abstimmen auf.
+    """
+    from debug import log as debug_log
+    from verifikation import pruefe, pruefe_weiter
+
+    poll = "laufend"
+    admin = TestClient(app)
+    admin.post("/api/admin/login", json={"token": "admin"})
+    admin.post("/api/admin/create",
+               json={"poll_id": poll, "question": "Fortlaufend?", "options": ["Ja", "Nein"]})
+
+    for i in range(5):
+        client = TestClient(app)
+        client.post("/api/auth", json={"credential": f"testperson{30 + i}"})
+        issued = get_token(client, poll)
+        if issued is None:
+            check("Laufende Pruefung: Token-Abholung", False)
+            return
+        token, sig = issued
+        client.post(f"/api/vote/{poll}",
+                    json={"token": token.hex(), "sig": sig.hex(), "choices": ["Ja" if i % 2 else "Nein"]})
+
+    # Nach fuenf Stimmen steht ein fortgeschriebener Bericht im Service. Er muss
+    # dasselbe sagen wie ein Bericht, der bei null anfaengt.
+    laufend = service.laufender_bericht(poll)
+    voll = pruefe(service.board(poll), service._key.public_key(), service.poll(poll).options)
+    check("Laufende Pruefung: fortgeschrieben wie voll geprueft",
+          (laufend.counts, laufend.accounting, laufend.votes, laufend.chain)
+          == (voll.counts, voll.accounting, voll.votes, voll.chain),
+          f"{laufend.counts} vs {voll.counts}")
+
+    # Passt der Vorbericht nicht zum Board, faellt pruefe_weiter auf die
+    # Vollpruefung zurueck - sonst wuerde ein ausgetauschtes Board mit den
+    # Zahlen des alten weitergerechnet.
+    fremd = pruefe(service.board("parallel"), service._key.public_key(), ["Ja", "Nein"])
+    zurueckgefallen = pruefe_weiter(fremd, service.board(poll), service._key.public_key(),
+                                    service.poll(poll).options)
+    check("Laufende Pruefung: fremder Vorbericht faellt auf die Vollpruefung zurueck",
+          zurueckgefallen.accounting == voll.accounting and zurueckgefallen.counts == voll.counts,
+          f"{zurueckgefallen.accounting} vs {voll.accounting}")
+
+    # Kette brechen und danach abstimmen: die Abkuerzung darf das nicht
+    # verschlucken, sonst ist die Aufsicht waehrend des Abstimmens weg.
+    # Die erste Stimme lautet "Nein" (i=0), umgeschrieben wird auf "Ja" - sonst
+    # bliebe der Payload gleich und es gaebe nichts zu entdecken.
+    vote_index = next(e.index for e in service.board(poll) if e.kind == "VOTE")
+    demo.tamper_board(service, poll, vote_index, "Ja")
+    vor_der_stimme = len(debug_log.events("inconsistency"))
+
+    client = TestClient(app)
+    client.post("/api/auth", json={"credential": "testperson35"})
+    issued = get_token(client, poll)
+    if issued is None:
+        check("Laufende Pruefung: Token nach Manipulation", False)
+        return
+    token, sig = issued
+    antwort = client.post(f"/api/vote/{poll}",
+                          json={"token": token.hex(), "sig": sig.hex(), "choices": ["Ja"]})
+    neu = [e for e in debug_log.events("inconsistency")[vor_der_stimme:] if "gebrochen" in e.message]
+    check("Laufende Pruefung: gebrochene Kette faellt beim Abstimmen auf",
+          antwort.status_code == 200 and bool(neu),
+          neu[0].message if neu else "keine Meldung im Debug-Modul")
+
+
 def pruefwerkzeug_auf_der_kommandozeile(client: TestClient) -> None:
     """Export + CLI: was ein Dritter tatsaechlich in die Hand bekommt."""
     import json
@@ -542,6 +612,7 @@ def main() -> int:
 
     parallel_participation()
     anspruch_atomar()
+    laufende_pruefung()
     demo_schalter()
 
     # Angriff 1 - Ballot-Stuffing wird von der Abrechnung entlarvt

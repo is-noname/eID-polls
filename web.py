@@ -227,14 +227,15 @@ def page(request: Request, template: str, status_code: int = 200, **context: Any
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
     service = deps(request).service
-    polls = service.polls()
+    # Ein Bericht je Umfrage: Beteiligung und Abrechnung kommen aus demselben
+    # Durchlauf, nicht aus zwei (EIP-T-051).
     rows = [
         {
             "poll": p,
-            "participation": service.participation(p.poll_id),
-            "accounting": service.accounting(p.poll_id),
+            "participation": bericht.accounting.n_votes,
+            "accounting": bericht.accounting,
         }
-        for p in polls
+        for p, bericht in ((p, service.laufender_bericht(p.poll_id)) for p in service.polls())
     ]
     return page(request, "index.html", rows=rows)
 
@@ -455,12 +456,12 @@ async def api_board(request: Request, poll_id: str) -> JSONResponse:
 async def api_status(request: Request, poll_id: str) -> JSONResponse:
     service = deps(request).service
     poll = service.poll(poll_id)
-    accounting = service.accounting(poll_id)
+    accounting = service.laufender_bericht(poll_id).accounting
     return JSONResponse(
         {
             "poll": poll.poll_id,
             "closed": poll.closed,
-            "participation": service.participation(poll_id),
+            "participation": accounting.n_votes,
             "n_eligible": accounting.n_eligible,
             "accounting_ok": accounting.ok,
         }
