@@ -58,10 +58,13 @@ Identität ebenfalls — die Abwehr greift auf beiden Ebenen (Pseudonym in Phase
 | `auth.py` | `Authenticator.authenticate() -> pseudonym`. `CodeAuthenticator` aktiv (Zugangscode statt geprüftem Ausweis), `SamlEidAuthenticator` ist die leere Hülle für den echten Flow (§5). |
 | `blind.py` | RSA-Blindsignatur nach RFC 9474, Serverseite. Abweichung von §4 dokumentiert (siehe unten). |
 | `static/blind.js` | Dieselbe Krypto im Browser. Muss dort liegen, sonst gibt es kein Wahlgeheimnis gegen den Betreiber. |
+| `static/ballot.js` | Der Stimmzettel-Flow: Token erzeugen, verblinden, signieren lassen, entblinden, abgeben — samt Zwischenstand nach Abbruch (EIP-ADR-20260725-002). Zusammen mit `blind.js` die vollständige Client-Strecke. |
+| `static/beleg.js` | Der Beleg: Kassenbon, QR-Code, Textdatei. Reine Darstellung, kein Krypto. |
 | `store.py` | SQLite: Eligibility-Ledger, Vote-Ledger, Board-Hash-Kette. Board-Payloads als kanonisches JSON. |
 | `poll_service.py` | Kern aus `PROTOTYPE_two-ledger/poll_logic.py`, Board als einzige Auszählungsquelle. |
+| `demo.py` | Angriffsdemos (§9): Stimme einschleusen, Board-Eintrag umschreiben, Testzugang zurücksetzen. Liegt außerhalb des Kerns und wird nur eingehängt, wenn `Settings.demos` gesetzt ist — lokal an, öffentlich nur mit `EIDPOLL_DEMOS=1`. |
 | `debug.py` + `/debug` | Fehler, Abweisungen, Inkonsistenzen in Echtzeit. Nur mit Admin-Anmeldung. |
-| `web.py` | Seiten und JSON-API. |
+| `web.py` | Seiten und JSON-API. `create_app(store_path, authenticator, settings)` baut eine Instanz; der Authenticator-Tausch ist damit ein Argument, kein Eingriff. `web:app` bleibt der uvicorn-Einstieg. |
 | `static/app.css` | Ein Stylesheet, zwei Dichten: Teilnehmerseiten luftig (16 px, große Klickflächen), Admin und Debug kompakt über `body.dense`. Hell ist die Voreinstellung; `html[data-theme="dark"]` trägt die dunkle Umschaltung. |
 
 ## Was geprüft ist
@@ -70,15 +73,18 @@ Identität ebenfalls — die Abwehr greift auf beiden Ebenen (Pseudonym in Phase
 python3 app/blind.py         # Krypto-Roundtrip (RFC 9474)
 python3 app/smoke_test.py    # sieben Abnahmepunkte, beide Angriffe, Zugangsschutz,
                              # zehn gleichzeitige Teilnahmen
+node app/ballot_test.mjs     # Stimmzettel-Flow gegen einen gestellten Server,
+                             # ohne Browser: Zwischenstand nach Abbruch (ADR-002)
 
 # im echten Browser (braucht Playwright und eine leere Datenbank):
 cd app && EIDPOLL_DB=/tmp/bt.sqlite3 python3 -m uvicorn web:app --port 8899 &
 python3 app/browser_test.py
 ```
 
-`browser_test.py` ist der wichtigere der beiden: nur dort zeigt sich, ob `static/blind.js`
+`browser_test.py` ist der wichtigste der drei: nur dort zeigt sich, ob `static/blind.js`
 bitgleich zu `blind.py` rechnet. Weicht es ab, weist der Server die Stimme als „Token-Signatur
-ungültig" ab. Beide Tests laufen grün.
+ungültig" ab. `ballot_test.mjs` deckt das ausdrücklich **nicht** ab — dort ist die Signatur eine
+Attrappe, geprüft wird der Zustandsverlauf. Alle drei laufen grün.
 
 ## Bewusste Abweichungen und Grenzen
 

@@ -13,53 +13,101 @@ Was das aendert (jeweils begruendet an der Verwendungsstelle):
   - Cookies nur ueber HTTPS
   - Fehlermeldungen ohne Innenleben nach aussen
   - Demo-Umfrage wird beim Start angelegt, damit die Instanz nie leer ist
+  - Angriffsdemos (demo.py) sind nicht verdrahtet, ausser EIDPOLL_DEMOS=1
+
+Gelesen wird die Umgebung nur in ``Settings.from_env()``. Ueberall sonst reicht
+ein ``Settings``-Objekt herum (EIP-T-048): Ein Test, der eine oeffentliche
+Instanz pruefen will, baut sie sich, statt vor dem Import an os.environ zu
+drehen - und beim Import dieses Moduls entsteht kein Zufallstoken als
+Nebenwirkung.
 """
 
 from __future__ import annotations
 
 import os
 import secrets
+from dataclasses import dataclass, field
+
+DEFAULT_QUESTION = "Sollte der Online-Ausweis fuer verbindliche Buergerbefragungen genutzt werden?"
+
 
 def _flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-PUBLIC = _flag("EIDPOLL_PUBLIC")
+@dataclass(frozen=True)
+class Settings:
+    """Alles, was der Betriebsmodus an der App verstellt."""
 
-# Voreinstellung "admin" gab es, solange nur 127.0.0.1 zuhoerte. Im Netz waere
-# ein Standardwert keine Zugangskontrolle, sondern eine oeffentliche Tuer - und
-# ein Start, der einfach durchlaeuft, verdeckt genau das. Ohne gesetzte
-# Variable wird deshalb ein zufaelliges Token erzeugt und einmal ins
-# Startprotokoll geschrieben: nicht ratbar, und der Betreiber kommt ueber die
-# Logs der Plattform trotzdem heran.
-ADMIN_TOKEN = os.environ.get("EIDPOLL_ADMIN_TOKEN", "").strip()
-ADMIN_TOKEN_GENERATED = not ADMIN_TOKEN
-if ADMIN_TOKEN_GENERATED:
-    ADMIN_TOKEN = secrets.token_urlsafe(12)
+    public: bool = False
+    admin_token: str = "admin"
+    # Ob das Token erzeugt wurde, entscheidet nur ueber das Startprotokoll -
+    # ein uebergebenes Token gehoert dort nicht hinein.
+    admin_token_generated: bool = False
+    # Angriffsdemos aus demo.py (§9): Board umschreiben, Stimme einschleusen,
+    # Testzugang zuruecksetzen. Lokal an - dort ist das Ausprobieren der Zweck.
+    # Oeffentlich aus, solange es niemand ausdruecklich einschaltet: Wer das
+    # Admin-Token hat, koennte sonst das Board einer erreichbaren Instanz
+    # zerschreiben. Die Vorfuehrinstanz setzt EIDPOLL_DEMOS=1 (DEPLOY.md).
+    #
+    # ``None`` heisst "wie der Betriebsmodus es will" und wird unten aufgeloest.
+    # Ein fester Vorgabewert waere hier die falsche Sicherung: Eine oeffentliche
+    # Instanz, die jemand direkt zusammenbaut (Tests, eigener Einstiegspunkt),
+    # haette die Demos sonst still an.
+    demos: bool | None = None
+    seed_demo: bool = False
+    seed_poll_id: str = "demo"
+    seed_question: str = DEFAULT_QUESTION
+    seed_options: list[str] = field(default_factory=lambda: ["Ja", "Nein", "Unentschieden"])
 
-# Demo-Umfrage beim Start, wenn noch keine existiert. Auf Gratis-Hosting ohne
-# persistente Platte ist die Datenbank nach jedem Neustart leer - ohne das hier
-# stuende ein Besucher vor einer leeren Startseite und koennte nichts probieren.
-SEED_DEMO = _flag("EIDPOLL_SEED_DEMO") or PUBLIC
+    def __post_init__(self) -> None:
+        if self.demos is None:
+            # frozen=True: der einzige Weg, den aufgeloesten Wert zu setzen.
+            object.__setattr__(self, "demos", not self.public)
 
-SEED_POLL_ID = os.environ.get("EIDPOLL_SEED_POLL_ID", "demo")
-SEED_QUESTION = os.environ.get(
-    "EIDPOLL_SEED_QUESTION",
-    "Sollte der Online-Ausweis fuer verbindliche Buergerbefragungen genutzt werden?",
-)
-SEED_OPTIONS = [
-    o.strip()
-    for o in os.environ.get("EIDPOLL_SEED_OPTIONS", "Ja,Nein,Unentschieden").split(",")
-    if o.strip()
-]
+    @classmethod
+    def from_env(cls) -> "Settings":
+        public = _flag("EIDPOLL_PUBLIC")
 
+        # Voreinstellung "admin" gab es, solange nur 127.0.0.1 zuhoerte. Im Netz
+        # waere ein Standardwert keine Zugangskontrolle, sondern eine
+        # oeffentliche Tuer - und ein Start, der einfach durchlaeuft, verdeckt
+        # genau das. Ohne gesetzte Variable wird deshalb ein zufaelliges Token
+        # erzeugt und einmal ins Startprotokoll geschrieben: nicht ratbar, und
+        # der Betreiber kommt ueber die Logs der Plattform trotzdem heran.
+        admin_token = os.environ.get("EIDPOLL_ADMIN_TOKEN", "").strip()
+        generated = not admin_token
+        if generated:
+            admin_token = secrets.token_urlsafe(12)
 
-def startup_banner() -> list[str]:
-    """Zeilen fuers Startprotokoll - das Admin-Token erscheint hier genau einmal."""
-    lines = [f"Betriebsmodus: {'oeffentlich (EIDPOLL_PUBLIC=1)' if PUBLIC else 'lokal'}"]
-    if ADMIN_TOKEN_GENERATED:
-        lines.append(f"Admin-Token (zufaellig erzeugt, nur in diesem Log): {ADMIN_TOKEN}")
-        lines.append("Dauerhaft setzen: EIDPOLL_ADMIN_TOKEN=<eigenes-token>")
-    else:
-        lines.append("Admin-Token: aus EIDPOLL_ADMIN_TOKEN uebernommen")
-    return lines
+        return cls(
+            public=public,
+            admin_token=admin_token,
+            admin_token_generated=generated,
+            demos=True if _flag("EIDPOLL_DEMOS") else None,
+            # Demo-Umfrage beim Start, wenn noch keine existiert. Auf
+            # Gratis-Hosting ohne persistente Platte ist die Datenbank nach
+            # jedem Neustart leer - ohne das hier stuende ein Besucher vor einer
+            # leeren Startseite und koennte nichts probieren.
+            seed_demo=_flag("EIDPOLL_SEED_DEMO") or public,
+            seed_poll_id=os.environ.get("EIDPOLL_SEED_POLL_ID", "demo"),
+            seed_question=os.environ.get("EIDPOLL_SEED_QUESTION", DEFAULT_QUESTION),
+            seed_options=[
+                o.strip()
+                for o in os.environ.get("EIDPOLL_SEED_OPTIONS", "Ja,Nein,Unentschieden").split(",")
+                if o.strip()
+            ],
+        )
+
+    def startup_banner(self) -> list[str]:
+        """Zeilen fuers Startprotokoll - das Admin-Token erscheint hier genau einmal."""
+        lines = [f"Betriebsmodus: {'oeffentlich (EIDPOLL_PUBLIC=1)' if self.public else 'lokal'}"]
+        if self.admin_token_generated:
+            lines.append(f"Admin-Token (zufaellig erzeugt, nur in diesem Log): {self.admin_token}")
+            lines.append("Dauerhaft setzen: EIDPOLL_ADMIN_TOKEN=<eigenes-token>")
+        else:
+            lines.append("Admin-Token: aus EIDPOLL_ADMIN_TOKEN uebernommen")
+        lines.append(
+            "Angriffsdemos (§9): " + ("verdrahtet" if self.demos else "nicht verdrahtet")
+        )
+        return lines

@@ -5,6 +5,12 @@ verlaesst ihn nur zweimal - verblindet in Phase A und zusammen mit der Stimme in
 Phase B. Der Server sieht ihn dazwischen nie. Das Blinding liegt deshalb in
 static/blind.js und nicht hier; serverseitiges "Blinding" waere kein
 Wahlgeheimnis gegen den Betreiber, sondern nur eine Behauptung.
+
+Gebaut wird die App von ``create_app(store_path, authenticator, settings)``
+(EIP-T-048). Der Authenticator ist der Seam aus auth.py, an dem der Stub gegen
+den echten SAML-SP getauscht wird - das muss ein Komponieren sein und kein
+Eingriff in diese Datei. Die Routen halten deshalb nichts fest, sondern lesen
+ihre Abhaengigkeiten ueber ``deps(request)`` aus dem App-Zustand.
 """
 
 from __future__ import annotations
@@ -13,28 +19,42 @@ import hashlib
 import hmac
 import os
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncIterator
 
 import markdown
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-import config
-from auth import AuthError, CodeAuthenticator
+from auth import AuthError, Authenticator, CodeAuthenticator
+from config import Settings
 from debug import log
 from poll_service import PollService, Rejected
 
 BASE_DIR = Path(__file__).parent
-DB_PATH = Path(os.environ.get("EIDPOLL_DB", BASE_DIR / "data" / "eidpoll.sqlite3"))
-ADMIN_TOKEN = config.ADMIN_TOKEN
 
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-service = PollService(DB_PATH)
-authenticator = CodeAuthenticator()
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+router = APIRouter()
+
+SESSION_COOKIE = "eidpoll_session"
+ADMIN_COOKIE = "eidpoll_admin"
+
+
+@dataclass(frozen=True)
+class Deps:
+    """Was eine laufende Instanz ausmacht - je Instanz einmal, nicht je Modul."""
+
+    service: PollService
+    authenticator: Authenticator
+    settings: Settings
+    templates: Jinja2Templates
+
+
+def deps(request: Request) -> Deps:
+    return request.app.state.deps
+
 
 class RevalidatingStatics(StaticFiles):
     """Statische Dateien immer revalidieren lassen.
@@ -53,26 +73,58 @@ class RevalidatingStatics(StaticFiles):
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    for line in config.startup_banner():
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    d: Deps = app.state.deps
+    for line in d.settings.startup_banner():
         log.info("system", line)
         print(f"[eidpoll] {line}", flush=True)
     # Ohne persistente Platte (Gratis-Hosting) ist die Datenbank nach jedem
     # Neustart leer. Eine leere Startseite waere fuer einen Besucher nicht von
     # einer kaputten Instanz zu unterscheiden.
-    if config.SEED_DEMO and not service.polls():
+    if d.settings.seed_demo and not d.service.polls():
         try:
-            service.create_poll(config.SEED_POLL_ID, config.SEED_QUESTION, config.SEED_OPTIONS)
+            d.service.create_poll(
+                d.settings.seed_poll_id, d.settings.seed_question, d.settings.seed_options
+            )
         except Rejected as exc:
             log.reject("system", f"Demo-Umfrage nicht angelegt: {exc}")
     yield
 
 
-app = FastAPI(title="eID-Umfrage", docs_url=None, redoc_url=None, lifespan=lifespan)
-app.mount("/static", RevalidatingStatics(directory=str(BASE_DIR / "static")), name="static")
+def create_app(
+    store_path: Path,
+    authenticator: Authenticator | None = None,
+    settings: Settings | None = None,
+) -> FastAPI:
+    """Baut eine eigenstaendige Instanz.
 
-SESSION_COOKIE = "eidpoll_session"
-ADMIN_COOKIE = "eidpoll_admin"
+    Alles, was die Instanz von einer anderen unterscheidet, steht in der
+    Signatur: wo die Datenbank liegt, wie authentifiziert wird, in welchem
+    Betriebsmodus sie laeuft. ``SamlEidAuthenticator`` einzusetzen heisst
+    deshalb, ihn hier zu uebergeben - ohne Aenderung an dieser Datei.
+    """
+    store_path.parent.mkdir(parents=True, exist_ok=True)
+    app = FastAPI(title="eID-Umfrage", docs_url=None, redoc_url=None, lifespan=lifespan)
+    app.state.deps = Deps(
+        service=PollService(store_path),
+        authenticator=authenticator if authenticator is not None else CodeAuthenticator(),
+        settings=settings if settings is not None else Settings.from_env(),
+        templates=Jinja2Templates(directory=str(BASE_DIR / "templates")),
+    )
+    app.mount("/static", RevalidatingStatics(directory=str(BASE_DIR / "static")), name="static")
+    app.add_exception_handler(Rejected, _rejected_handler)
+    app.add_exception_handler(AuthError, _auth_handler)
+    app.add_exception_handler(Exception, _error_handler)
+    app.include_router(router)
+    # Angriffsdemos (§9) haengen an einem eigenen Schalter und sind kein Teil
+    # der Anwendung: Sie schreiben an ihr vorbei in die Datenbank (demo.py).
+    # Der Import steht hier und nicht oben, weil die Richtung so herum gilt -
+    # demo.py kennt web.py, nicht umgekehrt.
+    if app.state.deps.settings.demos:
+        import demo
+
+        app.include_router(demo.router)
+    return app
 
 
 # ---------------------------------------------------------------------------
@@ -80,24 +132,26 @@ ADMIN_COOKIE = "eidpoll_admin"
 # ---------------------------------------------------------------------------
 
 
-def _sign(value: str) -> str:
-    mac = hmac.new(service.voter_key("cookie", "session").encode(), value.encode(), hashlib.sha256)
+def _sign(request: Request, value: str) -> str:
+    # Eigener Cookie-Schluessel, nicht die Pseudonym-Ableitung (EIP-T-048).
+    key = deps(request).service.cookie_key
+    mac = hmac.new(key, value.encode(), hashlib.sha256)
     return f"{value}.{mac.hexdigest()[:32]}"
 
 
-def _unsign(signed: str | None) -> str | None:
+def _unsign(request: Request, signed: str | None) -> str | None:
     if not signed or "." not in signed:
         return None
     value, _, mac = signed.rpartition(".")
-    return value if hmac.compare_digest(_sign(value), f"{value}.{mac}") else None
+    return value if hmac.compare_digest(_sign(request, value), f"{value}.{mac}") else None
 
 
 def current_pseudonym(request: Request) -> str | None:
-    return _unsign(request.cookies.get(SESSION_COOKIE))
+    return _unsign(request, request.cookies.get(SESSION_COOKIE))
 
 
 def is_admin(request: Request) -> bool:
-    return _unsign(request.cookies.get(ADMIN_COOKIE)) == "admin"
+    return _unsign(request, request.cookies.get(ADMIN_COOKIE)) == "admin"
 
 
 LOCAL_HOSTS = {"127.0.0.1", "::1"}
@@ -111,12 +165,12 @@ def is_local(request: Request) -> bool:
     (Beenden, Admin-Link) waeren dann an eine Angabe geknuepft, die der Proxy
     setzt statt der Bediener.
     """
-    if config.PUBLIC:
+    if deps(request).settings.public:
         return False
     return request.client is not None and request.client.host in LOCAL_HOSTS
 
 
-def _require_admin(request: Request) -> None:
+def require_admin(request: Request) -> None:
     if not is_admin(request):
         raise Rejected(
             "Dieser Bereich ist dem Betreiber der Umfrage vorbehalten. "
@@ -130,39 +184,39 @@ def _require_admin(request: Request) -> None:
 # ---------------------------------------------------------------------------
 
 
-@app.exception_handler(Rejected)
-async def _rejected_handler(request: Request, exc: Rejected) -> HTMLResponse | JSONResponse:
+async def _rejected_handler(request: Request, exc: Exception) -> HTMLResponse | JSONResponse:
     log.reject("abgewiesen", str(exc), pfad=request.url.path)
     if request.url.path.startswith("/api/"):
         return JSONResponse({"error": str(exc)}, status_code=400)
-    return page(request, "error.html", status_code=exc.status_code, message=str(exc))
+    status = getattr(exc, "status_code", 400)
+    return page(request, "error.html", status_code=status, message=str(exc))
 
 
-@app.exception_handler(AuthError)
-async def _auth_handler(request: Request, exc: AuthError) -> JSONResponse:
+async def _auth_handler(request: Request, exc: Exception) -> JSONResponse:
     log.reject("auth", str(exc), pfad=request.url.path)
     return JSONResponse({"error": str(exc)}, status_code=400)
 
 
-@app.exception_handler(Exception)
 async def _error_handler(request: Request, exc: Exception) -> JSONResponse:
     # Der Wortlaut einer Ausnahme traegt Pfade, SQL und Feldnamen nach aussen.
     # Lokal ist das die schnellste Diagnose, oeffentlich eine Auskunft ueber den
     # Server an Unbeteiligte - der Text bleibt dann im Debug-Modul.
     log.exception(f"unerwartet {request.url.path}", exc)
-    detail = "Interner Fehler." if config.PUBLIC else f"Interner Fehler: {exc}"
+    detail = "Interner Fehler." if deps(request).settings.public else f"Interner Fehler: {exc}"
     return JSONResponse({"error": detail}, status_code=500)
 
 
 def page(request: Request, template: str, status_code: int = 200, **context: Any) -> HTMLResponse:
+    d = deps(request)
     context.setdefault("pseudonym", current_pseudonym(request))
     context.setdefault("admin", is_admin(request))
-    context.setdefault("authenticator", authenticator)
+    context.setdefault("authenticator", d.authenticator)
     context.setdefault("debug_counts", log.counts())
     context.setdefault("is_local", is_local(request))
-    context.setdefault("public", config.PUBLIC)
-    context.setdefault("demo_codes", authenticator.sample_codes())
-    return templates.TemplateResponse(request, template, context, status_code=status_code)
+    context.setdefault("public", d.settings.public)
+    context.setdefault("demos", d.settings.demos)
+    context.setdefault("demo_codes", d.authenticator.sample_codes())
+    return d.templates.TemplateResponse(request, template, context, status_code=status_code)
 
 
 # ---------------------------------------------------------------------------
@@ -170,8 +224,9 @@ def page(request: Request, template: str, status_code: int = 200, **context: Any
 # ---------------------------------------------------------------------------
 
 
-@app.get("/", response_class=HTMLResponse)
+@router.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
+    service = deps(request).service
     polls = service.polls()
     rows = [
         {
@@ -184,8 +239,9 @@ async def index(request: Request) -> HTMLResponse:
     return page(request, "index.html", rows=rows)
 
 
-@app.get("/poll/{poll_id}", response_class=HTMLResponse)
+@router.get("/poll/{poll_id}", response_class=HTMLResponse)
 async def poll_page(request: Request, poll_id: str) -> HTMLResponse:
+    service = deps(request).service
     poll = service.poll(poll_id)
     return page(
         request,
@@ -197,8 +253,9 @@ async def poll_page(request: Request, poll_id: str) -> HTMLResponse:
     )
 
 
-@app.get("/board/{poll_id}", response_class=HTMLResponse)
+@router.get("/board/{poll_id}", response_class=HTMLResponse)
 async def board_page(request: Request, poll_id: str) -> HTMLResponse:
+    service = deps(request).service
     poll = service.poll(poll_id)
     # Ein Pruefbericht fuer die ganze Seite: Kette, Signaturen, Abrechnung,
     # Auszaehlung und die Eintraege selbst kommen aus demselben Durchlauf.
@@ -224,8 +281,9 @@ async def board_page(request: Request, poll_id: str) -> HTMLResponse:
     )
 
 
-@app.get("/verify", response_class=HTMLResponse)
+@router.get("/verify", response_class=HTMLResponse)
 async def verify_page(request: Request, poll: str = "", token: str = "") -> HTMLResponse:
+    service = deps(request).service
     found: list[str] | None = None
     searched = bool(poll and token)
     if searched:
@@ -243,12 +301,13 @@ async def verify_page(request: Request, poll: str = "", token: str = "") -> HTML
     )
 
 
-@app.get("/debug", response_class=HTMLResponse)
+@router.get("/debug", response_class=HTMLResponse)
 async def debug_page(request: Request, level: str = "all") -> HTMLResponse:
     # Das Debug-Log stellt Phase-A- und Phase-B-Ereignisse mit Zeitstempel
     # nebeneinander. Wer beides sieht, kann ueber die Zeit korrelieren - genau
     # die Zuordnung, die das Verfahren verhindern soll (EIP-T-018).
-    _require_admin(request)
+    require_admin(request)
+    service = deps(request).service
     findings = service.check_all()
     return page(
         request,
@@ -296,14 +355,14 @@ def manifest_html() -> str:
     return _manifest_cache[1]
 
 
-@app.get("/manifest", response_class=HTMLResponse)
+@router.get("/manifest", response_class=HTMLResponse)
 async def manifest_page(request: Request) -> HTMLResponse:
     return page(request, "manifest.html", manifest=manifest_html())
 
 
-@app.get("/admin", response_class=HTMLResponse)
+@router.get("/admin", response_class=HTMLResponse)
 async def admin_page(request: Request) -> HTMLResponse:
-    return page(request, "admin.html", polls=service.polls())
+    return page(request, "admin.html", polls=deps(request).service.polls())
 
 
 # ---------------------------------------------------------------------------
@@ -311,24 +370,29 @@ async def admin_page(request: Request) -> HTMLResponse:
 # ---------------------------------------------------------------------------
 
 
-@app.post("/api/auth")
-async def api_auth(payload: dict) -> JSONResponse:
-    pseudonym = authenticator.authenticate(str(payload.get("credential", "")))
-    log.info("auth", f"Authentifiziert ueber: {authenticator.name}")
-    response = JSONResponse({"ok": True, "real_identity": authenticator.is_real_identity})
+@router.post("/api/auth")
+async def api_auth(request: Request, payload: dict) -> JSONResponse:
+    d = deps(request)
+    pseudonym = d.authenticator.authenticate(str(payload.get("credential", "")))
+    log.info("auth", f"Authentifiziert ueber: {d.authenticator.name}")
+    response = JSONResponse({"ok": True, "real_identity": d.authenticator.is_real_identity})
     response.set_cookie(
-        SESSION_COOKIE, _sign(pseudonym), httponly=True, samesite="lax", secure=config.PUBLIC
+        SESSION_COOKIE,
+        _sign(request, pseudonym),
+        httponly=True,
+        samesite="lax",
+        secure=d.settings.public,
     )
     return response
 
 
-@app.post("/api/auth/abort")
+@router.post("/api/auth/abort")
 async def api_auth_abort() -> JSONResponse:
     log.reject("auth", "Dialog 'Ausweis auslesen' abgebrochen.")
     return JSONResponse({"ok": True})
 
 
-@app.post("/api/logout")
+@router.post("/api/logout")
 async def api_logout() -> JSONResponse:
     response = JSONResponse({"ok": True})
     response.delete_cookie(SESSION_COOKIE)
@@ -340,7 +404,7 @@ async def api_logout() -> JSONResponse:
 # ---------------------------------------------------------------------------
 
 
-@app.post("/api/token/{poll_id}")
+@router.post("/api/token/{poll_id}")
 async def api_token(request: Request, poll_id: str, payload: dict) -> JSONResponse:
     pseudonym = current_pseudonym(request)
     if pseudonym is None:
@@ -349,12 +413,13 @@ async def api_token(request: Request, poll_id: str, payload: dict) -> JSONRespon
         blinded = bytes.fromhex(str(payload.get("blinded", "")))
     except ValueError as exc:
         raise Rejected("Verblindete Anfrage ist kein Hex.") from exc
-    blind_sig = service.issue_blind_signature(poll_id, pseudonym, blinded)
+    blind_sig = deps(request).service.issue_blind_signature(poll_id, pseudonym, blinded)
     return JSONResponse({"blind_sig": blind_sig.hex()})
 
 
-@app.post("/api/vote/{poll_id}")
-async def api_vote(poll_id: str, payload: dict) -> JSONResponse:
+@router.post("/api/vote/{poll_id}")
+async def api_vote(request: Request, poll_id: str, payload: dict) -> JSONResponse:
+    service = deps(request).service
     try:
         token = bytes.fromhex(str(payload.get("token", "")))
         sig = bytes.fromhex(str(payload.get("sig", "")))
@@ -373,8 +438,8 @@ async def api_vote(poll_id: str, payload: dict) -> JSONResponse:
     )
 
 
-@app.get("/api/board/{poll_id}")
-async def api_board(poll_id: str) -> JSONResponse:
+@router.get("/api/board/{poll_id}")
+async def api_board(request: Request, poll_id: str) -> JSONResponse:
     """Das Board als Datei - Grundlage der Pruefung durch Dritte (§7).
 
     Zusammen mit verifikation.py rechnet damit jeder das Ergebnis nach, ohne
@@ -383,11 +448,12 @@ async def api_board(poll_id: str) -> JSONResponse:
         curl -sO http://.../api/board/{poll_id}
         python3 verifikation.py board.json
     """
-    return JSONResponse(service.board_export(poll_id))
+    return JSONResponse(deps(request).service.board_export(poll_id))
 
 
-@app.get("/api/status/{poll_id}")
-async def api_status(poll_id: str) -> JSONResponse:
+@router.get("/api/status/{poll_id}")
+async def api_status(request: Request, poll_id: str) -> JSONResponse:
+    service = deps(request).service
     poll = service.poll(poll_id)
     accounting = service.accounting(poll_id)
     return JSONResponse(
@@ -406,71 +472,51 @@ async def api_status(poll_id: str) -> JSONResponse:
 # ---------------------------------------------------------------------------
 
 
-@app.post("/api/admin/login")
-async def api_admin_login(payload: dict) -> JSONResponse:
-    if not hmac.compare_digest(str(payload.get("token", "")), ADMIN_TOKEN):
+@router.post("/api/admin/login")
+async def api_admin_login(request: Request, payload: dict) -> JSONResponse:
+    settings = deps(request).settings
+    if not hmac.compare_digest(str(payload.get("token", "")), settings.admin_token):
         raise Rejected("Admin-Token falsch.")
     response = JSONResponse({"ok": True})
     # secure=True nur oeffentlich: lokal laeuft die App ueber http, dort wuerde
     # das Flag das Cookie verwerfen und die Anmeldung unmoeglich machen.
     response.set_cookie(
-        ADMIN_COOKIE, _sign("admin"), httponly=True, samesite="lax", secure=config.PUBLIC
+        ADMIN_COOKIE,
+        _sign(request, "admin"),
+        httponly=True,
+        samesite="lax",
+        secure=settings.public,
     )
     return response
 
 
-@app.post("/api/admin/create")
+@router.post("/api/admin/create")
 async def api_admin_create(request: Request, payload: dict) -> JSONResponse:
-    _require_admin(request)
+    require_admin(request)
     options = [str(o) for o in payload.get("options", [])]
-    poll = service.create_poll(str(payload.get("poll_id", "")), str(payload.get("question", "")), options)
+    poll = deps(request).service.create_poll(
+        str(payload.get("poll_id", "")), str(payload.get("question", "")), options
+    )
     return JSONResponse({"ok": True, "poll_id": poll.poll_id})
 
 
-@app.post("/api/admin/close/{poll_id}")
+@router.post("/api/admin/close/{poll_id}")
 async def api_admin_close(request: Request, poll_id: str) -> JSONResponse:
-    _require_admin(request)
-    service.close_poll(poll_id)
+    require_admin(request)
+    deps(request).service.close_poll(poll_id)
     return JSONResponse({"ok": True})
 
 
-@app.post("/api/admin/reset/{poll_id}")
-async def api_admin_reset(request: Request, poll_id: str, payload: dict) -> JSONResponse:
-    """Testbetrieb: eigene Sperre nach Token-Abholung aufheben (EIP-Reset).
-
-    Nimmt denselben Zugangscode wie /api/auth, um das Pseudonym zu bilden -
-    im echten eID-Verfahren gaebe es diesen Weg nicht (§6, dauerhafte Sperre).
-    """
-    _require_admin(request)
-    pseudonym = authenticator.authenticate(str(payload.get("credential", "")))
-    removed = service.reset_eligibility(poll_id, pseudonym)
-    return JSONResponse({"ok": True, "removed": removed})
-
-
-@app.post("/api/admin/demo/tamper/{poll_id}")
-async def api_admin_tamper(request: Request, poll_id: str, payload: dict) -> JSONResponse:
-    _require_admin(request)
-    service.demo_tamper_board(poll_id, int(payload.get("index", -1)), str(payload.get("choice", "")))
-    return JSONResponse({"ok": True})
-
-
-@app.post("/api/admin/demo/stuff/{poll_id}")
-async def api_admin_stuff(request: Request, poll_id: str, payload: dict) -> JSONResponse:
-    _require_admin(request)
-    service.demo_stuff_ballot(poll_id, str(payload.get("choice", "")))
-    return JSONResponse({"ok": True})
-
-
-@app.post("/api/debug/clear")
+@router.post("/api/debug/clear")
 async def api_debug_clear(request: Request) -> JSONResponse:
     # Das Log ist die Stelle, an der Manipulation auffaellt - Leeren darf nicht
     # jedes Netzgeraet koennen (EIP-T-018).
-    _require_admin(request)
+    require_admin(request)
     log.clear()
     return JSONResponse({"ok": True})
 
 
-@app.post("/api/shutdown")
+@router.post("/api/shutdown")
 async def api_shutdown(request: Request) -> JSONResponse:
     """Beenden-Knopf - damit kein Terminal haengen bleibt.
 
@@ -479,10 +525,38 @@ async def api_shutdown(request: Request) -> JSONResponse:
     es den Weg gar nicht - dort beendet die Plattform den Prozess, und eine
     erreichbare Abschaltroute waere nur eine Angriffsflaeche.
     """
-    if config.PUBLIC:
+    if deps(request).settings.public:
         raise Rejected("Diese Instanz wird von der Plattform verwaltet.", status_code=404)
     if not is_local(request):
         raise Rejected("Beenden ist nur auf dem Rechner moeglich, auf dem die App laeuft.")
     log.info("system", "Server wird beendet (Beenden-Knopf).")
     os.kill(os.getpid(), 15)
     return JSONResponse({"ok": True})
+
+
+def app_from_env() -> FastAPI:
+    """Die Instanz, wie sie aus Umgebungsvariablen hervorgeht (uvicorn-Start)."""
+    return create_app(
+        store_path=Path(os.environ.get("EIDPOLL_DB", BASE_DIR / "data" / "eidpoll.sqlite3")),
+        authenticator=CodeAuthenticator(),
+        settings=Settings.from_env(),
+    )
+
+
+_app: FastAPI | None = None
+
+
+def __getattr__(name: str) -> Any:
+    """``web:app`` bleibt der Einstieg fuer uvicorn - aber erst beim Zugriff.
+
+    Wuerde die Instanz beim Import entstehen, haette schon `import web` eine
+    Datenbank angelegt und ein Admin-Token erzeugt. Ein Test, der sich seine
+    eigene Instanz baut (EIP-T-048), bekaeme daneben still eine zweite auf dem
+    Standardpfad.
+    """
+    if name == "app":
+        global _app
+        if _app is None:
+            _app = app_from_env()
+        return _app
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

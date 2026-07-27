@@ -210,18 +210,6 @@ class Store:
                 self._conn.rollback()  # kein Board-Eintrag, kein Anspruch
                 raise
 
-    def remove_eligibility(self, poll_id: str, voter_key: str) -> bool:
-        """Nur fuer den Testbetrieb (EIP-Reset): Eligibility-Eintrag loeschen,
-        damit derselbe Testcode erneut ein Token abholen kann. Im echten
-        eID-Verfahren gibt es diesen Weg nicht - dort ist die Sperre nach dem
-        ersten Token endgueltig gewollt (§6)."""
-        with self._lock:
-            cur = self._conn.execute(
-                "DELETE FROM eligibility WHERE poll_id = ? AND voter_key = ?", (poll_id, voter_key)
-            )
-            self._conn.commit()
-            return cur.rowcount > 0
-
     # -- Vote-Ledger: ein Token, eine Stimme (§9) --------------------------
     def verbrauche_token(
         self, poll_id: str, token_hex: str, eintrag: dict[str, Any]
@@ -309,13 +297,3 @@ class Store:
             )
             self._conn.commit()
             return BoardEntry(index, prev, line, digest)
-
-    def overwrite_board_payload(self, poll_id: str, index: int, payload: str) -> bool:
-        """Nur fuer die Manipulationsdemo (§9): Payload aendern, Hashes stehen lassen."""
-        with self._lock:
-            cur = self._conn.execute(
-                "UPDATE board SET payload = ? WHERE poll_id = ? AND idx = ?",
-                (payload, poll_id, index),
-            )
-            self._conn.commit()
-            return cur.rowcount > 0

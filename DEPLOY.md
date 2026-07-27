@@ -69,6 +69,9 @@ denkt (`config.py`):
   Rechte daran zu knüpfen hieße, dem Proxy zu vertrauen statt dem Bediener.
 - **Fehlermeldungen ohne Innenleben.** Ausnahmetexte (Pfade, SQL) bleiben im Debug-Modul.
 - **Demo-Banner für alle Besucher** und automatische Demo-Umfrage beim Start.
+- **Angriffsdemos nicht verdrahtet.** `demo.py` schreibt an der Anwendung vorbei ins Board; wer
+  das Admin-Token einer erreichbaren Instanz hat, könnte sie sonst zerschreiben. Für die
+  Vorführinstanz ausdrücklich mit `EIDPOLL_DEMOS=1` einschalten (siehe *Vorführung*, Schritt 6).
 
 ## Umgebungsvariablen
 
@@ -79,6 +82,7 @@ denkt (`config.py`):
 | `EIDPOLL_DB` | `data/eidpoll.sqlite3` | Pfad der Datenbank (für persistente Platte) |
 | `EIDPOLL_ACCESS_CODES` | `testperson1…100` | Gültige Zugangscodes, kommagetrennt |
 | `EIDPOLL_ACCESS_CODES_FILE` | leer | Codes stattdessen aus einer Datei, eine Zeile je Code |
+| `EIDPOLL_DEMOS` | an, außer bei `PUBLIC` | Angriffsdemos (`demo.py`) einhängen: Board umschreiben, Stimme einschleusen, Testzugang zurücksetzen |
 | `EIDPOLL_SEED_DEMO` | an, wenn `PUBLIC` | Demo-Umfrage beim Start anlegen |
 | `EIDPOLL_SEED_POLL_ID` / `_QUESTION` / `_OPTIONS` | `demo` / eID-Frage / `Ja,Nein,Unentschieden` | Inhalt der Demo-Umfrage |
 | `PORT` | 8731 | Von der Plattform gesetzt |
@@ -98,6 +102,8 @@ Ein Ablauf, der das trägt:
 6. Mit Admin-Token: unter *Admin* die Demo-Knöpfe **Eintrag verfälschen** und **Stimme
    einschleusen** — das Board meldet sofort gebrochene Kette bzw. eine Abrechnung, die nicht
    aufgeht. Der Nachweis, dass die Prüfung nicht dekorativ ist.
+   Öffentlich erscheinen diese Knöpfe nur mit `EIDPOLL_DEMOS=1`; ohne die Variable gibt es die
+   Routen nicht, nicht bloß eine Abweisung.
 
 ## Was fehlt, bevor jemand ein Ergebnis ernst nehmen darf
 

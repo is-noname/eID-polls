@@ -23,6 +23,12 @@ services:
     envVars:
       - key: EIDPOLL_PUBLIC
         value: "1"
+      # Diese Instanz ist die Vorfuehrung (DEPLOY.md, Schritt 6): die
+      # Angriffsdemos aus demo.py gehoeren dazu, sonst fehlt der Nachweis, dass
+      # die Pruefung ausschlaegt. Oeffentlich sind sie sonst nicht verdrahtet -
+      # eine Instanz, deren Ergebnis jemand ernst nimmt, setzt das hier nicht.
+      - key: EIDPOLL_DEMOS
+        value: "1"
       # Kein Wert im Repo: Render erzeugt beim ersten Deploy einen Zufallswert
       # und zeigt ihn im Dashboard unter Environment.
       - key: EIDPOLL_ADMIN_TOKEN

@@ -32,7 +32,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 import blind
 import board_eintrag
-from board_eintrag import BoardEntry, Vote, canonical, parse
+from board_eintrag import BoardEntry
 from debug import log
 from store import PollRow, Store
 from verifikation import Accounting, ChainStatus, Pruefbericht, pruefe
@@ -58,6 +58,7 @@ class PollService:
     def __init__(self, db_path: Path) -> None:
         self.store = Store(db_path)
         self._secret = self._load_secret()
+        self.cookie_key = self._load_cookie_key()
         self._key = self._load_key()
         pub = self._key.public_key().public_numbers()
         self.n, self.e = pub.n, pub.e
@@ -70,6 +71,23 @@ class PollService:
             return bytes.fromhex(stored)
         secret = secrets.token_bytes(32)
         self.store.set_config("server_secret", secret.hex())
+        return secret
+
+    def _load_cookie_key(self) -> bytes:
+        """Eigener Schluessel fuer die Signatur der Sitzungscookies (EIP-T-048).
+
+        Bis hierher signierte die HTTP-Schicht ihre Cookies mit
+        ``voter_key("cookie", "session")`` - die Pseudonym-Ableitung aus §6 war
+        damit nebenbei KDF fuer Sitzungen. Zwei Zwecke an einem Schluessel
+        heisst: wer den einen austauschen will (etwa um alle Sitzungen zu
+        entwerten), trifft den anderen mit. ``voter_key`` dient deshalb nur noch
+        der Pseudonym-Ableitung.
+        """
+        stored = self.store.get_config("cookie_secret")
+        if stored:
+            return bytes.fromhex(stored)
+        secret = secrets.token_bytes(32)
+        self.store.set_config("cookie_secret", secret.hex())
         return secret
 
     def _load_key(self) -> rsa.RSAPrivateKey:
@@ -310,15 +328,6 @@ class PollService:
             ],
         }
 
-    # -- Test-Reset (nur Testbetrieb, siehe store.remove_eligibility) ------
-    def reset_eligibility(self, poll_id: str, pseudonym: str) -> bool:
-        self.poll(poll_id)
-        key = self.voter_key(pseudonym, poll_id)
-        removed = self.store.remove_eligibility(poll_id, key)
-        if removed:
-            log.info("admin", f"Testzugang fuer '{poll_id}' zurueckgesetzt.", poll=poll_id)
-        return removed
-
     # -- Inkonsistenzpruefung fuers Debug-Modul ----------------------------
     def check_consistency(self, poll_id: str, bericht: Pruefbericht | None = None) -> list[str]:
         """Vergleicht Board gegen internen Zustand. Findings gehen ins Debug-Modul.
@@ -376,38 +385,3 @@ class PollService:
 
     def check_all(self) -> dict[str, list[str]]:
         return {p.poll_id: self.check_consistency(p.poll_id) for p in self.polls()}
-
-    # -- Manipulationsdemo, absichtlich exponiert (§9) ----------------------
-    def demo_tamper_board(self, poll_id: str, index: int, new_choice: str) -> None:
-        """Schreibt eine Board-Stimme um und laesst die Hashes stehen.
-
-        Zeigt Fund 2 aus dem Prototyp: die Kette entlarvt genau diesen faulen
-        Angreifer. Ein Betreiber mit Schreibzugriff wuerde die Hashes dahinter
-        neu rechnen - dagegen hilft nur ein extern verankerter Merkle-Root (§12).
-        """
-        entries = self.board(poll_id)
-        entry = next((e for e in entries if e.index == index), None)
-        if entry is None:
-            raise Rejected(f"Kein Board-Eintrag #{index}.")
-        gestimmt = parse(entry)
-        if not isinstance(gestimmt, Vote):
-            raise Rejected(f"Eintrag #{index} ist keine Stimme.")
-        umgeschrieben = board_eintrag.vote(
-            gestimmt.poll, gestimmt.token, gestimmt.sig, [new_choice]
-        )
-        self.store.overwrite_board_payload(poll_id, index, canonical(umgeschrieben))
-        log.error("demo", f"Board-Eintrag #{index} manipuliert (Demo).", poll=poll_id)
-        self.check_consistency(poll_id)
-
-    def demo_stuff_ballot(self, poll_id: str, choice: str) -> None:
-        """Betreiber signiert sich selbst ein Token - ohne Eligibility-Eintrag.
-
-        Laeuft absichtlich durch denselben cast_vote-Pfad: das Token ist
-        kryptografisch ununterscheidbar von einem echten. Nur die
-        Ledger-Abrechnung entlarvt es (§9).
-        """
-        token = secrets.token_bytes(32)
-        blinded, inv = blind.blind(token, self.n, self.e)
-        sig = blind.finalize(blind.blind_sign(blinded, self.n, self._d), inv, self.n)
-        self.cast_vote(poll_id, token, sig, [choice])
-        log.error("demo", "Betreiber-Stimme ohne Berechtigung eingeschleust (Demo).", poll=poll_id)

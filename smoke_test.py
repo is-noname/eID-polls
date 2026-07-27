@@ -9,20 +9,25 @@ der echte Durchlauf im Browser (die PSS-Pruefung schlaegt sonst zu).
 
 from __future__ import annotations
 
-import os
 import sys
 import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-DB = Path(tempfile.mkdtemp()) / "smoke.sqlite3"
-os.environ["EIDPOLL_DB"] = str(DB)
-os.environ["EIDPOLL_ADMIN_TOKEN"] = "admin"
-
 import blind  # noqa: E402
+import demo  # noqa: E402
+from config import Settings  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from web import app, service  # noqa: E402
+from web import create_app  # noqa: E402
+
+# Eigene Instanz statt Umgebungsvariablen vor dem Import (EIP-T-048): Datenbank,
+# Betriebsmodus und Admin-Token stehen hier sichtbar, und der Test kann sich
+# eine zweite Instanz mit anderen Einstellungen bauen, ohne den Import zu
+# beeinflussen.
+DB = Path(tempfile.mkdtemp()) / "smoke.sqlite3"
+app = create_app(store_path=DB, settings=Settings(admin_token="admin"))
+service = app.state.deps.service
 
 POLL = "smoke"
 OK, FAIL = "  ok  ", " FEHL "
@@ -422,6 +427,42 @@ def pruefwerkzeug_auf_der_kommandozeile(client: TestClient) -> None:
     check("Pruefwerkzeug: bestaetigt ein unversehrtes Board mit Exit-Code 0", code == 0, f"code={code}")
 
 
+def demo_schalter() -> None:
+    """Angriffsdemos haengen an EIDPOLL_DEMOS, nicht an der Anwendung (EIP-T-050).
+
+    Geprueft wird die Abwesenheit der *Route*, nicht eine Abweisung: Ohne
+    verdrahtetes demo.py gibt es in der laufenden App keinen Weg mehr, der ein
+    Board umschreibt - das ist die Aussage, nicht "der Server sagt nein".
+    """
+    oeffentlich = create_app(
+        store_path=Path(tempfile.mkdtemp()) / "public.sqlite3",
+        settings=Settings(public=True, admin_token="admin"),
+    )
+    pub = TestClient(oeffentlich)
+    pub.post("/api/admin/login", json={"token": "admin"})
+    tamper = pub.post("/api/admin/demo/tamper/x", json={"index": 0, "choice": "Ja"})
+    check("Demo-Schalter: oeffentlich gibt es die Manipulationsroute nicht",
+          tamper.status_code == 404, f"status={tamper.status_code}")
+    reset = pub.post("/api/admin/reset/x", json={"credential": "testperson1"})
+    check("Demo-Schalter: oeffentlich gibt es die Reset-Route nicht",
+          reset.status_code == 404, f"status={reset.status_code}")
+    check("Demo-Schalter: oeffentliche Admin-Seite bietet keine Demos an",
+          "Angriffsdemos" not in pub.get("/admin").text)
+
+    # Dieselbe oeffentliche Instanz mit ausdruecklich gesetztem Schalter - die
+    # Vorfuehrinstanz aus DEPLOY.md.
+    vorfuehrung = TestClient(
+        create_app(
+            store_path=Path(tempfile.mkdtemp()) / "vorfuehrung.sqlite3",
+            settings=Settings(public=True, admin_token="admin", demos=True),
+        )
+    )
+    ohne_anmeldung = vorfuehrung.post("/api/admin/demo/stuff/x", json={"choice": "Ja"})
+    check("Demo-Schalter: mit EIDPOLL_DEMOS erreichbar, aber nur fuer den Betreiber",
+          ohne_anmeldung.status_code == 400 and "vorbehalten" in ohne_anmeldung.text,
+          f"status={ohne_anmeldung.status_code}")
+
+
 def main() -> int:
     client = TestClient(app)
 
@@ -501,19 +542,20 @@ def main() -> int:
 
     parallel_participation()
     anspruch_atomar()
+    demo_schalter()
 
     # Angriff 1 - Ballot-Stuffing wird von der Abrechnung entlarvt
     open_poll = "stuffdemo"
     client.post("/api/admin/create",
                 json={"poll_id": open_poll, "question": "Demo?", "options": ["Ja", "Nein"]})
-    service.demo_stuff_ballot(open_poll, "Ja")
+    demo.stuff_ballot(service, open_poll, "Ja")
     acc = service.accounting(open_poll)
     check("Angriff Ballot-Stuffing: Abrechnung schlaegt aus",
           not acc.ok, f"{acc.n_votes} Stimmen bei {acc.n_eligible} Berechtigten")
 
     # Angriff 2 - Board umschreiben bricht die Kette und verhindert das Ergebnis
     vote_index = next(e.index for e in service.board(POLL) if e.kind == "VOTE")
-    service.demo_tamper_board(POLL, vote_index, "Nein")
+    demo.tamper_board(service, POLL, vote_index, "Nein")
     status = service.chain_status(POLL)
     check("Angriff Board-Manipulation: Kette bricht sichtbar", not status.ok, f"ab #{status.broken_at}")
     try:

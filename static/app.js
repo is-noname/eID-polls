@@ -29,7 +29,9 @@ export function download(filename, text) {
   URL.revokeObjectURL(url);
 }
 
-window.addEventListener("DOMContentLoaded", () => {
+// Die Verdrahtung haengt am Browser; ausserhalb (ballot_test.mjs unter Node)
+// wird nur postJSON gebraucht.
+if (typeof window !== "undefined") window.addEventListener("DOMContentLoaded", () => {
   // Hell ist die Voreinstellung; die Umschaltung merkt sich der Browser.
   // Gesetzt wird sie schon im <head>, damit beim Laden nichts aufblitzt.
   const theme = document.getElementById("theme-button");

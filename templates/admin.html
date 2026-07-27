@@ -58,6 +58,9 @@
     {% endfor %}
   </div>
 
+  {# Testzugang und Angriffsdemos haengen am Schalter EIDPOLL_DEMOS (config.py):
+     ohne verdrahtete Routen darf die Seite sie auch nicht anbieten. #}
+  {% if demos %}
   <h2>Testzugang zurücksetzen</h2>
   <div class="card">
     <div class="card-header">Eigenen Zugangscode für eine Umfrage wieder freischalten</div>
@@ -118,6 +121,7 @@
       </div>
     </div>
   </div>
+  {% endif %}
 {% endif %}
 {% endblock %}
 
@@ -159,7 +163,8 @@
       });
     });
 
-    document.getElementById("reset-button").addEventListener("click", async () => {
+    const reset = document.getElementById("reset-button");
+    if (reset) reset.addEventListener("click", async () => {
       try {
         const res = await postJSON(`/api/admin/reset/${document.getElementById("reset-poll").value}`, {
           credential: document.getElementById("reset-code").value,
@@ -168,7 +173,8 @@
       } catch (err) { toast(err.message, "err"); }
     });
 
-    document.getElementById("stuff-button").addEventListener("click", async () => {
+    const stuff = document.getElementById("stuff-button");
+    if (stuff) stuff.addEventListener("click", async () => {
       try {
         await postJSON(`/api/admin/demo/stuff/${document.getElementById("demo-poll").value}`, {
           choice: document.getElementById("demo-choice").value,
@@ -177,7 +183,8 @@
       } catch (err) { toast(err.message, "err"); }
     });
 
-    document.getElementById("tamper-button").addEventListener("click", async () => {
+    const tamper = document.getElementById("tamper-button");
+    if (tamper) tamper.addEventListener("click", async () => {
       try {
         await postJSON(`/api/admin/demo/tamper/${document.getElementById("demo-poll").value}`, {
           index: parseInt(document.getElementById("demo-index").value, 10),

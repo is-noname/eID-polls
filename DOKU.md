@@ -175,7 +175,7 @@ nicht gegen den Betreiber. Dafür bräuchte es einen extern verankerten Merkle-R
 ```
 Browser                                  Server
 ────────────────────────────────────────────────────────────────────
-static/blind.js                          web.py          HTTP, Cookies
+static/ballot.js (+ blind.js)            web.py          HTTP, Cookies
   Token erzeugen                         auth.py         Pseudonym
   verblinden        ──── blinded ──────> poll_service.py Regeln
   entblinden        <─── blind_sig ────  blind.py        RFC 9474
@@ -189,12 +189,15 @@ static/blind.js                          web.py          HTTP, Cookies
 | `auth.py` | `authenticate() -> pseudonym`. `CodeAuthenticator` aktiv (Zugangscode statt geprüftem Ausweis); `SamlEidAuthenticator` ist die Hülle für den echten eID-Flow. |
 | `blind.py` | Blindsignatur, Serverseite (RFC 9474, RSABSSA-SHA384-PSS-Deterministic, 2048 Bit). |
 | `static/blind.js` | Dieselbe Krypto im Browser. Beide Seiten müssen bitgenau gleich rechnen. |
+| `static/ballot.js` | Der Weg einer Stimme im Browser: Token erzeugen, verblinden, signieren lassen, entblinden, abgeben — plus der Zwischenstand, wenn die Abgabe danach abbricht (EIP-ADR-20260725-002). `blind.js` rechnet, `ballot.js` führt. `templates/poll.html` enthält nur noch die DOM-Verdrahtung. |
+| `static/beleg.js` | Der Beleg: Kassenbon, QR-Code, Textdatei. Reine Darstellung — kein Krypto, kein Netz, kein Speicher. |
 | `store.py` | SQLite: `polls`, `eligibility`, `spent`, `board`. Alle Zugriffe — auch lesende — laufen über ein `RLock`, weil sich alle Threads eine Verbindung teilen (EIP-T-019). |
 | `board_eintrag.py` | Das Eintragsformat: kanonisches JSON, Eintrags-Hash, Konstruktoren (`vote`, `token_issued`, `poll_open`, `poll_closed`) und `parse(entry) -> Vote \| TokenIssued \| PollOpen \| PollClosed \| Unlesbar`. Rohe Dicts baut und liest niemand mehr selbst. Ein Eintrag, den `parse` nicht deuten kann, wird zu `Unlesbar` — er zählt nirgends mit und macht das Ergebnis unbelastbar, statt still zu verschwinden. |
 | `verifikation.py` | Die gesamte Prüfung über das gelesene Board: `pruefe(entries, public_key, options) -> Pruefbericht` plus Kettenprüfung. Ohne Datenbank, ohne privaten Schlüssel, auch als Kommandozeilen-Werkzeug für Dritte lauffähig. |
-| `poll_service.py` | Phasenlogik, Regeln, Konsistenzprüfung, Angriffsdemos. Die Auszählung selbst delegiert es an `verifikation.py` und übersetzt Befunde in Abweisungen. |
+| `poll_service.py` | Phasenlogik, Regeln, Konsistenzprüfung. Die Auszählung selbst delegiert es an `verifikation.py` und übersetzt Befunde in Abweisungen. |
+| `demo.py` | Die Angriffsdemos aus §9 — außerhalb des Kerns (EIP-T-050). Sie benutzen `PollService` von außen und schreiben an der Anwendung vorbei direkt in die Datenbank, weil genau das das Angreifermodell ist: Wer die Platte hat, braucht keine API. Verdrahtet nur bei `Settings.demos` (`EIDPOLL_DEMOS`, lokal an, öffentlich aus). |
 | `debug.py` | Ringpuffer im Prozessspeicher (500 Ereignisse), bewusst keine zweite Wahrheit. |
-| `web.py` | Seiten und JSON-API. |
+| `web.py` | Seiten und JSON-API. Gebaut wird eine Instanz von `create_app(store_path, authenticator, settings)`: Datenbankpfad, Authentifizierung und Betriebsmodus stehen in der Signatur, nicht im Modul. Den echten eID-Flow einzusetzen heißt deshalb, `SamlEidAuthenticator` zu übergeben — ohne Änderung an `web.py`. Für uvicorn bleibt `web:app` der Einstieg (aus der Umgebung, erst beim Zugriff gebaut). |
 
 **Warum das Blinding im Browser liegt und nicht auf dem Server:** Verblindet der Server selbst,
 sieht er das Token unverblindet — dann gibt es kein Wahlgeheimnis gegen den Betreiber, sondern nur
@@ -218,13 +221,17 @@ die Datei gelöscht, werden alle ausgegebenen Tokens ungültig.**
 python3 app/blind.py         # Krypto-Roundtrip
 python3 app/smoke_test.py    # sieben Abnahmepunkte serverseitig, plus beide Angriffe
                              # darin: Board-Prüfung ohne SQLite und ohne TestClient
+node app/ballot_test.mjs     # Stimmzettel-Flow ohne Browser: Abbruch zwischen Signatur
+                             # und Abgabe, Wiederverwendung derselben Berechtigung
 
 cd app && EIDPOLL_DB=/tmp/bt.sqlite3 python3 -m uvicorn web:app --port 8899 &
 python3 app/browser_test.py  # derselbe Durchlauf im echten Browser
 ```
 
-`browser_test.py` ist der wichtigere: nur dort zeigt sich, ob `blind.js` bitgleich zu `blind.py`
+`browser_test.py` ist der wichtigste: nur dort zeigt sich, ob `blind.js` bitgleich zu `blind.py`
 rechnet. Weicht es ab, weist der Server die Stimme als „Token-Signatur ungültig" ab.
+`ballot_test.mjs` prüft das ausdrücklich nicht — dort ist der Server gestellt und die Signatur
+eine Attrappe; geprüft wird allein der Zustandsverlauf um EIP-ADR-20260725-002.
 
 ---
 
