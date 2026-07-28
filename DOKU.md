@@ -38,6 +38,20 @@ aber der Server hat den Inhalt nie gesehen und erkennt ihn später nicht wieder.
 - *Eligibility-Ledger*: gehashte Pseudonyme. Weiß „hat abgeholt", nicht „wie gestimmt".
 - *Vote-Ledger*: verbrauchte Tokens. Reiner Doppelabstimmungs-Index — **keine Stimmen**.
 
+**Umfrage-Schlüssel.** Der Eintrag im Eligibility-Ledger ist nicht das Pseudonym, sondern
+`HMAC(Umfrage-Schlüssel, Pseudonym)`. Dieser Schlüssel wird beim Anlegen der Umfrage zufällig
+erzeugt und **beim Schließen vernichtet**.
+
+Das hat eine Folge, die über das Übliche hinausgeht: Nach dem Schließen kann *niemand* die Einträge
+noch einem Ausweis zuordnen — auch der Betreiber nicht, auch nicht mit vollem Datenbankzugriff, auch
+nicht Jahre später. Ein Meinungsprofil über mehrere Umfragen hinweg ist damit nicht bloß unerwünscht,
+sondern unmöglich, weil je Umfrage ein eigener Schlüssel gilt und keiner davon überlebt.
+
+Die Grenze dazu, ehrlich: Die Zusage gilt für die Datenbankdatei. Wer Sicherungskopien anlegt, muss
+sie in dieselbe Regel einbeziehen — sonst lebt der Schlüssel dort weiter. Solange eine Umfrage
+**läuft**, existiert ihr Schlüssel notwendigerweise; die Zuordnung ist in diesem Zeitraum für den
+Betreiber möglich. Vernichtet wird beim Schließen, nicht vorher (`EIP-T-033`, Baustein D).
+
 **Bulletin Board.** Eine öffentliche, fortlaufende Kette von Einträgen; jeder trägt den Hash des
 vorherigen. Hier stehen die Stimmen, und **nur hieraus** wird ausgezählt. Das ist wichtiger als es
 klingt: würde intern anders gezählt als öffentlich einsehbar ist, wäre die öffentliche Prüfung
@@ -204,7 +218,7 @@ static/ballot.js (+ blind.js)            web.py          HTTP, Cookies
 | `store.py` | SQLite: `polls`, `eligibility`, `spent`, `board`. Alle Zugriffe — auch lesende — laufen über ein `RLock`, weil sich alle Threads eine Verbindung teilen (EIP-T-019). |
 | `board_eintrag.py` | Das Eintragsformat: kanonisches JSON, Eintrags-Hash, Konstruktoren (`vote`, `token_issued`, `poll_open`, `poll_closed`) und `parse(entry) -> Vote \| TokenIssued \| PollOpen \| PollClosed \| Unlesbar`. Rohe Dicts baut und liest niemand mehr selbst. Ein Eintrag, den `parse` nicht deuten kann, wird zu `Unlesbar` — er zählt nirgends mit und macht das Ergebnis unbelastbar, statt still zu verschwinden. |
 | `verifikation.py` | Die gesamte Prüfung über das gelesene Board: `pruefe(entries, public_key, options) -> Pruefbericht` plus Kettenprüfung. Ohne Datenbank, ohne privaten Schlüssel, auch als Kommandozeilen-Werkzeug für Dritte lauffähig. |
-| `poll_service.py` | Phasenlogik, Regeln, Konsistenzprüfung. Die Auszählung selbst delegiert es an `verifikation.py` und übersetzt Befunde in Abweisungen. |
+| `poll_service.py` | Phasenlogik, Regeln, Konsistenzprüfung. Die Auszählung selbst delegiert es an `verifikation.py` und übersetzt Befunde in Abweisungen. Hält auch den Lebenszyklus des Umfrage-Schlüssels: erzeugen beim Anlegen, `vernichte_poll_secret()` beim Schließen. |
 | `demo.py` | Die Angriffsdemos aus §9 — außerhalb des Kerns (EIP-T-050). Sie benutzen `PollService` von außen und schreiben an der Anwendung vorbei direkt in die Datenbank, weil genau das das Angreifermodell ist: Wer die Platte hat, braucht keine API. Verdrahtet nur bei `Settings.demos` (`EIDPOLL_DEMOS`, lokal an, öffentlich aus). |
 | `debug.py` | Ringpuffer im Prozessspeicher (500 Ereignisse), bewusst keine zweite Wahrheit. |
 | `web.py` | Seiten und JSON-API. Gebaut wird eine Instanz von `create_app(store_path, authenticator, settings)`: Datenbankpfad, Authentifizierung und Betriebsmodus stehen in der Signatur, nicht im Modul. Den echten eID-Flow einzusetzen heißt deshalb, `SamlEidAuthenticator` zu übergeben — ohne Änderung an `web.py`. Für uvicorn bleibt `web:app` der Einstieg (aus der Umgebung, erst beim Zugriff gebaut). |

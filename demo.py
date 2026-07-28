@@ -127,7 +127,17 @@ def reset_eligibility(service: PollService, poll_id: str, pseudonym: str) -> boo
     ein Token abholen kann. Im echten eID-Verfahren gibt es diesen Weg nicht -
     dort ist die Sperre nach dem ersten Token endgueltig gewollt (§6).
     """
-    service.poll(poll_id)
+    if service.poll(poll_id).closed:
+        # Ohne diese Abweisung liefe der Reset in die Schluessel-Meldung aus
+        # _poll_secret und wuerde wie ein Defekt aussehen. Er ist keiner: Nach
+        # dem Schliessen ist der Umfrage-Schluessel vernichtet (EIP-T-033, D),
+        # und damit ist gerade nicht mehr feststellbar, *wessen* Eintrag zu
+        # loeschen waere. Das ist der Zweck der Vernichtung, nicht ihr Fehler.
+        raise Rejected(
+            "Die Umfrage ist geschlossen - ein Testzugang laesst sich nicht mehr "
+            "zuruecksetzen. Mit dem Umfrage-Schluessel ist die Zuordnung von Ausweis zu "
+            "Eligibility-Eintrag vernichtet."
+        )
     key = service.voter_key(pseudonym, poll_id)
     with _direktzugriff(service.store.path) as conn:
         cur = conn.execute(

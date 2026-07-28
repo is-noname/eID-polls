@@ -23,6 +23,7 @@ erwarten.
 from __future__ import annotations
 
 import json
+import secrets
 import sqlite3
 import threading
 from collections.abc import Callable
@@ -129,6 +130,39 @@ class Store:
                 "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, value)
             )
             self._conn.commit()
+
+    def vernichte_config(self, key: str) -> bool:
+        """Loescht einen Konfigurationswert so gruendlich, wie SQLite es zulaesst.
+
+        Rueckgabe: ob es den Schluessel ueberhaupt gab.
+
+        Ein blosses DELETE gibt die Seite nur frei - der alte Wert steht danach
+        weiter im Freispeicher der Datei und im WAL. Fuer einen Schluessel, mit
+        dessen Loeschung wir *nach aussen* argumentieren (EIP-T-033, Baustein
+        D), waere das eine Behauptung statt einer Loeschung. Deshalb drei
+        Schritte: Wert mit Zufallsbytes gleicher Laenge ueberschreiben, Zeile
+        loeschen, Datei neu schreiben (VACUUM raeumt zugleich das WAL ab).
+
+        Die Grenze dieser Zusage, die nach KODEX § 4 mitzusagen ist: Sie gilt
+        fuer *diese Datei*. Sicherungskopien, Dateisystem-Snapshots und die
+        Blockverwaltung einer SSD liegen ausserhalb dessen, was ein Programm
+        ueberschreiben kann. Wer die Zusage vollstaendig halten will, braucht
+        eine Backup-Regel dazu - nicht nur diesen Aufruf.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT length(value) AS n FROM config WHERE key = ?", (key,)
+            ).fetchone()
+            if row is None:
+                return False
+            fuellwert = secrets.token_hex(max(int(row["n"]), 1))[: int(row["n"])]
+            self._conn.execute("UPDATE config SET value = ? WHERE key = ?", (fuellwert, key))
+            self._conn.execute("DELETE FROM config WHERE key = ?", (key,))
+            self._conn.commit()
+            # VACUUM kann nicht in einer Transaktion laufen - nach dem commit
+            # oben ist keine offen.
+            self._conn.execute("VACUUM")
+        return True
 
     # -- polls -------------------------------------------------------------
     def create_poll(self, poll_id: str, question: str, options: list[str], created: str) -> None:

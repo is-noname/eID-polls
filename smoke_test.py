@@ -231,6 +231,87 @@ def anspruch_atomar(n: int = 8) -> None:
           len(abweisungen) == 2 * (n - 1), f"{len(abweisungen)} statt {2 * (n - 1)}")
 
 
+def umfrage_schluessel() -> None:
+    """Umfrage-Schluessel und seine Vernichtung beim Schliessen (EIP-T-033, D).
+
+    Geprueft wird die *Wirkung*, nicht die Speicherstelle: dass derselbe Ausweis
+    in zwei Umfragen verschiedene Wahlberechtigungs-Schluessel bekommt, und dass
+    nach dem Schliessen niemand - auch der Server nicht - den Eligibility-Eintrag
+    noch auf sein Pseudonym zurueckrechnen kann.
+    """
+    from poll_service import POLL_SECRET, Rejected
+
+    admin = TestClient(app)
+    admin.post("/api/admin/login", json={"token": "admin"})
+    for poll in ("schluessel-a", "schluessel-b"):
+        admin.post("/api/admin/create",
+                   json={"poll_id": poll, "question": "Und?", "options": ["Ja", "Nein"]})
+
+    check("Umfrage-Schluessel: beim Anlegen erzeugt",
+          service.store.get_config(POLL_SECRET + "schluessel-a") is not None)
+
+    # Dasselbe Pseudonym, zwei Umfragen - zwei unabhaengige Schluessel. Ohne das
+    # waere ein Meinungsprofil ueber Umfragen hinweg bildbar (§6).
+    a = service.voter_key("testperson-d", "schluessel-a")
+    b = service.voter_key("testperson-d", "schluessel-b")
+    check("Umfrage-Schluessel: derselbe Ausweis ergibt je Umfrage einen anderen Voter-Key", a != b)
+    check("Umfrage-Schluessel: Ableitung ist innerhalb einer Umfrage stabil",
+          a == service.voter_key("testperson-d", "schluessel-a"))
+
+    # Ein Teilnehmer holt sich ein Token, damit es beim Schliessen wirklich
+    # einen Eintrag gibt, dessen Rueckrechenbarkeit verschwindet.
+    teilnehmer = TestClient(app)
+    teilnehmer.post("/api/auth", json={"credential": "testperson40"})
+    geholt = get_token(teilnehmer, "schluessel-a")
+    check("Umfrage-Schluessel: Token-Abholung funktioniert normal", geholt is not None)
+
+    admin.post("/api/admin/close/schluessel-a")
+
+    check("Umfrage-Schluessel: beim Schliessen vernichtet",
+          service.store.get_config(POLL_SECRET + "schluessel-a") is None)
+
+    # Der eigentliche Punkt von D: Der Server *kann* nicht mehr zuordnen.
+    try:
+        service.voter_key("testperson-d", "schluessel-a")
+        rueckrechenbar = True
+    except Rejected:
+        rueckrechenbar = False
+    check("Umfrage-Schluessel: Pseudonym nach Schliessung nicht mehr auf den Ledger abbildbar",
+          not rueckrechenbar)
+
+    check("Umfrage-Schluessel: Eligibility-Eintrag bleibt bestehen (Abrechnung nach §9)",
+          service.store.ledger_stand("schluessel-a")[0] == 1)
+
+    check("Umfrage-Schluessel: der Schluessel der anderen Umfrage ist unberuehrt",
+          service.store.get_config(POLL_SECRET + "schluessel-b") is not None)
+
+    # Debug-Modul: beide Richtungen des Lebenszyklus sind Befunde. Hier der
+    # Normalfall - geschlossen und vernichtet ist *kein* Befund.
+    findings = service.check_consistency("schluessel-a")
+    check("Umfrage-Schluessel: geschlossene Umfrage ohne Schluessel meldet nichts",
+          not any("Schluessel" in f for f in findings), detail=str(findings))
+
+    # Und der Stoerfall: Schluessel ueberlebt das Schliessen -> sichtbar.
+    service.store.set_config(POLL_SECRET + "schluessel-a", "00" * 32)
+    findings = service.check_consistency("schluessel-a")
+    check("Debug-Modul: Schluessel, der eine geschlossene Umfrage ueberlebt, wird gemeldet",
+          any("geschlossen" in f and "Schluessel" in f for f in findings), detail=str(findings))
+    service.vernichte_poll_secret("schluessel-a")
+
+    # Umgekehrt: offene Umfrage ohne Schluessel kann niemanden mehr zulassen.
+    service.vernichte_poll_secret("schluessel-b")
+    findings = service.check_consistency("schluessel-b")
+    check("Debug-Modul: offene Umfrage ohne Schluessel wird gemeldet",
+          any("offen" in f and "Schluessel" in f for f in findings), detail=str(findings))
+
+    verirrt = TestClient(app)
+    verirrt.post("/api/auth", json={"credential": "testperson41"})
+    check("Umfrage-Schluessel: ohne Schluessel wird abgewiesen statt neu abgeleitet",
+          get_token(verirrt, "schluessel-b") is None)
+    check("Umfrage-Schluessel: die Abweisung erzeugt keinen Eligibility-Eintrag",
+          service.store.ledger_stand("schluessel-b")[0] == 0)
+
+
 def eintragsformat() -> None:
     """Konstruktoren und Parser (EIP-T-046) - ohne Board, ohne Store.
 
@@ -454,7 +535,11 @@ def laufende_pruefung() -> None:
     token, sig = issued
     antwort = client.post(f"/api/vote/{poll}",
                           json={"token": token.hex(), "sig": sig.hex(), "choices": ["Ja"]})
-    neu = [e for e in debug_log.events("inconsistency")[vor_der_stimme:] if "gebrochen" in e.message]
+    # events() liefert das Neueste zuerst (appendleft). Die neuen Ereignisse
+    # stehen also *vorn*, nicht hinten - ein Slice ab `vor_der_stimme` liefert
+    # die aeltesten und findet den frischen Befund nur zufaellig.
+    jetzt = debug_log.events("inconsistency")
+    neu = [e for e in jetzt[: len(jetzt) - vor_der_stimme] if "gebrochen" in e.message]
     check("Laufende Pruefung: gebrochene Kette faellt beim Abstimmen auf",
           antwort.status_code == 200 and bool(neu),
           neu[0].message if neu else "keine Meldung im Debug-Modul")
@@ -474,6 +559,19 @@ def pruefwerkzeug_auf_der_kommandozeile(client: TestClient) -> None:
           and "PUBLIC KEY" in str(data.get("public_key")))
     check("Export: kein privater Schluessel, kein voter_key im Export",
           "PRIVATE" not in json.dumps(data) and "voter_key" not in json.dumps(data))
+
+    # Der Umfrage-Schluessel darf nicht nur nicht *benannt* sein - sein Wert
+    # darf nirgends auftauchen. Mit ihm laesst sich jeder Eligibility-Eintrag
+    # auf sein Pseudonym zurueckrechnen (EIP-T-033, D). Geprueft an einer noch
+    # *offenen* Umfrage: Bei POLL ist der Schluessel zu diesem Zeitpunkt schon
+    # vernichtet, dort koennte der Export ihn gar nicht mehr verraten.
+    from poll_service import POLL_SECRET
+
+    offen = "parallel"
+    geheim = service.store.get_config(POLL_SECRET + offen)
+    offener_export = client.get(f"/api/board/{offen}").text
+    check("Export: der Umfrage-Schluessel einer laufenden Umfrage steht nicht im Export",
+          geheim is not None and geheim not in offener_export)
 
     entries = verifikation.entries_from_export(data)
     check("Export: exportierte Eintraege sind die des Boards",
@@ -538,6 +636,7 @@ def main() -> int:
 
     eintragsformat()
     pruefung_ohne_datenbank()
+    umfrage_schluessel()
 
     # Punkt 1 - App laeuft, offene Umfrage sichtbar
     client.post("/api/admin/login", json={"token": "admin"})

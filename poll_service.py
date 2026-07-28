@@ -23,6 +23,7 @@ gilt, entscheidet das Pruefmodul.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import secrets
 from datetime import datetime
 from pathlib import Path
@@ -53,6 +54,10 @@ class Rejected(Exception):
 
 __all__ = ["Accounting", "ChainStatus", "PollService", "Pruefbericht", "Rejected"]
 
+# Praefix der Umfrage-Schluessel in der config-Tabelle. Ein Schluessel je
+# Umfrage, vernichtet beim Schliessen (EIP-T-033, Baustein D).
+POLL_SECRET = "poll_secret:"
+
 
 class PollService:
     def __init__(self, db_path: Path) -> None:
@@ -62,7 +67,7 @@ class PollService:
         # Abkuerzung fuer den laufenden Betrieb: pruefbericht() prueft ohne
         # Vorbedingung und setzt den Stand hier neu.
         self._letzte_pruefung: dict[str, Pruefbericht] = {}
-        self._secret = self._load_secret()
+        self._verwirf_altschluessel()
         self.cookie_key = self._load_cookie_key()
         self._key = self._load_key()
         pub = self._key.public_key().public_numbers()
@@ -70,13 +75,31 @@ class PollService:
         self._d = self._key.private_numbers().d
 
     # -- Schluessel und Secret ueberleben den Neustart ----------------------
-    def _load_secret(self) -> bytes:
-        stored = self.store.get_config("server_secret")
-        if stored:
-            return bytes.fromhex(stored)
-        secret = secrets.token_bytes(32)
-        self.store.set_config("server_secret", secret.hex())
-        return secret
+    def _verwirf_altschluessel(self) -> None:
+        """Vernichtet das alte globale ``server_secret`` beim Start (EIP-T-033, D).
+
+        Bis Baustein D war ``voter_key = H(pseudonym | poll_id | server_secret)``
+        mit einem *global und dauerhaft* gespeicherten Secret. Es war zwar pro
+        Umfrage gesalzen, aber jederzeit nachrechenbar - auch Jahre spaeter,
+        auch fuer alle Umfragen gleichzeitig. Wer die Datenbank hatte, hatte die
+        Teilnahmehistorie je Ausweis.
+
+        Das Secret hat seit der Umstellung keinen Zweck mehr, also darf es nicht
+        liegenbleiben: Solange es da ist, bleiben die Eligibility-Zeilen alter
+        Umfragen auf ihr Pseudonym zurueckrechenbar. Die Vernichtung *ist* der
+        Migrationspfad - sie stellt fuer Altbestaende genau die Eigenschaft her,
+        die D fuer neue Umfragen zusagt.
+
+        Was das fuer eine bereits laufende Umfrage bedeutet, steht bei
+        ``_poll_secret``: Sie kann keine Token mehr ausgeben. Das ist gewollt
+        und faellt sofort auf, statt still eine Doppelabstimmung zu erlauben.
+        """
+        if self.store.vernichte_config("server_secret"):
+            log.info(
+                "keys",
+                "Altes globales server_secret vernichtet - Voter-Keys laufen jetzt ueber "
+                "Umfrage-Schluessel (EIP-T-033, D).",
+            )
 
     def _load_cookie_key(self) -> bytes:
         """Eigener Schluessel fuer die Signatur der Sitzungscookies (EIP-T-048).
@@ -124,10 +147,58 @@ class PollService:
         )
 
     # -- Pseudonym-Ableitung (§6: keine umfrageuebergreifende Verkettung) ---
+    def _erzeuge_poll_secret(self, poll_id: str) -> None:
+        """Legt den Umfrage-Schluessel an. Genau einmal, beim Anlegen der Umfrage."""
+        self.store.set_config(POLL_SECRET + poll_id, secrets.token_bytes(32).hex())
+
+    def _poll_secret(self, poll_id: str) -> bytes:
+        stored = self.store.get_config(POLL_SECRET + poll_id)
+        if stored is None:
+            # Bewusst *nicht* stillschweigend einen neuen Schluessel erzeugen.
+            # Ein neuer Schluessel hiesse: alle bisherigen Eligibility-Zeilen
+            # dieser Umfrage sind nicht mehr reproduzierbar, und jeder Ausweis
+            # bekaeme ein zweites Token - die Doppelabstimmungssperre aus §6
+            # waere lautlos weg. Lieber keine Token mehr als zwei pro Ausweis.
+            raise Rejected(
+                "Fuer diese Umfrage gibt es keinen Umfrage-Schluessel mehr. Entweder ist sie "
+                "geschlossen - dann ist das so gewollt und der Schluessel wurde vernichtet - "
+                "oder sie stammt aus einem Datenbestand vor der Umstellung auf "
+                "Umfrage-Schluessel. In beiden Faellen werden keine Stimm-Token mehr "
+                "ausgegeben. Das oeffentliche Board bleibt unveraendert pruefbar."
+            )
+        return bytes.fromhex(stored)
+
+    def vernichte_poll_secret(self, poll_id: str) -> bool:
+        """Vernichtet den Umfrage-Schluessel. Ab hier ist die Umfrage anonym.
+
+        Der Kern von Baustein D: Danach sind die ``eligibility``-Zeilen dieser
+        Umfrage auf kein Pseudonym mehr zurueckzurechnen - nicht durch uns,
+        nicht durch eine Beschlagnahme, nicht durch ein Datenleck. Ueber
+        Umfragen hinweg ist ein Meinungsprofil damit strukturell unmoeglich und
+        nicht nur unerwuenscht.
+
+        Die Grenze der Zusage steht bei ``Store.vernichte_config``: sie gilt fuer
+        die Datenbankdatei, nicht fuer Sicherungskopien.
+        """
+        vernichtet = self.store.vernichte_config(POLL_SECRET + poll_id)
+        if vernichtet:
+            log.info(
+                "keys",
+                f"Umfrage-Schluessel fuer '{poll_id}' vernichtet - die Eligibility-Eintraege "
+                "dieser Umfrage sind ab jetzt auf kein Pseudonym mehr zurueckrechenbar.",
+                poll=poll_id,
+            )
+        return vernichtet
+
     def voter_key(self, pseudonym: str, poll_id: str) -> str:
-        return hashlib.sha256(
-            pseudonym.encode() + b"|" + poll_id.encode() + b"|" + self._secret
-        ).hexdigest()
+        """Wahlberechtigungs-Schluessel aus dem Pseudonym.
+
+        HMAC unter dem *Umfrage*-Schluessel, nicht mehr ein Hash unter einem
+        globalen Secret (EIP-T-033, Befund 2). Die Umfrage-ID muss nicht mehr in
+        die Eingabe: Der Schluessel selbst gehoert bereits genau einer Umfrage,
+        und er ueberlebt sie nicht.
+        """
+        return hmac.new(self._poll_secret(poll_id), pseudonym.encode(), hashlib.sha256).hexdigest()
 
     # -- Umfragen ----------------------------------------------------------
     def poll(self, poll_id: str) -> PollRow:
@@ -157,6 +228,9 @@ class PollService:
         if self.store.poll(poll_id) is not None:
             raise Rejected(f"Umfrage '{poll_id}' existiert bereits.")
 
+        # Schluessel vor der Umfrage: eine Umfrage, die es gibt, aber fuer die
+        # noch keine Berechtigung ableitbar waere, gibt es nicht.
+        self._erzeuge_poll_secret(poll_id)
         self.store.create_poll(poll_id, question, options, datetime.now().isoformat(timespec="seconds"))
         self.store.append_board(poll_id, board_eintrag.poll_open(poll_id, question, options))
         log.info("poll", f"Umfrage '{poll_id}' angelegt.", options=options)
@@ -168,6 +242,11 @@ class PollService:
             raise Rejected("Umfrage ist bereits geschlossen.")
         self.store.close_poll(poll_id)
         self.store.append_board(poll_id, board_eintrag.poll_closed(poll_id))
+        # Erst schliessen, dann vernichten: Waere die Reihenfolge umgekehrt und
+        # das Schliessen schluege fehl, liefe eine offene Umfrage ohne
+        # Ableitungsschluessel weiter - sie koennte keine Token mehr ausgeben,
+        # ohne dass jemand es angeordnet haette.
+        self.vernichte_poll_secret(poll_id)
         log.info("poll", f"Umfrage '{poll_id}' geschlossen.")
 
     # -- Phase A: Wahlberechtigung (mit Pseudonym) -------------------------
@@ -405,6 +484,24 @@ class PollService:
             )
         if bericht.unknown_choice is not None:
             findings.append(f"Board enthaelt unbekannte Option '{bericht.unknown_choice}'")
+
+        # Lebenszyklus des Umfrage-Schluessels (EIP-T-033, D). Beide Richtungen
+        # sind Befunde: Ein Schluessel, der eine geschlossene Umfrage ueberlebt,
+        # haelt die Rueckrechenbarkeit auf Pseudonyme am Leben, die wir nach
+        # aussen ausschliessen. Ein fehlender Schluessel bei offener Umfrage
+        # heisst, dass niemand mehr teilnehmen kann - was ohne diese Zeile eine
+        # stille Abweisung pro Versuch waere statt eines sichtbaren Zustands.
+        hat_schluessel = self.store.get_config(POLL_SECRET + poll_id) is not None
+        if self.poll(poll_id).closed and hat_schluessel:
+            findings.append(
+                "Umfrage ist geschlossen, aber ihr Umfrage-Schluessel existiert noch - "
+                "Eligibility-Eintraege bleiben auf Pseudonyme zurueckrechenbar"
+            )
+        if not self.poll(poll_id).closed and not hat_schluessel:
+            findings.append(
+                "Umfrage ist offen, aber ihr Umfrage-Schluessel fehlt - es koennen keine "
+                "Stimm-Token mehr ausgegeben werden"
+            )
 
         board_votes = acc.n_votes
         if board_votes != spent:
