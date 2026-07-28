@@ -38,6 +38,22 @@ Wer Daten behalten will, braucht den kostenpflichtigen Tarif mit Platte (Render 
 7 $/Monat) — die App selbst muss dafür nicht geändert werden, nur `EIDPOLL_DB` auf den
 Platten-Pfad zeigen.
 
+## Live
+
+**<https://eid-poll.onrender.com>** — Vorführinstanz, Stand 2026-07-27. Admin-Token noch nicht
+abgeholt (siehe Schritt 4 unten) — bis dahin ist `/admin` und `/debug` für den Betreiber selbst
+gesperrt.
+
+## Zugriffslogs
+
+Der Startbefehl trägt `--no-access-log`, und das ist keine Geschmacksfrage: Uvicorn schreibt seinen
+Zugriffslog nach stdout, der Hoster sammelt stdout, und zusammen mit `--forwarded-allow-ips` steht
+dort die IP des Besuchers statt der des Proxys. `KODEX.md` § 1 verbietet vollständige IP-Adressen in
+Zugriffslogs ausdrücklich. Wer den Startbefehl ändert, prüft das mit.
+
+Was der Hoster **unabhängig davon** protokolliert — Loadbalancer, TLS-Endpunkt, DDoS-Schutz — liegt
+außerhalb der App und ist damit nicht erledigt. Offen in `EIP-T-041`.
+
 ## Deploy auf Render
 
 1. Auf [render.com](https://render.com) mit dem GitHub-Konto anmelden.

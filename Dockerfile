@@ -17,4 +17,6 @@ ENV PORT=8731 \
 
 EXPOSE 8731
 
-CMD ["sh", "-c", "uvicorn web:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips='*'"]
+# --no-access-log: keine vollstaendigen IP-Adressen in Zugriffslogs (KODEX § 1,
+# Verstoss V-002). Begruendung ausfuehrlich in render.yaml.
+CMD ["sh", "-c", "uvicorn web:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips='*' --no-access-log"]

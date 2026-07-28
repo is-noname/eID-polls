@@ -18,7 +18,14 @@ services:
     buildCommand: pip install -r requirements.txt
     # --proxy-headers: hinter Renders TLS-Endpunkt kommt die Anfrage sonst als
     # http und mit Proxy-IP an; beides braucht die App richtig.
-    startCommand: uvicorn web:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
+    #
+    # --no-access-log: KODEX § 1 verbietet vollstaendige IP-Adressen in
+    # Zugriffslogs. Uvicorn schreibt seinen Access-Log nach stdout, und der
+    # Hoster sammelt stdout - zusammen mit --forwarded-allow-ips steht dort
+    # gerade nicht die Proxy-IP, sondern die des Besuchers. Genau das war
+    # Verstoss V-002. Die Abschaltung betrifft nur den Zugriffslog; was die
+    # App fuer den Betrieb braucht, laeuft ueber debug.py und kommt ohne IP aus.
+    startCommand: uvicorn web:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*' --no-access-log
     healthCheckPath: /
     envVars:
       - key: EIDPOLL_PUBLIC

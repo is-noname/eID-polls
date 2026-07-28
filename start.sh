@@ -31,7 +31,11 @@ if command -v fuser >/dev/null 2>&1; then
 fi
 
 cd "$APP_DIR"
-python3 -m uvicorn web:app --host "$HOST" --port "$PORT" --log-level warning &
+# --no-access-log steht hier zusaetzlich zum Log-Level: warning unterdrueckt
+# den Zugriffslog zwar auch, aber nur als Nebenwirkung. Wer das Level einmal
+# auf info dreht, um etwas zu suchen, haette sonst unbemerkt IP-Adressen im
+# Log (KODEX § 1, Verstoss V-002).
+python3 -m uvicorn web:app --host "$HOST" --port "$PORT" --log-level warning --no-access-log &
 SERVER_PID=$!
 trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
 
