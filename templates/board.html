@@ -13,7 +13,7 @@
   <div class="banner ok">
     Alle Prüfungen bestanden.
     <small>
-      Nichts wurde nachträglich verändert, jede Stimme stammt von einer berechtigten Person, und es
+      Nichts wurde nachträglich verändert, jede Stimme trägt eine gültige Berechtigung, und es
       liegen nicht mehr Stimmen vor als Berechtigungen ausgegeben wurden.
     </small>
   </div>
@@ -26,7 +26,7 @@
   </div>
   <div class="stat">
     <div class="value {{ 'good' if status.signatures_ok else 'bad' }}">{{ 'OK' if status.signatures_ok else 'FEHLER' }}</div>
-    <div class="label">Jede Stimme von einer berechtigten Person</div>
+    <div class="label">Jede Stimme trägt eine gültige Berechtigung</div>
   </div>
   <div class="stat">
     <div class="value">{{ accounting.n_eligible }}</div>
@@ -58,6 +58,14 @@
     </small>
   </div>
 {% endif %}
+
+<p class="faint small" style="margin-top:12px">
+  Was diese Prüfungen nicht abdecken: Die Signatur belegt, dass eine Berechtigung mit dem Schlüssel
+  dieses Betreibers ausgestellt wurde — nicht, dass dahinter ein Ausweis stand. Solange dieser
+  Schlüssel bei einer einzigen Stelle liegt, könnte sie sich selbst Berechtigungen ausstellen, und
+  beide Zähler oben blieben im Gleichgewicht. Dagegen hilft keine Prüfung auf dieser Seite, sondern
+  erst ein auf mehrere Parteien verteilter Schlüssel. Bis dahin ist das Selbstbindung.
+</p>
 
 <h2>Ergebnis</h2>
 {% if result %}

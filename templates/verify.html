@@ -5,8 +5,7 @@
 {% block content %}
 <h1>Deine Stimme prüfen</h1>
 <p class="lead">
-  Nimm das Stimm-Token aus deinem Beleg. Damit siehst du, was tatsächlich gezählt wird — ohne dass
-  jemand anderes erfährt, dass die Stimme dir gehört.
+  Nimm das Stimm-Token aus deinem Beleg. Damit siehst du, was tatsächlich gezählt wird.
 </p>
 
 {% if searched %}
@@ -44,6 +43,19 @@
       <button type="submit">Stimme suchen</button>
     </form>
   </div>
+</div>
+
+<div class="banner">
+  Diese Suche läuft über unseren Server — er sieht dabei, nach welchem Token gefragt wird, und
+  erfährt damit, welcher Eintrag dir gehört.
+  <small>
+    Wer das nicht will, prüft ohne uns:
+    {% if sel_poll %}<a href="/api/board/{{ sel_poll }}">das Board als Datei</a>{% else %}das Board
+    als Datei (Link auf der jeweiligen Nachweis-Seite){% endif %}
+    herunterladen und das eigene Token darin suchen. Der Server erfährt dann nur, dass jemand das
+    ganze Board geladen hat. Dass diese Seite den bequemen Weg überhaupt anbietet, ist eine offene
+    Baustelle und keine Eigenschaft des Verfahrens.
+  </small>
 </div>
 
 <p class="faint small">

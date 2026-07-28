@@ -69,7 +69,7 @@
     <button class="big" id="vote-button" {{ 'disabled' if not pseudonym or poll.closed }}>Stimme abgeben</button>
 
     <details class="explain" style="margin-top:20px">
-      <summary>Warum kann mir meine Stimme niemand zuordnen?</summary>
+      <summary>Wer kann meine Stimme mir zuordnen?</summary>
       <div class="explain-body">
         <p>
           Beim Absenden erzeugt dieser Browser deine Stimmberechtigung. Bevor sie zur Bestätigung
@@ -79,8 +79,16 @@
         </p>
         <p>
           Dadurch existieren zwei getrennte Listen: eine über <em>wer</em> abstimmen durfte und eine
-          über <em>was</em> gewählt wurde. Zwischen beiden gibt es keine Verbindung. Fachlich heißt
-          das Verfahren blinde Signatur (RSA nach RFC 9474).
+          über <em>was</em> gewählt wurde. In keiner der beiden steht ein Feld, das sie verbindet.
+          Fachlich heißt das Verfahren blinde Signatur (RSA nach RFC 9474).
+        </p>
+        <p>
+          Was das <em>nicht</em> leistet, sagen wir lieber selbst: Beide Vorgänge laufen bei
+          demselben Server auf, und er sieht, wann welcher eintrifft. Auch die Reihenfolge, in der
+          beide Listen wachsen, ist heute dieselbe. Solange nur wir diesen Server betreiben, hängt
+          es an unserer Selbstbindung, daraus nichts zu rekonstruieren — nicht an der Kryptografie.
+          Das ist der Unterschied zwischen „wir können nicht" und „wir tun es nicht", und er steht
+          im <a href="/manifest">Manifest</a>.
         </p>
       </div>
     </details>
