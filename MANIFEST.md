@@ -38,7 +38,7 @@ Weil zum ersten Mal ein **Nenner** existiert.
 
 Wir behaupten trotzdem nicht, dass diese Zahl unangreifbar ist. Ein Einwand bleibt, und er ist berechtigt: Wer bei uns abstimmt, hat sich dafür entschieden. Unsere Teilnehmenden sind nicht das Land. Diesen Einwand können wir nicht ausräumen, und wir versuchen es auch nicht — dafür müssten wir Daten über unsere Teilnehmenden erheben, die wir bewusst nicht erheben.
 
-Was bleibt, gibt es trotzdem bisher nirgends: eine **untere Schranke**. Mindestens N verifizierte Menschen in diesem Land sagen X — jeder genau einmal, öffentlich nachzählbar. Dieser Satz gilt unabhängig davon, wer erschienen ist. Er ist bescheidener als „so denkt Deutschland", und er ist dafür wahr.
+Was bleibt, gibt es trotzdem bisher nirgends: **zwei Zahlen, die zusammen stehen.** Wie viele Menschen mit Ausweis abgestimmt haben, und von wie vielen Berechtigten — jeder genau einmal, öffentlich nachzählbar. Dieser Satz gilt unabhängig davon, wer erschienen ist. Er ist bescheidener als „so denkt Deutschland", und er ist dafür wahr. Wir werden ihn deshalb nie ohne den Nenner sagen (§ 8, § 9).
 
 Gegen eine solche Zahl kann man sich entscheiden. Das ist legitim — wir leben in einer repräsentativen Demokratie, und niemand muss einer Mehrheit folgen. Aber man muss es dann **sichtbar** tun, und man muss es begründen. Genau das ist unser Ziel: nicht Bindung, sondern Begründungslast.
 
@@ -50,7 +50,7 @@ Deshalb ist unsere Instanz einbettbar: dieselbe Frage auf dem Boulevardportal, i
 
 Damit wird die Teilnehmerschaft **breiter**, nicht neutral. Eine Summe gefärbter Publika ist keine Bevölkerung, und die Mischung entscheidet nicht die Bevölkerungsstruktur, sondern wer stärker mobilisiert. Wir behaupten also keinen Ausgleich der Verzerrung, sondern ihre Verbreiterung. Das ist weniger, aber wahr.
 
-Einbetten heißt nicht mitgestalten: Die Beteiligungsquote lässt sich nicht abschalten, und die Nutzungsbedingungen schließen bindende Abstimmungen aus (§ 9, § 16). Wir treten **ergänzend auf, nicht ersetzend** — wer eine eigene Umfrage betreibt, betreibt sie weiter. Unsere kommt daneben, als die Zahl, die auch außerhalb des eigenen Publikums zitierfähig ist.
+Einbetten soll nicht mitgestalten heißen: Die Beteiligungsquote wird sich nicht abschalten lassen, und der Einsatz in bindenden Abstimmungen bleibt ausgeschlossen (§ 8, § 16). Beides steht heute im Kodex und in keinem Vertrag — die Einbettung ist nicht gebaut, Bedingungen für Einbetter gibt es noch nicht. Wir treten **ergänzend auf, nicht ersetzend** — wer eine eigene Umfrage betreibt, betreibt sie weiter. Unsere kommt daneben, als die Zahl, die auch außerhalb des eigenen Publikums zitierfähig ist.
 
 Das Vollbild — eine Instanz, auf die sich alle einigen — ist ein Zielbild, kein Selbstläufer. Es setzt Reichweite voraus, die wir heute nicht haben.
 
