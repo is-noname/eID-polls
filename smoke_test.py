@@ -9,6 +9,7 @@ der echte Durchlauf im Browser (die PSS-Pruefung schlaegt sonst zu).
 
 from __future__ import annotations
 
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -1016,20 +1017,38 @@ def sitzungstrennung() -> None:
           str(befunde[0].detail if befunde else {}))
 
 
+def _verzeichnis_bytes(verzeichnis: Path) -> bytes:
+    """Alle Dateien unter ``verzeichnis`` als rohe Bytes, rekursiv.
+
+    Bewusst das Verzeichnis und keine Dateiliste: Bis EIP-T-041 las der Abzug
+    die drei Pfade, die er erwartete - Datenbank, ``-wal``, ``-shm``. Genau das
+    hat der Fehler ausgenutzt, den dieselbe Durchsicht gefunden hat: Neben der
+    Datenbank lagen zwei liegengebliebene Kopien aus Testlaeufen, eine davon mit
+    dem laengst vernichteten ``server_secret``. Ein Datenleck nimmt das
+    Verzeichnis mit, nicht die Namen, die im Test stehen.
+    """
+    return b"".join(
+        p.read_bytes() for p in sorted(verzeichnis.rglob("*")) if p.is_file()
+    )
+
+
 def datenabzug_nach_schluss() -> None:
     """Abzug aus Datenbank und Log gibt nach Umfrage-Schluss keine Zuordnung her
-    (EIP-T-041, Akzeptanzkriterium 5).
+    (EIP-T-041, Akzeptanzkriterien 3 und 5).
 
     Nicht als Zusicherung, sondern als Abzug: eine Umfrage vollstaendig
     durchlaufen, schliessen, und dann alles auslesen, was ein Datenleck oder
     eine Beschlagnahme in die Hand bekaeme - die SQLite-Datei als SQL-Abzug
-    *und* als rohe Bytes (ein DELETE gibt Seiten nur frei), das WAL daneben, und
-    den vollstaendigen Inhalt des Debug-Moduls. Darin wird nach genau dem
-    gesucht, was Person -> Stimme herstellen wuerde.
+    *und* **jede Datei im Datenverzeichnis** als rohe Bytes (ein DELETE gibt
+    Seiten nur frei), dazu den vollstaendigen Inhalt des Debug-Moduls. Darin
+    wird nach genau dem gesucht, was Person -> Stimme herstellen wuerde.
 
     Der Test prueft Abwesenheit. Das ist so viel wert wie die Liste dessen,
     wonach er sucht - deshalb steht jede Suche mit ihrer Begruendung hier und
-    nicht als stille Zeichenkette.
+    nicht als stille Zeichenkette. Und weil eine Suche, die nichts findet, noch
+    nicht funktioniert haben muss, stellt der letzte Abschnitt eine
+    liegengebliebene Sicherungskopie nach und verlangt, dass der Abzug sie
+    findet.
     """
     import sqlite3
 
@@ -1068,16 +1087,18 @@ def datenabzug_nach_schluss() -> None:
                     json={"token": token.hex(), "sig": sig.hex(),
                           "choices": ["Ja" if i else "Nein"]})
 
+    # Zustand *vor* dem Schliessen, solange die Schluessel noch da sind. Er
+    # dient weiter unten als Probe: genau so sieht eine Sicherungskopie aus, die
+    # jemand vor dem Schliessen gezogen und danach vergessen hat.
+    vor_schluss = {p.name: p.read_bytes() for p in pfad.parent.iterdir() if p.is_file()}
+
     admin.post(f"/api/admin/close/{poll}")
 
     # -- Der Abzug ---------------------------------------------------------
     zweite = sqlite3.connect(pfad)
     sql_abzug = "\n".join(zweite.iterdump())
     zweite.close()
-    roh = b"".join(
-        p.read_bytes() for p in (pfad, Path(str(pfad) + "-wal"), Path(str(pfad) + "-shm"))
-        if p.exists()
-    )
+    roh = _verzeichnis_bytes(pfad.parent)
     debug_abzug = "\n".join(
         f"{e.ts} {e.level} {e.category} {e.message} {e.detail}" for e in debug_log.events("all")
     ) + "\n" + "\n".join(
@@ -1134,6 +1155,33 @@ def datenabzug_nach_schluss() -> None:
     check("Abzug: kein Zeitstempel je Board-Eintrag",
           "published" in sql_abzug and all(
               "pending_since" not in zeile for zeile in sql_abzug.splitlines()))
+
+    # -- Probe: faengt der Abzug eine liegengebliebene Kopie? --------------
+    # Alle Pruefungen oben suchen Abwesenheit. Eine Suche, die nichts findet,
+    # ist nur so viel wert wie der Beweis, dass sie etwas finden *koennte* -
+    # sonst haette der Wechsel auf das ganze Verzeichnis (EIP-T-041,
+    # Akzeptanzkriterium 3) keine nachweisbare Wirkung.
+    #
+    # Deshalb der reale Fall, nachgestellt: eine Kopie des Datenverzeichnisses
+    # von *vor* dem Schliessen, unter einem Namen, den keine feste Dateiliste
+    # kennt. So lag ``data.backup.<zeit>/`` am 2026-07-31 auf der
+    # Entwicklungsmaschine - mit einem Schluessel, den die Datenbank daneben
+    # laengst vernichtet hatte.
+    check("Probe: die Kopie traegt den Schluessel wirklich (sonst prueft die Probe nichts)",
+          any(geheim.encode() in b for b in vor_schluss.values()))
+
+    probe = pfad.parent / "data.backup.probe"
+    probe.mkdir()
+    for name, inhalt in vor_schluss.items():
+        (probe / name).write_bytes(inhalt)
+    try:
+        check("Probe: eine liegengebliebene Kopie faellt im Abzug auf",
+              geheim.encode() in _verzeichnis_bytes(pfad.parent))
+    finally:
+        shutil.rmtree(probe)
+
+    check("Probe: nach dem Aufraeumen ist der Schluessel wieder fort",
+          geheim.encode() not in _verzeichnis_bytes(pfad.parent))
 
 
 def offenlegungsseiten() -> None:

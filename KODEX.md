@@ -118,9 +118,15 @@ zur Missbrauchsabwehr — dafür haben wir die eID. Speichern des Referrers der 
 Stimmen-Ebene. Übernahme weiterer eID-Datenfelder in die Anfrage an den eID-Server, selbst wenn das
 Berechtigungszertifikat sie erlaubt.
 
-**Status.** `bindend`. Die Umsetzung im Betrieb (Log-Konfiguration, Reverse-Proxy, Hosting-Provider) ist
-noch nicht abgeschlossen und bis dahin `Disziplin` → EIP-T-041,
-fällig ab Betriebsstufe `öffentlich erreichbar`. **Diese Fälligkeit ist gerissen** (V-002).
+**Status.** `bindend`. Die Umsetzung im Betrieb ist noch nicht abgeschlossen und bis dahin
+`Disziplin` → EIP-T-075, fällig ab Betriebsstufe
+`öffentlich erreichbar`. **Diese Fälligkeit ist gerissen** (V-002).
+
+Was daran noch offen ist, ist seit dem 2026-07-31 auf einen Punkt zusammengeschnurrt: die eigene
+Seite — Zugriffslog, Reverse-Proxy, Debug-Modul, Schlüsselvernichtung samt WAL — ist erhoben,
+abgeschaltet und getestet (EIP-T-041,
+`EIP-RPT-20260731-002`). Übrig bleibt, was Renders Loadbalancer und TLS-Endpunkt mitschreiben. Das
+ist keine Konfigurationsfrage mehr, sondern eine Auskunft, die ein Dritter geben muss.
 
 ### § 2 Unverkettbarkeit
 
@@ -561,7 +567,7 @@ das war die bewusste Entscheidung, keine private Adresse dauerhaft an das Projek
 
 | § | Was offen ist | Ticket | Fällig vor | Seit |
 |---|---|---|---|---|
-| 1 | Log-Konfiguration bei Proxy und Hoster | EIP-T-041 | `öffentlich erreichbar` | 2026-07-26 |
+| 1 | Protokollierung beim Hoster (Loadbalancer, TLS-Endpunkt) — die eigene Seite ist erledigt | EIP-T-075 | `öffentlich erreichbar` | 2026-07-26 |
 | 2 | Speichertrennung der Abstimm-Route (Baustein G) und Session-Cookie an /verify | EIP-T-033 | `produktiv` | 2026-07-26 |
 | 2 | Öffentlicher Anker gegen Split-View | EIP-T-006 | `produktiv` | 2026-07-26 |
 | 4 | Ballot Stuffing bleibt Disziplin **während der Laufzeit** (Schlüssel liegt allein bei uns; nach Schließung vernichtet, EIP-T-069) | EIP-T-040 | `produktiv` | 2026-07-26 |
@@ -589,8 +595,10 @@ Stand 2026-07-31:
 - **§ 1** — weiterhin nur teilweise, aber die Hälfte steht: Dass die App keine IPs mehr
   protokolliert, ist seit dem 2026-07-31 **am wirksamen Ort belegt** — der Startbefehl der Instanz
   trägt `--no-access-log`, und über dutzende Anfragen fällt keine Zugriffszeile an (V-002 damit
-  geschlossen). Was Renders Loadbalancer und TLS-Endpunkt daneben mitschreiben, ist ungeprüft und
-  erscheint im Container-Log gar nicht → EIP-T-041.
+  geschlossen). Der gesamte übrige Anfall auf unserer Seite ist am 2026-07-31 erhoben und je Position
+  auf Notwendigkeit geprüft (`EIP-RPT-20260731-002`). Was Renders Loadbalancer und TLS-Endpunkt
+  daneben mitschreiben, ist ungeprüft und erscheint im Container-Log gar nicht →
+  EIP-T-075.
   **Bleibt die einzige gerissene Fälligkeit dieser Betriebsstufe**
 
 Die Spalte *Seit* nennt das Datum der Kodex-Version, in der der Vermerk zuerst stand, nicht das
