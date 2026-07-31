@@ -578,11 +578,12 @@ das war die bewusste Entscheidung, keine private Adresse dauerhaft an das Projek
 Drei Fälligkeiten hängen an der Betriebsstufe `öffentlich erreichbar`, die seit dem 2026-07-27 läuft.
 Stand 2026-07-31:
 
-- **§ 20** — **gerade nicht erfüllt**: Version 11 liegt geschrieben im Arbeitsbaum
-  (`app/KODEX.md`, `app/KODEX-PROTOKOLL.md` synchronisiert), die öffentliche Instanz zeigt
-  Version 10. Kein Verstoß nach § 18 — die Instanz sagt korrekt, welchen Stand sie zeigt, und
-  genau dieses Reißen bei jedem nicht ausgelieferten Commit ist als Disziplin vermerkt
-  (→ EIP-T-074). Zuletzt erfüllt: Deploy `ad45d76`
+- **§ 20** — erfüllt **im Moment jeder Prüfung, nicht dauerhaft**: Zwischen einer Änderung hier und
+  ihrem Deploy zeigt die Instanz einen älteren Stand, und niemand außer uns bemerkt das. Kein
+  Verstoß nach § 18, solange die Instanz korrekt sagt, welche Version sie zeigt — aber auch kein
+  Zustand, den dieser Punkt dauerhaft behaupten kann. Deshalb steht hier keine Momentaufnahme:
+  Was der ausgelieferte Stand ist und wie man ihn prüft, ist die Aufgabe von
+  → EIP-T-074. Bis dahin trägt es Disziplin
 - **§ 10** — erfüllt: Kodex, Verstoßprotokoll und Transparenzbericht sind auf der Instanz ohne
   Anmeldung erreichbar (Version 10, EIP-T-063)
 - **§ 1** — weiterhin nur teilweise: Die App protokolliert keine IPs mehr, was der Hoster daneben

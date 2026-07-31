@@ -40,6 +40,13 @@ Lücke ist kein Verstoß — eine gerissene Fälligkeit schon (so schon im Absch
 `bindend`; die Änderung schärft ihn, ohne eine Schuld zu tilgen oder zu erzeugen. Zulässig unter
 § 4 b als Arbeit, die einen Verstoß dokumentiert und seine Wiederholung erschwert.
 
+**Nachtrag, gleiche Version.** Der § 20-Statuspunkt in der Schuldenübersicht führte bis hierhin eine
+Momentaufnahme („erfüllt, Deploy `c3c3a5e`"). Beim Ausliefern dieser Version fiel auf, dass der Satz
+damit **bei jeder Kodex-Änderung für die Dauer des Deploys falsch** ist und danach von Hand
+nachgezogen werden müsste — ein Vermerk, der seine eigene Pflege verlangt, ist genau der Drift, den
+EIP-T-074 beheben soll. Der Punkt sagt jetzt die Regel statt des Standes. Keine Regeländerung,
+deshalb keine neue Version; hier vermerkt, damit sie nicht still geschieht (§ 17).
+
 ### Version 10 — 2026-07-31
 
 § 10 ist vollständig `bindend`. Der Paragraph stand seit Version 1 mit drei offenen Punkten da —
