@@ -70,3 +70,31 @@ Schließen einer Umfrage vernichtet.
 
 Die Grenzen dieser Aussage — Sicherungskopien, laufender Betrieb, der Betreiber selbst — stehen im
 Verfahrensdokument und im Kodex, nicht nur hier.
+
+## Eine Grenze, die nicht bei uns liegt: der Hoster
+
+**Stand 2026-07-31.** Die Instanz läuft bei Render (Gratis-Tarif); der gesamte eingehende Verkehr
+läuft davor über Cloudflare, das Render als Subprozessor benennt. Unsere eigene Anwendung
+protokolliert seit dem 2026-07-31 keine IP-Adressen mehr, und das ist an der laufenden Instanz
+belegt, nicht nur konfiguriert.
+
+Was Render und Cloudflare davor mitschreiben, wissen wir nicht — und wir sagen das lieber, als es
+offenzulassen:
+
+- Render sagt in seiner Auftragsverarbeitungsvereinbarung eine „umfassende und zentrale
+  Protokollierung und Überwachung" der eigenen Produkte und Infrastruktur zu. **Dass protokolliert
+  wird, steht damit fest.**
+- Umfang und Aufbewahrungsdauer stehen nirgends. Der Vertrag nennt als Frist sinngemäß „solange es
+  für die Erbringung der Dienste oder die berechtigten Geschäftsinteressen erforderlich ist".
+- Auf dem Gratis-Tarif sind diese Protokolle für uns nicht einsehbar, und abstellen können wir sie
+  auf keinem Tarif.
+
+**Was das praktisch heißt.** Eine Behörde, die von uns nichts bekommt, weil es bei uns nichts gibt,
+könnte sich an Render oder Cloudflare wenden. Ob dort etwas liegt, das eine Teilnahme mit einer
+IP-Adresse verbindet, können wir nicht ausschließen; von einem solchen Vorgang würden wir
+voraussichtlich nichts erfahren und könnten ihn hier nicht berichten. Das betrifft nicht den Inhalt
+der Stimme — die steht in keinem Log —, wohl aber die Tatsache, dass jemand die Seite aufgerufen hat.
+
+Eine schriftliche Anfrage an Render mit genau diesen Fragen ist formuliert, aber zum Stand dieses
+Berichts **noch nicht abgesendet**. Wann sie herausgeht, steht hier; die Antwort wird
+veröffentlicht, auch wenn sie ungünstig ausfällt oder ausbleibt.

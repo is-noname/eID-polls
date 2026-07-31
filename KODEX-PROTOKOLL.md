@@ -47,6 +47,28 @@ nachgezogen werden müsste — ein Vermerk, der seine eigene Pflege verlangt, is
 EIP-T-074 beheben soll. Der Punkt sagt jetzt die Regel statt des Standes. Keine Regeländerung,
 deshalb keine neue Version; hier vermerkt, damit sie nicht still geschieht (§ 17).
 
+**Zweiter Nachtrag, gleiche Version (EIP-T-075).** § 1 sagte an drei Stellen sinngemäß, was Renders
+Loadbalancer und TLS-Endpunkt protokollieren, sei „ungeprüft" und eine Auskunft stehe aus. Die
+Auswertung der öffentlichen Unterlagen von Render und Cloudflare am Nachmittag des 2026-07-31 zeigt,
+dass das den Stand zu unseren Gunsten beschreibt: Renders Auftragsverarbeitungsvereinbarung — die
+über die Terms of Service auch im Gratis-Tarif ohne Zutun gilt — sagt in Exhibit C „comprehensive
+and centralized logging and monitoring of our products and infrastructure" zu und lässt die
+Aufbewahrungsdauer in Exhibit A offen. Cloudflare ist benannter Subprozessor, durch dessen Netz
+jeder Request läuft, und wir sind dort nicht Zoneninhaber.
+
+**Dass protokolliert wird, ist damit belegt; unbekannt sind nur noch Umfang und Frist.** § 1 sagt
+aber nicht „nicht verkettbar", sondern „fällt nicht an" — der Vermerk stand also vor einer
+Wissenslücke und steht jetzt vor einem benannten Widerspruch. Die Formulierungen in § 1, im
+Betriebsstufen-Abschnitt und in der Schuldenübersicht sind entsprechend nachgezogen, ebenso
+`EIP-RPT-20260731-002` § 1.5.1 und § 4.
+
+Keine Regeländerung und keine neue Version: § 1 bleibt Wort für Wort stehen, sein Status bleibt
+`Disziplin`, die Zahl bleibt 11 von 20 und der Baustopp gilt weiter. Vermerkt wird es hier, weil ein
+Kodex, der eine Belastung milder beschreibt als sie ist, nach § 4 selbst das Problem wäre — und weil
+eine stille Korrektur genau der Vorgang ist, gegen den § 17 geschrieben ist. Die Grenze ist am selben
+Tag auch auf `/transparenz` benannt worden; sie nur intern zu führen, wäre § 10 mit umgekehrtem
+Vorzeichen.
+
 ### Version 10 — 2026-07-31
 
 § 10 ist vollständig `bindend`. Der Paragraph stand seit Version 1 mit drei offenen Punkten da —
