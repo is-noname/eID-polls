@@ -95,20 +95,21 @@ check("genau eine Berechtigung angefordert", () => assert.equal(tokenCalls, 1));
 
 // --- Fall 2: naechster Versuch verwendet dieselbe Berechtigung
 voteHandler = (_body, reply) =>
-  reply(200, { board_index: 7, entry_hash: "abc123", participation: 3 });
+  reply(200, { leaf_hash: "abc123", batch: 7, beleg_sig: "ff00", participation: 3 });
 const receipt = await ballot.castBallot(POLL, N_HEX, E_HEX, ["Ja"]);
 
 check("keine zweite Berechtigung angefordert", () => assert.equal(tokenCalls, 1));
 check("dasselbe Token wie vor dem Abbruch", () => assert.equal(receipt.token, midway.token));
-check("Beleg enthaelt Eintrag und Pruefsumme", () => {
-  assert.equal(receipt.index, 7);
-  assert.equal(receipt.entryHash, "abc123");
+check("Beleg enthaelt Blatt, Batch-Zusage und Signatur", () => {
+  assert.equal(receipt.leaf, "abc123");
+  assert.equal(receipt.batch, 7);
+  assert.equal(receipt.belegSig, "ff00");
   assert.equal(receipt.participation, 3);
 });
 check("EIP-T-011: Token nach Abgabe aus dem Speicher entfernt", () => {
   const after = state();
   assert.ok(after.voted);
-  assert.equal(after.index, 7);
+  assert.equal(after.leaf, "abc123");
   assert.ok(!after.token, "Token noch gespeichert");
   assert.ok(!after.sig, "Signatur noch gespeichert");
 });
@@ -141,7 +142,7 @@ check("Reload findet die geparkte Berechtigung", () => {
 voteCalls = 0;
 voteHandler = (body, reply) => {
   assert.equal(body.token, parked.token);
-  return reply(200, { board_index: 1, entry_hash: "deadbeef", participation: 1 });
+  return reply(200, { leaf_hash: "deadbeef", batch: 1, beleg_sig: "ff00", participation: 1 });
 };
 const afterReload = await ballot.castBallot(POLL, N_HEX, E_HEX, ["Ja"]);
 check("Abgabe nach Reload nutzt die geparkte Berechtigung", () => {

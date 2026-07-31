@@ -42,7 +42,7 @@ import board_eintrag
 import web
 from board_eintrag import Vote, canonical, parse
 from debug import log
-from poll_service import PollService, Rejected
+from poll_service import POLL_KEY, PollService, Rejected
 
 router = APIRouter()
 
@@ -64,15 +64,23 @@ def _direktzugriff(path: Path) -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
-def _signaturschluessel(service: PollService) -> rsa.RSAPrivateKey:
-    """Den Token-Schluessel aus der Store-Config holen.
+def _signaturschluessel(service: PollService, poll_id: str) -> rsa.RSAPrivateKey:
+    """Den Token-Schluessel dieser Umfrage aus der Store-Config holen.
 
-    Kein Zugriff auf `PollService._d`: Die Demo nimmt denselben Weg wie ein
-    Betreiber, der die Datenbank hat - das *ist* die Aussage von §9.
+    Kein Zugriff auf einen privaten Merker des Service: Die Demo nimmt denselben
+    Weg wie ein Betreiber, der die Datenbank hat - das *ist* die Aussage von §9.
+
+    Seit EIP-T-069 gibt es den Schluessel nur je Umfrage und nur, solange sie
+    laeuft. Genau das ist die Grenze, die die Demo vorfuehrt: Nach dem
+    Schliessen findet auch der Betreiber hier nichts mehr.
     """
-    pem = service.store.get_config("token_key_pem")
+    pem = service.store.get_config(POLL_KEY + poll_id)
     if not pem:
-        raise Rejected("Kein Token-Signaturschluessel in der Datenbank.")
+        raise Rejected(
+            f"Kein Signaturschluessel fuer '{poll_id}' in der Datenbank - die Umfrage ist "
+            "geschlossen und der Schluessel vernichtet (EIP-T-069). Auch der Betreiber kann "
+            "hier keine Token mehr herstellen."
+        )
     key = serialization.load_pem_private_key(pem.encode(), password=None)
     assert isinstance(key, rsa.RSAPrivateKey)
     return key
@@ -90,36 +98,49 @@ def stuff_ballot(service: PollService, poll_id: str, choice: str) -> None:
     kryptografisch ununterscheidbar von einem echten. Nur die
     Ledger-Abrechnung entlarvt es (§9).
     """
-    d = _signaturschluessel(service).private_numbers().d
+    key = _signaturschluessel(service, poll_id)
+    n = key.public_key().public_numbers().n
     token = secrets.token_bytes(32)
-    blinded, inv = blind.blind(token, service.n, service.e)
-    sig = blind.finalize(blind.blind_sign(blinded, service.n, d), inv, service.n)
+    blinded, inv = blind.blind(token, n, key.public_key().public_numbers().e)
+    sig = blind.finalize(blind.blind_sign(blinded, n, key.private_numbers().d), inv, n)
     service.cast_vote(poll_id, token, sig, [choice])
     log.error("demo", "Betreiber-Stimme ohne Berechtigung eingeschleust (Demo).", poll=poll_id)
 
 
-def tamper_board(service: PollService, poll_id: str, index: int, new_choice: str) -> None:
-    """Schreibt eine Board-Stimme um und laesst die Hashes stehen.
+def tamper_board(service: PollService, poll_id: str, leaf_prefix: str, new_choice: str) -> None:
+    """Schreibt eine veroeffentlichte Board-Stimme um und laesst die Roots stehen.
 
-    Zeigt Fund 2 aus dem Prototyp: die Kette entlarvt genau diesen faulen
-    Angreifer. Ein Betreiber mit Schreibzugriff wuerde die Hashes dahinter
-    neu rechnen - dagegen hilft nur ein extern verankerter Merkle-Root (§12).
+    Zeigt Fund 2 aus dem Prototyp: Merkle-Root und Batch-Kette entlarven genau
+    diesen faulen Angreifer. Ein Betreiber mit Schreibzugriff wuerde Roots und
+    Kette dahinter neu rechnen - dagegen hilft nur ein extern verankerter
+    Merkle-Root (§12, EIP-T-006).
+
+    Adressiert wird der Eintrag ueber seinen Blatt-Hash (oder ein eindeutiges
+    Praefix davon) - Eintraege haben keine Nummern mehr (ADR E1).
     """
-    entry = next((e for e in service.board(poll_id) if e.index == index), None)
-    if entry is None:
-        raise Rejected(f"Kein Board-Eintrag #{index}.")
+    leaf_prefix = leaf_prefix.strip().lower()
+    if not leaf_prefix:
+        raise Rejected("Blatt-Hash (oder Praefix) angeben.")
+    treffer = [e for e in service.board(poll_id) if e.leaf_hash.startswith(leaf_prefix)]
+    if not treffer:
+        raise Rejected(f"Kein veroeffentlichter Board-Eintrag mit Blatt {leaf_prefix}...")
+    if len(treffer) > 1:
+        raise Rejected(f"Blatt-Praefix {leaf_prefix} ist nicht eindeutig.")
+    entry = treffer[0]
     gestimmt = parse(entry)
     if not isinstance(gestimmt, Vote):
-        raise Rejected(f"Eintrag #{index} ist keine Stimme.")
+        raise Rejected(f"Eintrag {entry.leaf_hash[:16]}... ist keine Stimme.")
     umgeschrieben = board_eintrag.vote(gestimmt.poll, gestimmt.token, gestimmt.sig, [new_choice])
 
     with _direktzugriff(service.store.path) as conn:
         conn.execute(
-            "UPDATE board SET payload = ? WHERE poll_id = ? AND idx = ?",
-            (canonical(umgeschrieben), poll_id, index),
+            "UPDATE board SET payload = ? WHERE poll_id = ? AND leaf_hash = ?",
+            (canonical(umgeschrieben), poll_id, entry.leaf_hash),
         )
-    log.error("demo", f"Board-Eintrag #{index} manipuliert (Demo).", poll=poll_id)
-    service.check_consistency(poll_id)
+    log.error(
+        "demo", f"Board-Eintrag {entry.leaf_hash[:16]}... manipuliert (Demo).", poll=poll_id
+    )
+    service.check_consistency(poll_id, service.pruefbericht(poll_id))
 
 
 def reset_eligibility(service: PollService, poll_id: str, pseudonym: str) -> bool:
@@ -173,7 +194,7 @@ async def api_admin_tamper(request: Request, poll_id: str, payload: dict) -> JSO
     tamper_board(
         web.deps(request).service,
         poll_id,
-        int(payload.get("index", -1)),
+        str(payload.get("leaf", "")),
         str(payload.get("choice", "")),
     )
     return JSONResponse({"ok": True})

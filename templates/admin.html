@@ -110,8 +110,8 @@
         <button class="danger" id="stuff-button">Ballot-Stuffing (Stimme ohne Berechtigung)</button>
         <button class="danger" id="tamper-button">Board-Eintrag umschreiben</button>
         <div class="field" style="width:120px">
-          <label for="demo-index">Eintrag-Index</label>
-          <input type="text" id="demo-index" placeholder="z. B. 3">
+          <label for="demo-leaf">Blatt-Hash (oder eindeutiges Präfix)</label>
+          <input type="text" id="demo-leaf" placeholder="z. B. 3fa9c2">
         </div>
       </div>
       <div class="faint">
@@ -187,7 +187,7 @@
     if (tamper) tamper.addEventListener("click", async () => {
       try {
         await postJSON(`/api/admin/demo/tamper/${document.getElementById("demo-poll").value}`, {
-          index: parseInt(document.getElementById("demo-index").value, 10),
+          leaf: document.getElementById("demo-leaf").value,
           choice: document.getElementById("demo-choice").value,
         });
         toast("Board-Eintrag umgeschrieben — Kette prüfen.", "err");

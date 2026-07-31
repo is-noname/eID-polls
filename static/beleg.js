@@ -4,7 +4,7 @@
 // selbst steht in ballot.js, das Zeichnen im DOM in templates/poll.html.
 //
 // Zustand ist immer der Beleg-Datensatz aus ballot.js:
-//   { index, entryHash, token? }
+//   { leaf, batch, belegSig, token? }
 // Ohne token stammt der Zustand aus einem Reload nach der Abgabe - dann traegt
 // nur noch der gespeicherte Beleg den Bezug zur Stimme (EIP-T-011), und Textform
 // wie Kassenbon sagen das ausdruecklich.
@@ -24,9 +24,15 @@ export function receiptText(pollId, state, origin = location.origin) {
   return [
     "DEIN BELEG — eID-Umfrage",
     `Umfrage:      ${pollId}`,
-    `Eintrag Nr.:  ${state.index}`,
-    `Prüfsumme:    ${state.entryHash}`,
+    `Blatt:        ${state.leaf}`,
+    `Batch:        ${state.batch} (zugesagt)`,
+    `Signatur:     ${state.belegSig}`,
     tokenLine,
+    "",
+    "Dein Eintrag erscheint mit Batch " + state.batch + " im öffentlichen Board —",
+    "gebündelt mit anderen, spätestens nach dem Zeitdeckel, in jedem Fall beim",
+    "Ende der Umfrage. Die Signatur bindet den Betreiber ab jetzt: Fehlt der",
+    "Eintrag dann, ist dieser Beleg der Nachweis dafür.",
     "",
     "So prüfst du deine Stimme:",
     `  1. ${origin}/verify aufrufen`,
@@ -57,9 +63,10 @@ export function receiptPaper(pollId, state, origin = location.origin) {
 
   paper.append(el("div", "rc-title", "DEIN BELEG"), el("div", "rc-sub", "eID-Umfrage"));
   paper.append(row("Umfrage", pollId));
-  paper.append(row("Eintrag Nr.", String(state.index)));
+  paper.append(row("Batch (zugesagt)", String(state.batch)));
   paper.append(el("div", "rc-divider"));
-  paper.append(el("div", "rc-label", "Prüfsumme"), el("div", "rc-hex", state.entryHash));
+  paper.append(el("div", "rc-label", "Blatt-Prüfsumme"), el("div", "rc-hex", state.leaf));
+  paper.append(el("div", "rc-label", "Signatur des Betreibers"), el("div", "rc-hex", state.belegSig));
   paper.append(el("div", "rc-divider"));
 
   paper.append(el("div", "rc-label", "Stimm-Token"));

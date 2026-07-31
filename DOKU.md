@@ -52,10 +52,22 @@ sie in dieselbe Regel einbeziehen — sonst lebt der Schlüssel dort weiter. Sol
 **läuft**, existiert ihr Schlüssel notwendigerweise; die Zuordnung ist in diesem Zeitraum für den
 Betreiber möglich. Vernichtet wird beim Schließen, nicht vorher (`EIP-T-033`, Baustein D).
 
-**Bulletin Board.** Eine öffentliche, fortlaufende Kette von Einträgen; jeder trägt den Hash des
-vorherigen. Hier stehen die Stimmen, und **nur hieraus** wird ausgezählt. Das ist wichtiger als es
-klingt: würde intern anders gezählt als öffentlich einsehbar ist, wäre die öffentliche Prüfung
-wertlos. Genau dieser Fehler steckte im Prototyp (`PROTOTYPE_two-ledger/NOTES.md`, Fund 1).
+**Bulletin Board.** Eine öffentliche Sammlung von Einträgen, veröffentlicht in **Batches**
+(EIP-ADR-20260728-001): Innerhalb eines Batches gibt es keine Reihenfolge — die Einträge bilden,
+nach ihrem Blatt-Hash sortiert, einen Merkle-Baum. Die Wurzeln der Batches sind untereinander
+verkettet, sodass Löschen und nachträgliches Ändern auffallen. Hier stehen die Stimmen, und
+**nur hieraus** wird ausgezählt. Das ist wichtiger als es klingt: würde intern anders gezählt als
+öffentlich einsehbar ist, wäre die öffentliche Prüfung wertlos. Genau dieser Fehler steckte im
+Prototyp (`PROTOTYPE_two-ledger/NOTES.md`, Fund 1).
+
+Veröffentlicht wird, sobald mindestens **k** neue Einträge warten (Voreinstellung 10, ein Wert und
+seine Grenzen: `EIP-ADR-20260728-001` E3), spätestens nach dem **Zeitdeckel** (6 Stunden), in jedem
+Fall beim Schließen der Umfrage. Der Sinn: Erschiene jeder Eintrag sofort, könnte jeder Beobachter
+des Boards den Eintragszeitpunkt sehen — genau die Timing-Korrelation, die das Verfahren
+verhindern will. Die Batch-Größe ist die Anonymitätsmenge, und bei niedriger Beteiligung ist sie
+ehrlicherweise klein. Bis zur Veröffentlichung trägt der **signierte Beleg** (Ed25519, eigener
+Schlüssel) die Zusage: Blatt-Hash und Batch-Nummer, offline prüfbar. Fehlt der Eintrag im
+zugesagten Batch, ist der Beleg der Nachweis.
 
 ---
 
@@ -86,7 +98,9 @@ Freitext ist ausgeschlossen, weil er die maschinelle Auszählung bricht und dean
 3. **Schritt 2 — Abstimmen.** Ein Klick, hinter dem zwei Dinge stecken: Der Browser erzeugt das
    Stimm-Token, verblindet es, lässt es signieren, entblindet es wieder — und gibt damit sofort
    die Stimme ab. Mehrfachauswahl ist möglich; die *Kombination* steht so im Board.
-4. **Schritt 3 — Beleg.** Als `.txt` sichern. Er enthält das Stimm-Token.
+4. **Schritt 3 — Beleg.** Als `.txt` sichern. Er enthält das Stimm-Token, den Blatt-Hash des
+   Eintrags, die zugesagte Batch-Nummer und die Ed25519-Signatur des Betreibers über diese
+   Zusage. Die Stimme erscheint im Board erst mit ihrem Batch — der Beleg bindet sofort.
 
 Während die Umfrage läuft, zeigt die Seite nur die Teilnahmezahl. Die Verteilung erscheint erst
 nach dem Schließen (§7) — Zwischenstände beeinflussen laufende Abstimmungen und erlauben
@@ -102,7 +116,9 @@ Timing-Rückschlüsse.
 ### Eigene Stimme prüfen
 
 **Verifikation** → Umfrage wählen, Token aus dem Beleg einfügen. Die App zeigt die Auswahl, die
-unter diesem Token im Board steht.
+unter diesem Token im Board steht. Gefunden wird nur Veröffentlichtes: Zwischen Abgabe und dem
+nächsten Batch meldet die Suche „kein Eintrag" — in diesem Zeitraum ist der signierte Beleg der
+Nachweis, nicht das Board.
 
 Dieser Beleg ist zugleich eine **Quittung** — wer ihn vorzeigt, beweist, wie er gestimmt hat. Das
 ist eine bewusste Entscheidung: individuelle Verifizierbarkeit und Quittungsfreiheit schließen
@@ -111,21 +127,23 @@ verhindert.
 
 ### Ergebnis und öffentliche Prüfung
 
-**Board** (`/board/{id}`) zeigt fünf Kennzahlen und darunter die vollständige Kette:
+**Board** (`/board/{id}`) zeigt fünf Kennzahlen und darunter die veröffentlichten Batches:
 
 | Kennzahl | Bedeutung | Wenn sie ausschlägt |
 |---|---|---|
-| Kette | jeder Eintrag passt zum Hash des vorherigen | Ein Eintrag wurde nachträglich verändert → **kein Ergebnis** |
+| Batch-Kette | Einträge passen zu den Merkle-Wurzeln, Wurzeln zur Kette | Ein Eintrag wurde nachträglich verändert oder gelöscht → **kein Ergebnis** |
 | Token-Signaturen | jede Stimme trägt eine gültige Signatur | Eine Stimme wurde eingefügt, ohne signiert zu sein → **kein Ergebnis** |
 | Berechtigte | wie viele Token ausgegeben wurden | — |
-| Stimmen im Board | wie viele Stimmen eingegangen sind | — |
+| Stimmen im Board | wie viele Stimmen veröffentlicht sind | — |
 | Ledger-Abrechnung | Stimmen ≤ Berechtigte? | Mehr Stimmen als Berechtigte = sichtbarer Manipulationsbeweis |
 
 Beide Zahlen der Abrechnung stammen aus dem Board — also aus dem, was jeder Dritte sieht.
 
-Unten steht der **öffentliche Token-Schlüssel**. Damit lässt sich jede Stimme unabhängig prüfen
-(RSASSA-PSS über SHA-384, Salt-Länge 0), und die Kette mit
-`sha256("index|prev_hash|payload")` nachrechnen.
+Unten stehen der **öffentliche Token-Schlüssel** und der **Beleg-Schlüssel**. Damit lässt sich
+jede Stimme unabhängig prüfen (RSASSA-PSS über SHA-384, Salt-Länge 0) und jeder Beleg verifizieren.
+Das Board rechnet sich nach über `leaf = sha256(0x00‖payload)`, je Batch einen Merkle-Baum über
+die sortierten Blätter (`sha256(0x01‖links‖rechts)`, ungerade Knoten durchgereicht) und
+`batch_root = sha256(0x02‖merkle_root‖vorherige_root)`.
 
 ### Selbst nachrechnen, ohne diesem Server zu glauben
 
@@ -143,9 +161,13 @@ Ausgegeben werden Kettenstatus, Signaturstatus, Ledger-Abrechnung und Auszählun
 heißt: nichts gefunden. Exit-Code 1 heißt: mindestens ein Befund — die Zahlen darüber sind dann
 nicht belastbar.
 
-Der Export enthält den öffentlichen Schlüssel mit, aus Bequemlichkeit. Wer dem Betreiber nicht
-glaubt, nimmt ihn aus einer unabhängigen Quelle und übergibt ihn mit `--pubkey key.pem`; sonst
-prüft man das Board nur gegen sich selbst.
+Den Token-Schlüssel bringt das Board selbst mit: Er steht im Eröffnungseintrag (`POLL_OPEN`) und
+liegt damit unter der Merkle-Wurzel und in der Batch-Kette. Nachträglich austauschen ließe er sich
+nur, indem die Kette bricht — anders als ein Schlüssel, der bloß neben dem Board in der Datenbank
+läge. Wer ihn aus einer unabhängigen Quelle hat, übergibt ihn mit `--pubkey key.pem`: Er **ersetzt**
+den Schlüssel aus dem Board dann nicht, sondern wird dagegen gehalten, und eine Abweichung ist ein
+Befund. Weil jede Umfrage ihren eigenen Schlüssel hat, ist auch der Schlüssel einer *anderen*
+Umfrage eine Abweichung.
 
 **Was das nicht leistet:** Der Export kommt weiterhin von diesem Server. Zwei Betrachter können
 zwei verschiedene, jeweils in sich stimmige Boards bekommen, und ein Betreiber mit Schreibzugriff
@@ -162,16 +184,19 @@ Zuordnung Person → Stimme. Aus demselben Grund steht im Phase-A-Eintrag kein H
 - `info` — normale Vorgänge
 - `reject` — regelkonforme Abweisungen (verbrauchtes Token, zweites Token, ungültige Signatur …)
 - `error` — unerwartete Fehler samt Traceback
-- `inconsistency` — **die wichtigste Kategorie**: gebrochene Kette, ungültige Signatur im Board,
-  schiefe Ledger-Abrechnung, Board gegen Vote-Ledger auseinandergelaufen
+- `inconsistency` — **die wichtigste Kategorie**: gebrochene Batch-Kette, ungültige Signatur im
+  Board, schiefe Ledger-Abrechnung (auch inklusive Puffer), Board gegen Vote-Ledger
+  auseinandergelaufen, hängender Batch-Puffer (Zeitdeckel überschritten oder Puffer trotz
+  geschlossener Umfrage nicht leer)
 
 Darüber läuft bei jedem Aufruf eine frisch gerechnete Konsistenzprüfung über alle Umfragen. Bei
 diesem Projekt ist das kein Komfort-Feature, sondern die Stelle, an der Manipulation auffällt.
 
 **Vollprüfung und laufende Prüfung** — die Board-Seite, das Ergebnis, der Export, `/debug` und das
-mitgelieferte Prüfwerkzeug prüfen jedes Mal *alles*: jede Hash-Verkettung und jede Token-Signatur,
-ohne Vorbedingung. Während des Abstimmens läuft eine verkürzte Variante: die Hash-Kette weiterhin
-ganz, die Signaturen nur für das, was seit der letzten Prüfung dazugekommen ist (EIP-T-051). Sonst
+mitgelieferte Prüfwerkzeug prüfen jedes Mal *alles*: jede Merkle-Wurzel, die Batch-Kette und jede
+Token-Signatur, ohne Vorbedingung. Während des Abstimmens läuft eine verkürzte Variante: Wurzeln
+und Kette weiterhin ganz, die Signaturen nur für das, was seit der letzten Prüfung dazugekommen
+ist (EIP-T-051). Sonst
 prüft der Server bei der n-ten Stimme n Signaturen und wird genau dann langsam, wenn Beteiligung da
 ist. Was die Verkürzung kostet: wer eine alte Stimme fälscht **und** die Hashes dahinter neu rechnet,
 fällt nicht mehr beim nächsten Abstimmen auf, sondern erst beim nächsten vollen Durchlauf — also
@@ -182,15 +207,19 @@ Betreiber mit Schreibzugriff hilft ohnehin nur die externe Verankerung aus §12.
 
 **Ballot-Stuffing** — der Betreiber signiert sich selbst ein Token und stimmt ab. Die Stimme läuft
 durch denselben Pfad wie eine echte und ist kryptografisch nicht von ihr zu unterscheiden. Was sie
-verrät: die Abrechnung zeigt mehr Stimmen als Berechtigte.
+verrät: die Abrechnung zeigt mehr Stimmen als Berechtigte. Nach dem Schließen der Umfrage
+scheitert die Demo — der Signaturschlüssel ist dann vernichtet und auch der Betreiber kann kein
+gültiges Token mehr herstellen (siehe unten). Während die Umfrage läuft, kann er es.
 
-**Board umschreiben** — ein Stimmeintrag wird verändert, die Hashes bleiben stehen. Die Kette
-bricht sichtbar, das Ergebnis wird verweigert.
+**Board umschreiben** — ein veröffentlichter Stimmeintrag wird verändert (adressiert über seinen
+Blatt-Hash), die Wurzeln bleiben stehen. Die Batch-Kette bricht sichtbar, das Ergebnis wird
+verweigert.
 
-Der zweite Angriff zeigt zugleich die Grenze: ein Betreiber mit Schreibzugriff würde die Hashes
-dahinter **neu rechnen**, und danach ist die Kette wieder intakt und lokal nicht mehr von der
-Wahrheit zu unterscheiden. Die Kette schützt gegen unbemerkte nachträgliche Änderung durch Dritte —
-nicht gegen den Betreiber. Dafür bräuchte es einen extern verankerten Merkle-Root (§12).
+Der zweite Angriff zeigt zugleich die Grenze: ein Betreiber mit Schreibzugriff würde Wurzeln und
+Kette dahinter **neu rechnen**, und danach ist das Board wieder in sich stimmig und lokal nicht
+mehr von der Wahrheit zu unterscheiden. Die Kette schützt gegen unbemerkte nachträgliche Änderung
+durch Dritte — nicht gegen den Betreiber. Dafür bräuchte es einen extern verankerten Merkle-Root
+(§12, EIP-T-006 — die Batch-Kette liefert dafür bereits die zu verankernde `batch_root`).
 
 ---
 
@@ -215,10 +244,10 @@ static/ballot.js (+ blind.js)            web.py          HTTP, Cookies
 | `static/blind.js` | Dieselbe Krypto im Browser. Beide Seiten müssen bitgenau gleich rechnen. |
 | `static/ballot.js` | Der Weg einer Stimme im Browser: Token erzeugen, verblinden, signieren lassen, entblinden, abgeben — plus der Zwischenstand, wenn die Abgabe danach abbricht (EIP-ADR-20260725-002). `blind.js` rechnet, `ballot.js` führt. `templates/poll.html` enthält nur noch die DOM-Verdrahtung. |
 | `static/beleg.js` | Der Beleg: Kassenbon, QR-Code, Textdatei. Reine Darstellung — kein Krypto, kein Netz, kein Speicher. |
-| `store.py` | SQLite: `polls`, `eligibility`, `spent`, `board`. Alle Zugriffe — auch lesende — laufen über ein `RLock`, weil sich alle Threads eine Verbindung teilen (EIP-T-019). |
-| `board_eintrag.py` | Das Eintragsformat: kanonisches JSON, Eintrags-Hash, Konstruktoren (`vote`, `token_issued`, `poll_open`, `poll_closed`) und `parse(entry) -> Vote \| TokenIssued \| PollOpen \| PollClosed \| Unlesbar`. Rohe Dicts baut und liest niemand mehr selbst. Ein Eintrag, den `parse` nicht deuten kann, wird zu `Unlesbar` — er zählt nirgends mit und macht das Ergebnis unbelastbar, statt still zu verschwinden. |
-| `verifikation.py` | Die gesamte Prüfung über das gelesene Board: `pruefe(entries, public_key, options) -> Pruefbericht` plus Kettenprüfung. Ohne Datenbank, ohne privaten Schlüssel, auch als Kommandozeilen-Werkzeug für Dritte lauffähig. |
-| `poll_service.py` | Phasenlogik, Regeln, Konsistenzprüfung. Die Auszählung selbst delegiert es an `verifikation.py` und übersetzt Befunde in Abweisungen. Hält auch den Lebenszyklus des Umfrage-Schlüssels: erzeugen beim Anlegen, `vernichte_poll_secret()` beim Schließen. |
+| `store.py` | SQLite: `polls`, `eligibility`, `spent`, `board`, `batches` — ohne Eingangsreihenfolge (`WITHOUT ROWID`, EIP-T-033 E). Puffert Einträge und veröffentlicht sie als Batch. Alle Zugriffe — auch lesende — laufen über ein `RLock`, weil sich alle Threads eine Verbindung teilen (EIP-T-019). |
+| `board_eintrag.py` | Das Eintragsformat: kanonisches JSON, Blatt-Hash, Merkle-Baum, Batch-Kette, Konstruktoren (`vote`, `token_issued`, `poll_open` — trägt den öffentlichen Token-Schlüssel der Umfrage —, `poll_closed`) und `parse(entry) -> Vote \| TokenIssued \| PollOpen \| PollClosed \| Unlesbar`. Rohe Dicts baut und liest niemand mehr selbst. Ein Eintrag, den `parse` nicht deuten kann, wird zu `Unlesbar` — er zählt nirgends mit und macht das Ergebnis unbelastbar, statt still zu verschwinden. |
+| `verifikation.py` | Die gesamte Prüfung über das veröffentlichte Board: `pruefe(batches, options) -> Pruefbericht` — Merkle-Wurzeln, Batch-Kette, Signaturen, Abrechnung, Auszählung. Den öffentlichen Schlüssel holt sie sich aus dem Board selbst (`schluessel_aus_board`); ein unabhängig mitgegebener wird dagegen gehalten. Ohne Datenbank, ohne privaten Schlüssel, auch als Kommandozeilen-Werkzeug für Dritte lauffähig. |
+| `poll_service.py` | Phasenlogik, Regeln, Konsistenzprüfung. Die Auszählung selbst delegiert es an `verifikation.py` und übersetzt Befunde in Abweisungen. Hält den Lebenszyklus beider Umfrage-Schlüssel: erzeugen beim Anlegen, `vernichte_poll_secret()` und `vernichte_poll_key()` beim Schließen. Den privaten Signaturschlüssel liest es bewusst **ohne Zwischenspeicher** aus der Datenbank — ein Cache im Prozess hielte ihn über seine Vernichtung hinaus am Leben. |
 | `demo.py` | Die Angriffsdemos aus §9 — außerhalb des Kerns (EIP-T-050). Sie benutzen `PollService` von außen und schreiben an der Anwendung vorbei direkt in die Datenbank, weil genau das das Angreifermodell ist: Wer die Platte hat, braucht keine API. Verdrahtet nur bei `Settings.demos` (`EIDPOLL_DEMOS`, lokal an, öffentlich aus). |
 | `debug.py` | Ringpuffer im Prozessspeicher (500 Ereignisse), bewusst keine zweite Wahrheit. |
 | `web.py` | Seiten und JSON-API. Gebaut wird eine Instanz von `create_app(store_path, authenticator, settings)`: Datenbankpfad, Authentifizierung und Betriebsmodus stehen in der Signatur, nicht im Modul. Den echten eID-Flow einzusetzen heißt deshalb, `SamlEidAuthenticator` zu übergeben — ohne Änderung an `web.py`. Für uvicorn bleibt `web:app` der Einstieg (aus der Umgebung, erst beim Zugriff gebaut). |
@@ -228,6 +257,34 @@ sieht er das Token unverblindet — dann gibt es kein Wahlgeheimnis gegen den Be
 dessen Behauptung. Das ist der eine Teil der App, der sich nicht vereinfachen lässt, ohne die
 zentrale Zusage zu verlieren.
 
+**Ein Signaturschlüssel je Umfrage (EIP-T-069):** Die Blindsignatur, die eine Stimmberechtigung
+ausweist, entsteht unter einem Schlüssel, der genau zu dieser Umfrage gehört. Das hat zwei
+Wirkungen. Ein Token aus Umfrage A ist in Umfrage B **strukturell** wertlos — nicht weil eine Regel
+es verbietet, sondern weil die Signatur dort nicht gilt; Hamstern und Wiedereinreichen über
+Umfragen hinweg fallen damit weg. Und beim Schließen wird der private Teil vernichtet
+(überschreiben, löschen, `VACUUM` — derselbe Weg wie beim Umfrage-Schlüssel): Ab dann kann niemand
+mehr gültige Stimm-Token für diese Umfrage herstellen, auch kein kompromittierter oder böswilliger
+Betreiber mit der Datenbank in der Hand. Die Auszählung ist eingefroren.
+
+Ehrlich dazu, in beide Richtungen: Die Vernichtung wirkt **ab dem Schließen, nicht davor**. Solange
+eine Umfrage läuft, hält der Betreiber ihren Signaturschlüssel allein und könnte sich Token
+ausstellen — dagegen hilft nur, dass mehrere Stellen unabhängig signieren (§12, nicht gebaut); was
+bleibt, ist die Ledger-Abrechnung, die den Überschuss sichtbar macht. Und die Löschzusage gilt für
+die Datenbankdatei, nicht für Sicherungskopien, Snapshots oder die Blockverwaltung einer SSD.
+
+**Sitzungstrennung der Abstimm-Route (EIP-T-033, Baustein F):** Phase B braucht keine Identität —
+das Token ist die ganze Berechtigung. Damit der Server Identität und Stimme nie im selben Request
+empfängt, sendet `ballot.js` die Stimme ohne Cookies und ohne Referrer (`credentials: "omit"`,
+`referrerPolicy: "no-referrer"`). Kommt trotzdem Sitzungskontext an (etwa von einem alten, noch
+gecachten Client), zählt die Stimme — die Verkettung ist mit dem Empfang bereits passiert, eine
+Abweisung schützte nichts mehr —, aber der Vorfall steht als Befund im Debug-Modul
+(`unverkettbarkeit`). Zusätzlich antworten beide Phasen-Routen (`/api/token`, `/api/vote`)
+frühestens nach `EIDPOLL_ANTWORT_FLOOR_S` Sekunden, damit die Bearbeitungsdauer nicht verrät, was
+der Server gerade tat (schnelle Abweisung vs. langsame Signatur). Ehrlich dazu: Das ist ein Floor,
+keine Konstante — dauert die Bearbeitung länger als der Floor, ist die Dauer wieder sichtbar. Und
+gegen Korrelation über IP-Adresse und Uhrzeit auf Netzwerkebene hilft beides nicht (Abschnitt 5;
+der anonyme Zustellkanal ist EIP-T-034).
+
 ### Einstellungen
 
 | Variable | Voreinstellung | Zweck |
@@ -235,9 +292,22 @@ zentrale Zusage zu verlieren.
 | `EIDPOLL_PORT` | `8731` | Port (nur `start.sh`) |
 | `EIDPOLL_DB` | `app/data/eidpoll.sqlite3` | Datenbankdatei |
 | `EIDPOLL_ADMIN_TOKEN` | `admin` | Admin-Zugang |
+| `EIDPOLL_ANTWORT_FLOOR_S` | `0.3` | Mindest-Antwortzeit der Phasen-Routen in Sekunden, `0` schaltet ab (EIP-T-033 F) |
 
-Token-Signaturschlüssel und Server-Secret liegen in der Datenbank und überleben Neustarts. **Wird
-die Datei gelöscht, werden alle ausgegebenen Tokens ungültig.**
+**Schlüssel und ihre Lebensdauer.** Es gibt keinen globalen Token-Signaturschlüssel mehr
+(EIP-T-069). Jede Umfrage bekommt beim Anlegen zwei eigene, beide in der Datenbank, beide beim
+Schließen vernichtet:
+
+| Schlüssel | Wozu | Wann weg |
+|---|---|---|
+| `poll_key:{id}` | signiert die Stimm-Token dieser Umfrage (RSA 2048, RFC 9474) | beim Schließen |
+| `poll_secret:{id}` | leitet den Wahlberechtigungs-Schlüssel aus dem Pseudonym ab | beim Schließen |
+
+Der *öffentliche* Teil des Token-Schlüssels steht im Board (`POLL_OPEN`) und überlebt dort — sonst
+wäre die Auszählung nach dem Schließen nicht mehr nachprüfbar. Dauerhaft bleiben nur der
+Beleg-Schlüssel (Ed25519) und der Cookie-Schlüssel; beide signieren nichts, was gezählt wird.
+
+**Wird die Datenbankdatei gelöscht, werden alle ausgegebenen Tokens ungültig.**
 
 ### Tests
 

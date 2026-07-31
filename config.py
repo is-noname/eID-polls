@@ -55,6 +55,17 @@ class Settings:
     # Instanz, die jemand direkt zusammenbaut (Tests, eigener Einstiegspunkt),
     # haette die Demos sonst still an.
     demos: bool | None = None
+    # Batch-Veroeffentlichung (EIP-ADR-20260728-001, E3): Mindestmenge k und
+    # Zeitdeckel. Beide Werte sind nach aussen zu nennen - wer einen Beleg
+    # bekommt, muss wissen, wovon die Sichtbarkeit abhaengt.
+    batch_k: int = 10
+    batch_deckel_h: float = 6.0
+    # Mindest-Antwortzeit der Phasen-Routen /api/token und /api/vote in
+    # Sekunden (EIP-T-033, Baustein F): Beide Routen antworten fruehestens nach
+    # dieser Zeit, damit die Bearbeitungsdauer nicht zum Seitenkanal wird
+    # (schnelle Abweisung vs. langsame Signatur). Ein Floor, keine Konstante:
+    # dauert die Bearbeitung laenger, wird nicht gekappt. 0 schaltet ab (Tests).
+    antwort_floor_s: float = 0.3
     seed_demo: bool = False
     seed_poll_id: str = "demo"
     seed_question: str = DEFAULT_QUESTION
@@ -85,6 +96,9 @@ class Settings:
             admin_token=admin_token,
             admin_token_generated=generated,
             demos=True if _flag("EIDPOLL_DEMOS") else None,
+            batch_k=int(os.environ.get("EIDPOLL_BATCH_K", "10") or 10),
+            batch_deckel_h=float(os.environ.get("EIDPOLL_BATCH_DECKEL_H", "6") or 6),
+            antwort_floor_s=float(os.environ.get("EIDPOLL_ANTWORT_FLOOR_S", "0.3") or 0.3),
             # Demo-Umfrage beim Start, wenn noch keine existiert. Auf
             # Gratis-Hosting ohne persistente Platte ist die Datenbank nach
             # jedem Neustart leer - ohne das hier stuende ein Besucher vor einer
@@ -109,5 +123,9 @@ class Settings:
             lines.append("Admin-Token: aus EIDPOLL_ADMIN_TOKEN uebernommen")
         lines.append(
             "Angriffsdemos (§9): " + ("verdrahtet" if self.demos else "nicht verdrahtet")
+        )
+        lines.append(
+            f"Batch-Veroeffentlichung: k={self.batch_k}, Zeitdeckel {self.batch_deckel_h} h "
+            "(EIP-ADR-20260728-001)"
         )
         return lines

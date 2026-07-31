@@ -25,13 +25,30 @@ from web import create_app  # noqa: E402
 # Betriebsmodus und Admin-Token stehen hier sichtbar, und der Test kann sich
 # eine zweite Instanz mit anderen Einstellungen bauen, ohne den Import zu
 # beeinflussen.
+#
+# batch_k=1: jeder Eintrag wird sofort als eigener Batch veroeffentlicht, damit
+# die Ablauf-Pruefungen das Board direkt lesen koennen. Das Puffer-Verhalten
+# selbst (k>1, Beleg, Veroeffentlichung beim Schliessen) prueft
+# batch_veroeffentlichung() an einer eigenen Instanz.
+#
+# antwort_floor_s=0: Der Antwort-Floor der Phasen-Routen (EIP-T-033, Baustein F)
+# wuerde jeden Token- und Vote-Aufruf kuenstlich verlaengern. Geprueft wird er
+# gezielt in sitzungstrennung(), an einer eigenen Instanz.
 DB = Path(tempfile.mkdtemp()) / "smoke.sqlite3"
-app = create_app(store_path=DB, settings=Settings(admin_token="admin"))
+app = create_app(store_path=DB, settings=Settings(admin_token="admin", batch_k=1, antwort_floor_s=0))
 service = app.state.deps.service
 
 POLL = "smoke"
 OK, FAIL = "  ok  ", " FEHL "
 failures: list[str] = []
+
+# Irgendein gueltiges oeffentliches PEM fuer die Formatpruefungen: POLL_OPEN
+# traegt seit EIP-T-069 den Token-Schluessel der Umfrage, und der Parser
+# verlangt ihn. Fuer eintragsformat() zaehlt nur, dass es ein PEM ist.
+_PUBKEY_PEM = (
+    "-----BEGIN PUBLIC KEY-----\nMFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBAK\n"
+    "-----END PUBLIC KEY-----\n"
+)
 
 
 def check(label: str, condition: bool, detail: str = "") -> None:
@@ -45,11 +62,12 @@ def get_token(client: TestClient, poll: str = POLL) -> tuple[bytes, bytes] | Non
     import secrets
 
     token = secrets.token_bytes(32)
-    blinded, inv = blind.blind(token, service.n, service.e)
+    n, e = service.poll_params(poll)
+    blinded, inv = blind.blind(token, n, e)
     response = client.post(f"/api/token/{poll}", json={"blinded": blinded.hex()})
     if response.status_code != 200:
         return None
-    sig = blind.finalize(bytes.fromhex(response.json()["blind_sig"]), inv, service.n)
+    sig = blind.finalize(bytes.fromhex(response.json()["blind_sig"]), inv, n)
     return token, sig
 
 
@@ -64,7 +82,7 @@ def parallel_participation(n: int = 10) -> None:
     """
     import threading
     from concurrent.futures import ThreadPoolExecutor
-    from store import verify_chain
+    from verifikation import verify_batches
 
     poll = "parallel"
     admin = TestClient(app)
@@ -114,22 +132,19 @@ def parallel_participation(n: int = 10) -> None:
     issued = [e for e in entries if e.kind == "TOKEN_ISSUED"]
     check("Parallel: jede Token-Ausgabe genau einmal im Board",
           len(issued) == n, f"{len(issued)} von {n}")
-    # Die laufende Nummer kommt aus demselben Schritt wie der Anspruch selbst
-    # (EIP-T-047). Kaeme sie aus einer zweiten Abfrage, stuenden hier bei
-    # gleichzeitiger Ausgabe zwei gleiche Nummern.
+    # Der Nonce kommt aus demselben Schritt wie der Anspruch selbst (EIP-T-047,
+    # ADR E2). Bei gleichzeitiger Ausgabe muessen trotzdem alle Blaetter
+    # verschieden sein - sonst verloere der Baum Eintraege.
     from board_eintrag import TokenIssued, parse
 
-    nummern = sorted(p.n_eligible for p in map(parse, issued) if isinstance(p, TokenIssued))
-    check("Parallel: Ausgabe-Nummern lueckenlos und ohne Dopplung",
-          nummern == list(range(1, n + 1)), str(nummern))
+    nonces = [p.nonce for p in map(parse, issued) if isinstance(p, TokenIssued)]
+    check("Parallel: Ausgabe-Nonces eindeutig", len(set(nonces)) == n, f"{len(set(nonces))} von {n}")
     # Alles zusammen: der Eroeffnungseintrag der Umfrage plus beide Phasen.
     check("Parallel: keine zusaetzlichen Board-Eintraege",
           len(entries) == 1 + 2 * n, f"{len(entries)} statt {1 + 2 * n}")
-    indices = [e.index for e in entries]
-    check("Parallel: Board-Indizes lueckenlos und ohne Dopplung",
-          indices == list(range(min(indices), min(indices) + len(indices))), str(indices))
-    chain_ok, broken_at = verify_chain(entries)
-    check("Parallel: Hash-Kette unter Nebenlaeufigkeit intakt", chain_ok, f"Bruch ab #{broken_at}")
+    chain_ok, broken_at = verify_batches(service.store.veroeffentlichte_batches(poll))
+    check("Parallel: Batch-Kette unter Nebenlaeufigkeit intakt",
+          chain_ok, f"Bruch in Batch {broken_at}")
     acc = service.accounting(poll)
     check("Parallel: Ledger-Abrechnung stimmt", acc.ok and acc.n_eligible == acc.n_votes == n,
           f"eligible={acc.n_eligible} votes={acc.n_votes}")
@@ -138,7 +153,8 @@ def parallel_participation(n: int = 10) -> None:
 
     from debug import log as debug_log
 
-    phase_b = [e for e in debug_log.events("all") if e.detail.get("poll") == poll]
+    phase_b = [e for e in debug_log.events("all")
+               if e.detail.get("poll") == poll and e.category == "phase-b"]
     check("Parallel: Debug-Modul hat jede Stimme erfasst, nichts verloren",
           len(phase_b) == n, f"{len(phase_b)} von {n}")
 
@@ -183,10 +199,12 @@ def anspruch_atomar(n: int = 8) -> None:
         import secrets
 
         token = secrets.token_bytes(32)
-        blinded, inv = blind.blind(token, service.n, service.e)
+        # Nicht n/e nennen: n ist hier die Anzahl der Threads.
+        modulus, exponent = service.poll_params(poll)
+        blinded, inv = blind.blind(token, modulus, exponent)
         response = client.post(f"/api/token/{poll}", json={"blinded": blinded.hex()})
         if response.status_code == 200:
-            sig = blind.finalize(bytes.fromhex(response.json()["blind_sig"]), inv, service.n)
+            sig = blind.finalize(bytes.fromhex(response.json()["blind_sig"]), inv, modulus)
             with sammel:
                 tokens.append((token, sig))
         return response.status_code
@@ -312,6 +330,160 @@ def umfrage_schluessel() -> None:
           service.store.ledger_stand("schluessel-b")[0] == 0)
 
 
+def signaturschluessel() -> None:
+    """Token-Signaturschluessel je Umfrage und seine Vernichtung (EIP-T-069).
+
+    Zwei Zusagen stehen hier auf dem Pruefstand. Erstens: Ein Token aus Umfrage
+    A ist in Umfrage B wertlos - nicht weil eine Regel es verbietet, sondern
+    weil die Signatur dort nicht gilt. Zweitens: Nach dem Schliessen kann
+    niemand mehr gueltige Token herstellen, auch der Betreiber nicht - die
+    Auszaehlung ist eingefroren. Beides wird an der *Wirkung* geprueft, nicht
+    an der Speicherstelle.
+    """
+    import secrets as sec
+
+    from board_eintrag import PollOpen, parse
+    from poll_service import POLL_KEY, Rejected
+
+    admin = TestClient(app)
+    admin.post("/api/admin/login", json={"token": "admin"})
+    for poll in ("sig-a", "sig-b"):
+        admin.post("/api/admin/create",
+                   json={"poll_id": poll, "question": "Wessen Schluessel?",
+                         "options": ["Ja", "Nein"]})
+
+    check("Signaturschluessel: beim Anlegen erzeugt",
+          service.store.get_config(POLL_KEY + "sig-a") is not None)
+
+    # Der oeffentliche Teil steht im Board, nicht in der Datenbankkonfiguration:
+    # Nur dort ueberlebt er die Vernichtung des privaten Teils, und nur dort
+    # liegt er unter der Merkle-Wurzel.
+    eroeffnung = next(
+        (p for p in map(parse, service.board("sig-a")) if isinstance(p, PollOpen)), None
+    )
+    check("Signaturschluessel: oeffentlicher Teil steht im POLL_OPEN-Eintrag",
+          eroeffnung is not None and "PUBLIC KEY" in eroeffnung.pubkey)
+    check("Signaturschluessel: Board und Dienst nennen denselben",
+          eroeffnung is not None and eroeffnung.pubkey == service.poll_pubkey_pem("sig-a"))
+
+    a_n, _ = service.poll_params("sig-a")
+    b_n, _ = service.poll_params("sig-b")
+    check("Signaturschluessel: zwei Umfragen, zwei verschiedene Schluessel", a_n != b_n)
+
+    # Der Kern: ein in A gueltig signiertes Token in B einreichen.
+    person = TestClient(app)
+    person.post("/api/auth", json={"credential": "testperson50"})
+    geholt = get_token(person, "sig-a")
+    check("Signaturschluessel: Token-Abholung in A funktioniert normal", geholt is not None)
+    if geholt is None:
+        return
+    token, sig = geholt
+
+    fremd = TestClient(app)
+    fremd.post("/api/auth", json={"credential": "testperson51"})
+    quer = fremd.post("/api/vote/sig-b",
+                      json={"token": token.hex(), "sig": sig.hex(), "choices": ["Ja"]})
+    check("Signaturschluessel: Token aus Umfrage A gilt in Umfrage B nicht",
+          quer.status_code == 400 and "Signatur" in quer.json().get("error", ""),
+          f"status={quer.status_code} {quer.json().get('error', '')[:60]}")
+    check("Signaturschluessel: das abgewiesene Token bleibt in A brauchbar",
+          person.post("/api/vote/sig-a",
+                      json={"token": token.hex(), "sig": sig.hex(),
+                            "choices": ["Ja"]}).status_code == 200)
+
+    # Vernichtung beim Schliessen - und was danach noch geht und was nicht.
+    admin.post("/api/admin/close/sig-a")
+    check("Signaturschluessel: beim Schliessen vernichtet",
+          service.store.get_config(POLL_KEY + "sig-a") is None)
+    check("Signaturschluessel: der Schluessel der anderen Umfrage ist unberuehrt",
+          service.store.get_config(POLL_KEY + "sig-b") is not None)
+
+    # Der oeffentliche Teil ueberlebt - sonst waere die Auszaehlung nach dem
+    # Schliessen nicht mehr nachpruefbar, und die Vernichtung haette die
+    # Verifizierbarkeit mitgenommen.
+    bericht = service.pruefbericht("sig-a")
+    check("Signaturschluessel: Board bleibt nach der Vernichtung pruefbar",
+          bericht.chain.sound and bericht.schluessel_fehler is None,
+          str(bericht.schluessel_fehler))
+    check("Signaturschluessel: Ergebnis wird nach der Vernichtung noch ausgezaehlt",
+          service.tally("sig-a") == {"Ja": 1, "Nein": 0}, str(service.tally("sig-a")))
+    check("Signaturschluessel: eigenes Token bleibt auffindbar",
+          service.lookup("sig-a", token.hex()) == ["Ja"])
+
+    # Und die Aussage, um derentwillen der Schluessel ueberhaupt vernichtet
+    # wird: Auch der Betreiber mit der Datenbank in der Hand kommt nicht mehr
+    # an gueltige Token. demo.stuff_ballot ist genau dieser Weg (§9).
+    try:
+        demo.stuff_ballot(service, "sig-a", "Ja")
+        gestopft = True
+    except Rejected:
+        gestopft = False
+    check("Signaturschluessel: nach Schliessung kann auch der Betreiber kein Token mehr bauen",
+          not gestopft)
+
+    # Debug-Modul, beide Richtungen (Muster aus EIP-T-033, D).
+    findings = service.check_consistency("sig-a")
+    check("Signaturschluessel: geschlossene Umfrage ohne Schluessel meldet nichts",
+          not any("Signaturschluessel" in f for f in findings), str(findings))
+
+    # Ein gueltiger, aber fremder Schluessel: die Umfrage haette einen privaten
+    # Schluessel, der nicht zu ihrem Board passt.
+    from cryptography.hazmat.primitives import serialization as _ser
+
+    fremdes_pem = blind.generate_key(1024).private_bytes(
+        _ser.Encoding.PEM, _ser.PrivateFormat.PKCS8, _ser.NoEncryption()
+    ).decode()
+    service.store.set_config(POLL_KEY + "sig-a", fremdes_pem)
+    findings = service.check_consistency("sig-a")
+    check("Debug-Modul: Signaturschluessel, der eine geschlossene Umfrage ueberlebt, wird gemeldet",
+          any("geschlossen" in f and "Signaturschluessel" in f for f in findings), str(findings))
+    check("Debug-Modul: Schluessel, der nicht zum Board passt, wird gemeldet",
+          any("passt nicht" in f for f in findings), str(findings))
+
+    # Unlesbarer Schluessel: ein Zustand, den es geben kann (beschaedigte Datei,
+    # halb eingespielte Sicherung). Er muss als Befund erscheinen und darf die
+    # Konsistenzpruefung nicht mitreissen - sie ist das Werkzeug, mit dem man
+    # ihn findet.
+    service.store.set_config(POLL_KEY + "sig-a", "kein-schluessel")
+    findings = service.check_consistency("sig-a")
+    check("Debug-Modul: unlesbarer Signaturschluessel wird gemeldet, ohne die Pruefung zu werfen",
+          any("nicht lesbar" in f for f in findings), str(findings))
+    service.vernichte_poll_key("sig-a")
+
+    service.vernichte_poll_key("sig-b")
+    findings = service.check_consistency("sig-b")
+    check("Debug-Modul: offene Umfrage ohne Signaturschluessel wird gemeldet",
+          any("offen" in f and "Signaturschluessel" in f for f in findings), str(findings))
+    verirrt = TestClient(app)
+    verirrt.post("/api/auth", json={"credential": "testperson52"})
+    check("Signaturschluessel: ohne Schluessel wird abgewiesen statt neu erzeugt",
+          get_token(verirrt, "sig-b") is None)
+
+    # Ein Board, dessen Eroeffnung keinen Schluessel nennt, ist nicht pruefbar -
+    # und darf nicht als "alle Signaturen gueltig" durchgehen, nur weil keine
+    # geprueft werden konnte.
+    from verifikation import Batch, BoardEntry, pruefe
+
+    ohne = BoardEntry.from_payload(
+        {"type": "POLL_OPEN", "poll": "x", "question": "?", "options": ["Ja"]}, batch=0
+    )
+    import board_eintrag as _be
+
+    root = _be.merkle_root([ohne.leaf_hash])
+    blind_board = [Batch(n=0, merkle_root=root,
+                         batch_root=_be.batch_root(root, _be.GENESIS), entries=(ohne,))]
+    b = pruefe(blind_board, ["Ja"])
+    check("Signaturschluessel: Board ohne Schluessel meldet Befund statt 'alles gueltig'",
+          b.schluessel_fehler is not None and not b.chain.signatures_ok and not b.result_ok,
+          str(b.schluessel_fehler))
+    try:
+        service.tally_von(b)
+        ausgezaehlt = True
+    except Rejected:
+        ausgezaehlt = False
+    check("Signaturschluessel: ohne Schluessel kein Ergebnis", not ausgezaehlt)
+
+
 def eintragsformat() -> None:
     """Konstruktoren und Parser (EIP-T-046) - ohne Board, ohne Store.
 
@@ -323,7 +495,7 @@ def eintragsformat() -> None:
 
     def eintrag(payload: dict | str) -> be.Eintrag:
         line = payload if isinstance(payload, str) else be.canonical(payload)
-        return be.parse(be.BoardEntry(0, be.GENESIS, line, ""))
+        return be.parse(be.BoardEntry(line, be.leaf_hash(line)))
 
     token, sig = bytes.fromhex("aa" * 32), bytes.fromhex("bb" * 128)
     gestimmt = eintrag(be.vote("p", token, sig, ["Nein", "Ja"]))
@@ -335,15 +507,20 @@ def eintragsformat() -> None:
           str(getattr(gestimmt, "choices", gestimmt)))
 
     varianten = [
-        (be.poll_open("p", "?", ["Ja", "Nein"]), be.PollOpen),
+        (be.poll_open("p", "?", ["Ja", "Nein"], _PUBKEY_PEM), be.PollOpen),
         (be.poll_closed("p"), be.PollClosed),
-        (be.token_issued("p", 3), be.TokenIssued),
+        (be.token_issued("p"), be.TokenIssued),
     ]
     check("Format: jede Variante wird als ihr Typ gelesen",
           all(isinstance(eintrag(p), typ) for p, typ in varianten))
     check("Format: kind bleibt fuer die Anzeige erhalten",
-          [be.BoardEntry(0, be.GENESIS, be.canonical(p), "").kind for p, _ in varianten]
+          [be.BoardEntry.from_payload(p).kind for p, _ in varianten]
           == ["POLL_OPEN", "POLL_CLOSED", "TOKEN_ISSUED"])
+    # Der Nonce ersetzt die laufende Nummer (ADR E2): zwei Ausgaben derselben
+    # Umfrage muessen verschiedene Blaetter ergeben.
+    check("Format: zwei Token-Ausgaben ergeben verschiedene Blaetter",
+          be.BoardEntry.from_payload(be.token_issued("p")).leaf_hash
+          != be.BoardEntry.from_payload(be.token_issued("p")).leaf_hash)
 
     kaputt: list[tuple[str, dict | str]] = [
         ("kein JSON", "{nicht json"),
@@ -358,7 +535,9 @@ def eintragsformat() -> None:
          {"type": "VOTE", "poll": "p", "token": "zz", "sig": "bb", "choices": ["Ja"]}),
         ("choices kein Text",
          {"type": "VOTE", "poll": "p", "token": "aa", "sig": "bb", "choices": [1]}),
-        ("Token-Ausgabe ohne Anzahl", {"type": "TOKEN_ISSUED", "poll": "p"}),
+        ("Token-Ausgabe ohne Nonce", {"type": "TOKEN_ISSUED", "poll": "p"}),
+        ("Token-Ausgabe mit Nonce falscher Laenge",
+         {"type": "TOKEN_ISSUED", "poll": "p", "nonce": "abcd"}),
         ("poll fehlt", {"type": "POLL_CLOSED"}),
     ]
     fehlend = [name for name, payload in kaputt if not isinstance(eintrag(payload), be.Unlesbar)]
@@ -384,11 +563,19 @@ def pruefung_ohne_datenbank() -> None:
     import secrets
 
     import board_eintrag
-    from verifikation import BoardEntry, GENESIS, canonical, entry_hash, pruefe
+    from board_eintrag import GENESIS, batch_root, leaf_hash, merkle_root
+    from verifikation import Batch, BoardEntry, canonical, pruefe
+
+    from cryptography.hazmat.primitives import serialization
 
     key = blind.generate_key(1024)  # klein, weil hier nur der Pfad geprueft wird
     pub = key.public_key()
     n, e, d = pub.public_numbers().n, pub.public_numbers().e, key.private_numbers().d
+    # Der Schluessel geht ins Board und wird von dort geprueft (EIP-T-069) -
+    # der Pruefpfad bekommt ihn nicht mehr von aussen gereicht.
+    pub_pem = pub.public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode()
     options = ["Ja", "Nein"]
 
     def signiertes_token() -> tuple[bytes, bytes]:
@@ -397,30 +584,31 @@ def pruefung_ohne_datenbank() -> None:
         sig = blind.finalize(blind.blind_sign(blinded, n, d), inv, n)
         return token, sig
 
-    def board(payloads: list[dict]) -> list[BoardEntry]:
-        entries, prev = [], GENESIS
-        for i, payload in enumerate(payloads):
-            line = canonical(payload)
-            digest = entry_hash(i, prev, line)
-            entries.append(BoardEntry(i, prev, line, digest))
-            prev = digest
-        return entries
+    def board(batch_payloads: list[list[dict]]) -> list[Batch]:
+        """Batches von Hand, mit denselben Formeln wie board_eintrag."""
+        batches, prev = [], GENESIS
+        for i, payloads in enumerate(batch_payloads):
+            entries = tuple(BoardEntry.from_payload(p, batch=i) for p in payloads)
+            root = merkle_root(en.leaf_hash for en in entries)
+            glied = batch_root(root, prev)
+            batches.append(Batch(n=i, merkle_root=root, batch_root=glied, entries=entries))
+            prev = glied
+        return batches
 
     t1, s1 = signiertes_token()
     t2, s2 = signiertes_token()
     # Gebaut wird mit denselben Konstruktoren wie im Server (EIP-T-046) - ein
     # von Hand getipptes Board wuerde die Pruefung gegen ein Format testen, das
     # die App gar nicht schreibt.
-    payloads = [
-        board_eintrag.poll_open("p", "?", options),
-        board_eintrag.token_issued("p", 1),
-        board_eintrag.token_issued("p", 2),
-        board_eintrag.vote("p", t1, s1, ["Ja"]),
-        board_eintrag.vote("p", t2, s2, ["Nein"]),
-    ]
-    entries = board(payloads)
+    eroeffnung = board_eintrag.poll_open("p", "?", options, pub_pem)
+    ausgabe1 = board_eintrag.token_issued("p")
+    ausgabe2 = board_eintrag.token_issued("p")
+    stimme1 = board_eintrag.vote("p", t1, s1, ["Ja"])
+    stimme2 = board_eintrag.vote("p", t2, s2, ["Nein"])
+    batch_payloads = [[eroeffnung], [ausgabe1, ausgabe2, stimme1], [stimme2]]
+    batches = board(batch_payloads)
 
-    bericht = pruefe(entries, pub, options)
+    bericht = pruefe(batches, options)
     check("Pruefung ohne DB: intaktes Board ist unauffaellig",
           bericht.chain.sound and bericht.accounting.ok and bericht.result_ok)
     check("Pruefung ohne DB: Auszaehlung aus dem Board",
@@ -428,42 +616,62 @@ def pruefung_ohne_datenbank() -> None:
     check("Pruefung ohne DB: eigenes Token auffindbar", bericht.lookup(t1.hex()) == ["Ja"])
     check("Pruefung ohne DB: fremdes Token nicht auffindbar", bericht.lookup("aa" * 32) is None)
 
-    # Umgeschriebene Stimme - genau die Demo aus §9, hier ohne App
-    tampered = list(entries)
-    tampered[3] = BoardEntry(
-        3, entries[3].prev_hash,
-        canonical({**payloads[3], "choices": ["Nein"]}), entries[3].entry_hash,
+    # Umgeschriebene Stimme bei stehengelassener Root - genau die Demo aus §9,
+    # hier ohne App
+    manipuliert = canonical({**stimme1, "choices": ["Nein"]})
+    tampered = list(batches)
+    tampered[1] = Batch(
+        n=1, merkle_root=batches[1].merkle_root, batch_root=batches[1].batch_root,
+        entries=tuple(
+            BoardEntry(manipuliert, leaf_hash(manipuliert), 1)
+            if en.payload == canonical(stimme1) else en
+            for en in batches[1].entries
+        ),
     )
-    b = pruefe(tampered, pub, options)
-    check("Pruefung ohne DB: umgeschriebene Stimme bricht die Kette",
-          not b.chain.ok and b.chain.broken_at == 3 and not b.result_ok, f"ab #{b.chain.broken_at}")
+    b = pruefe(tampered, options)
+    check("Pruefung ohne DB: umgeschriebene Stimme bricht die Batch-Kette",
+          not b.chain.ok and b.chain.broken_at == 1 and not b.result_ok,
+          f"Batch {b.chain.broken_at}")
 
-    # Stimme mit erfundener Signatur, Kette sauber nachgerechnet
-    gefaelscht = board(payloads[:3] + [{**payloads[3], "sig": "bb" * 128}])
-    b = pruefe(gefaelscht, pub, options)
+    # Geloeschter Eintrag bei neu gerechneter Root: die Kette der Batch-Roots
+    # entlarvt ihn (ADR Fund 3 - eine Menge allein waere nicht append-only).
+    geloescht = board(batch_payloads)
+    kleiner = tuple(en for en in geloescht[1].entries if en.payload != canonical(stimme1))
+    neue_root = merkle_root(en.leaf_hash for en in kleiner)
+    geloescht[1] = Batch(
+        n=1, merkle_root=neue_root,
+        batch_root=geloescht[1].batch_root,  # alte Kette bleibt stehen
+        entries=kleiner,
+    )
+    b = pruefe(geloescht, options)
+    check("Pruefung ohne DB: geloeschter Eintrag bricht die Batch-Kette",
+          not b.chain.ok and b.chain.broken_at == 1, f"Batch {b.chain.broken_at}")
+
+    # Stimme mit erfundener Signatur, Roots sauber nachgerechnet
+    b = pruefe(board([[eroeffnung], [ausgabe1, ausgabe2, {**stimme1, "sig": "bb" * 128}]]),
+               options)
     check("Pruefung ohne DB: erfundene Token-Signatur faellt auf",
-          b.chain.ok and not b.chain.signatures_ok and b.chain.bad_signature_at == 3,
-          f"#{b.chain.bad_signature_at}")
+          b.chain.ok and not b.chain.signatures_ok and b.chain.bad_signature_at is not None,
+          str(b.chain.bad_signature_at)[:16])
 
     # Ballot-Stuffing: mehr Stimmen als ausgegebene Token
-    b = pruefe(board([payloads[0], payloads[1], payloads[3], payloads[4]]), pub, options)
+    b = pruefe(board([[eroeffnung], [ausgabe1, stimme1, stimme2]]), options)
     check("Pruefung ohne DB: Abrechnung entlarvt Ueberschuss",
           not b.accounting.ok and b.accounting.surplus == 1,
           f"{b.accounting.n_votes} Stimmen bei {b.accounting.n_eligible} Token")
 
     # Option, die es in der Umfrage nicht gibt
-    b = pruefe(board(payloads + [{**payloads[3], "choices": ["Vielleicht"]}]), pub, options)
+    b = pruefe(board(batch_payloads + [[{**stimme1, "choices": ["Vielleicht"]}]]), options)
     check("Pruefung ohne DB: unbekannte Option benannt",
           b.unknown_choice == "Vielleicht" and not b.result_ok, str(b.unknown_choice))
 
-    # Kaputtgeschriebene Stimme, Kette sauber nachgerechnet: sie darf nicht
+    # Kaputtgeschriebene Stimme, Roots sauber nachgerechnet: sie darf nicht
     # einfach verschwinden, sonst waere Kaputtschreiben ein Weg, Stimmen
     # loszuwerden, ohne dass es auffaellt (EIP-T-046).
-    verstuemmelt = board(payloads[:4] + [{**payloads[4], "token": "kein hex"}])
-    b = pruefe(verstuemmelt, pub, options)
+    b = pruefe(board([[eroeffnung], [ausgabe1, ausgabe2, stimme1],
+                      [{**stimme2, "token": "kein hex"}]]), options)
     check("Pruefung ohne DB: unlesbarer Eintrag wird benannt, nicht uebergangen",
-          b.chain.ok and b.unlesbar is not None and b.unlesbar.index == 4 and not b.result_ok,
-          str(b.unlesbar))
+          b.chain.ok and b.unlesbar is not None and not b.result_ok, str(b.unlesbar))
     check("Pruefung ohne DB: unlesbarer Eintrag zaehlt nirgends mit",
           b.counts == {"Ja": 1, "Nein": 0} and b.accounting.n_votes == 1, str(b.counts))
 
@@ -502,7 +710,8 @@ def laufende_pruefung() -> None:
     # Nach fuenf Stimmen steht ein fortgeschriebener Bericht im Service. Er muss
     # dasselbe sagen wie ein Bericht, der bei null anfaengt.
     laufend = service.laufender_bericht(poll)
-    voll = pruefe(service.board(poll), service._key.public_key(), service.poll(poll).options)
+    voll = pruefe(service.store.veroeffentlichte_batches(poll),
+                  service.poll(poll).options)
     check("Laufende Pruefung: fortgeschrieben wie voll geprueft",
           (laufend.counts, laufend.accounting, laufend.votes, laufend.chain)
           == (voll.counts, voll.accounting, voll.votes, voll.chain),
@@ -511,8 +720,8 @@ def laufende_pruefung() -> None:
     # Passt der Vorbericht nicht zum Board, faellt pruefe_weiter auf die
     # Vollpruefung zurueck - sonst wuerde ein ausgetauschtes Board mit den
     # Zahlen des alten weitergerechnet.
-    fremd = pruefe(service.board("parallel"), service._key.public_key(), ["Ja", "Nein"])
-    zurueckgefallen = pruefe_weiter(fremd, service.board(poll), service._key.public_key(),
+    fremd = pruefe(service.store.veroeffentlichte_batches("parallel"), ["Ja", "Nein"])
+    zurueckgefallen = pruefe_weiter(fremd, service.store.veroeffentlichte_batches(poll),
                                     service.poll(poll).options)
     check("Laufende Pruefung: fremder Vorbericht faellt auf die Vollpruefung zurueck",
           zurueckgefallen.accounting == voll.accounting and zurueckgefallen.counts == voll.counts,
@@ -522,8 +731,8 @@ def laufende_pruefung() -> None:
     # verschlucken, sonst ist die Aufsicht waehrend des Abstimmens weg.
     # Die erste Stimme lautet "Nein" (i=0), umgeschrieben wird auf "Ja" - sonst
     # bliebe der Payload gleich und es gaebe nichts zu entdecken.
-    vote_index = next(e.index for e in service.board(poll) if e.kind == "VOTE")
-    demo.tamper_board(service, poll, vote_index, "Ja")
+    vote_leaf = next(e.leaf_hash for e in service.board(poll) if e.kind == "VOTE")
+    demo.tamper_board(service, poll, vote_leaf, "Ja")
     vor_der_stimme = len(debug_log.events("inconsistency"))
 
     client = TestClient(app)
@@ -554,9 +763,10 @@ def pruefwerkzeug_auf_der_kommandozeile(client: TestClient) -> None:
     export = client.get(f"/api/board/{POLL}")
     check("Export: /api/board liefert das Board als Datei", export.status_code == 200)
     data = export.json()
-    check("Export: Eintraege, Optionen und oeffentlicher Schluessel enthalten",
-          bool(data.get("entries")) and bool(data.get("options"))
-          and "PUBLIC KEY" in str(data.get("public_key")))
+    check("Export: Batches, Optionen und oeffentliche Schluessel enthalten",
+          bool(data.get("batches")) and bool(data.get("options"))
+          and "PUBLIC KEY" in str(data.get("public_key"))
+          and "PUBLIC KEY" in str(data.get("beleg_public_key")))
     check("Export: kein privater Schluessel, kein voter_key im Export",
           "PRIVATE" not in json.dumps(data) and "voter_key" not in json.dumps(data))
 
@@ -573,14 +783,19 @@ def pruefwerkzeug_auf_der_kommandozeile(client: TestClient) -> None:
     check("Export: der Umfrage-Schluessel einer laufenden Umfrage steht nicht im Export",
           geheim is not None and geheim not in offener_export)
 
-    entries = verifikation.entries_from_export(data)
+    # Vergleich ueber die Payloads: POLL ist an dieser Stelle manipuliert, und
+    # der Export rechnet Blatt-Hashes nach statt sie zu uebernehmen - beim
+    # umgeschriebenen Eintrag weichen nachgerechneter und gespeicherter Hash
+    # gerade absichtlich voneinander ab.
+    batches = verifikation.batches_from_export(data)
     check("Export: exportierte Eintraege sind die des Boards",
-          [e.entry_hash for e in entries] == [e.entry_hash for e in service.board(POLL)])
+          [e.payload for b in batches for e in b.entries]
+          == [e.payload for e in service.board(POLL)])
 
     path = Path(tempfile.mkdtemp()) / "board.json"
     path.write_text(json.dumps(data), encoding="utf-8")
     key_path = path.parent / "key.pem"
-    key_path.write_text(service.public_key_pem, encoding="utf-8")
+    key_path.write_text(service.poll_pubkey_pem(POLL), encoding="utf-8")
 
     # POLL ist an dieser Stelle bereits manipuliert (Angriff 2) - das
     # Pruefwerkzeug muss das melden und mit Exit-Code 1 enden.
@@ -588,11 +803,209 @@ def pruefwerkzeug_auf_der_kommandozeile(client: TestClient) -> None:
     check("Pruefwerkzeug: meldet das manipulierte Board mit Exit-Code 1", code == 1, f"code={code}")
 
     # Die Umfrage aus dem Parallel-Test ist unversehrt - dort muss dasselbe
-    # Werkzeug ohne Befund durchlaufen.
+    # Werkzeug ohne Befund durchlaufen. Der Schluessel kommt aus *ihrem* Board.
     heil = Path(tempfile.mkdtemp()) / "board.json"
     heil.write_text(json.dumps(client.get("/api/board/parallel").json()), encoding="utf-8")
-    code = verifikation.main([str(heil), "--pubkey", str(key_path)])
+    heil_key = heil.parent / "key.pem"
+    heil_key.write_text(service.poll_pubkey_pem("parallel"), encoding="utf-8")
+    code = verifikation.main([str(heil), "--pubkey", str(heil_key)])
     check("Pruefwerkzeug: bestaetigt ein unversehrtes Board mit Exit-Code 0", code == 0, f"code={code}")
+
+    # Derselbe unversehrte Export, aber gegengehalten mit dem Schluessel einer
+    # *anderen* Umfrage: Seit EIP-T-069 gehoert ein Schluessel genau einer
+    # Umfrage, also ist das ein Befund und kein Durchlauf. Frueher waren beide
+    # Boards unter demselben globalen Schluessel - diese Pruefung konnte es
+    # damals gar nicht geben.
+    code = verifikation.main([str(heil), "--pubkey", str(key_path)])
+    check("Pruefwerkzeug: fremder Umfrage-Schluessel wird als Befund gemeldet",
+          code == 1, f"code={code}")
+
+
+def batch_veroeffentlichung() -> None:
+    """Puffer, Beleg und Batch-Veroeffentlichung (EIP-ADR-20260728-001, A/B/C).
+
+    Eigene Instanz mit k=4: Eintraege duerfen erst erscheinen, wenn die
+    Mindestmenge erreicht ist; der Beleg muss sofort da, offline pruefbar und
+    nach der Veroeffentlichung eingeloest sein; beim Schliessen wird der Puffer
+    vollstaendig veroeffentlicht.
+    """
+    import json
+
+    from cryptography.hazmat.primitives import serialization
+    from board_eintrag import canonical
+
+    batch_app = create_app(
+        store_path=Path(tempfile.mkdtemp()) / "batch.sqlite3",
+        settings=Settings(admin_token="admin", batch_k=4, antwort_floor_s=0),
+    )
+    svc = batch_app.state.deps.service
+    client = TestClient(batch_app)
+    poll = "gebatcht"
+    client.post("/api/admin/login", json={"token": "admin"})
+    client.post("/api/admin/create",
+                json={"poll_id": poll, "question": "Gebuendelt?", "options": ["Ja", "Nein"]})
+    check("Batch: POLL_OPEN sofort veroeffentlicht (Betreiberhandlung)",
+          len(svc.store.veroeffentlichte_batches(poll)) == 1)
+
+    client.post("/api/auth", json={"credential": "testperson60"})
+    import secrets as sec
+    token = sec.token_bytes(32)
+    blinded, inv = blind.blind(token, *svc.poll_params(poll))
+    resp = client.post(f"/api/token/{poll}", json={"blinded": blinded.hex()})
+    sig = blind.finalize(bytes.fromhex(resp.json()["blind_sig"]), inv, svc.poll_params(poll)[0])
+    voted = client.post(f"/api/vote/{poll}",
+                        json={"token": token.hex(), "sig": sig.hex(), "choices": ["Ja"]}).json()
+
+    check("Batch: Stimme unter k bleibt im Puffer, Board zeigt sie noch nicht",
+          svc.lookup(poll, token.hex()) is None
+          and svc.store.pending_stand(poll)[0] == 2)
+    check("Batch: oeffentlicher Teilnahmezaehler zaehlt nur Veroeffentlichtes",
+          svc.participation(poll) == 0, str(svc.participation(poll)))
+    check("Batch: Antwort traegt den Beleg (Blatt, Batch-Zusage, Signatur)",
+          bool(voted.get("leaf_hash")) and isinstance(voted.get("batch"), int)
+          and bool(voted.get("beleg_sig")), str(voted)[:100])
+
+    # Beleg offline pruefen: Ed25519 ueber das kanonische JSON der Zusage.
+    beleg_pub = serialization.load_pem_public_key(svc.beleg_public_key_pem.encode())
+    botschaft = canonical({"batch": voted["batch"], "leaf": voted["leaf_hash"],
+                           "poll": poll, "typ": "BELEG"})
+    try:
+        beleg_pub.verify(bytes.fromhex(voted["beleg_sig"]), botschaft.encode())
+        beleg_ok = True
+    except Exception:
+        beleg_ok = False
+    check("Batch: Beleg-Signatur offline pruefbar", beleg_ok)
+
+    # Konsistenzpruefung sieht den Puffer: nichts zu melden, obwohl das Board
+    # weniger zeigt als die Ledger wissen.
+    check("Batch: Konsistenzpruefung kennt den Puffer",
+          not svc.check_consistency(poll), str(svc.check_consistency(poll)))
+
+    # k erreichen: zweite Person liefert Eintraege 3 und 4 -> Veroeffentlichung.
+    client2 = TestClient(batch_app)
+    client2.post("/api/auth", json={"credential": "testperson61"})
+    token2 = sec.token_bytes(32)
+    blinded2, inv2 = blind.blind(token2, *svc.poll_params(poll))
+    resp2 = client2.post(f"/api/token/{poll}", json={"blinded": blinded2.hex()})
+    sig2 = blind.finalize(bytes.fromhex(resp2.json()["blind_sig"]), inv2, svc.poll_params(poll)[0])
+    client2.post(f"/api/vote/{poll}",
+                 json={"token": token2.hex(), "sig": sig2.hex(), "choices": ["Nein"]})
+
+    check("Batch: bei Erreichen von k wird veroeffentlicht",
+          svc.store.pending_stand(poll)[0] == 0
+          and len(svc.store.veroeffentlichte_batches(poll)) == 2)
+    check("Batch: Beleg eingeloest - Blatt steht im zugesagten Batch",
+          any(e.leaf_hash == voted["leaf_hash"] and e.batch == voted["batch"]
+              for e in svc.board(poll)))
+    check("Batch: Token nach Veroeffentlichung auffindbar",
+          svc.lookup(poll, token.hex()) == ["Ja"])
+
+    # Dritte Person stimmt ab, dann wird geschlossen: der Puffer muss
+    # vollstaendig mit hinaus, auch unter k (ADR E3).
+    client3 = TestClient(batch_app)
+    client3.post("/api/auth", json={"credential": "testperson62"})
+    token3 = sec.token_bytes(32)
+    blinded3, inv3 = blind.blind(token3, *svc.poll_params(poll))
+    resp3 = client3.post(f"/api/token/{poll}", json={"blinded": blinded3.hex()})
+    sig3 = blind.finalize(bytes.fromhex(resp3.json()["blind_sig"]), inv3, svc.poll_params(poll)[0])
+    client3.post(f"/api/vote/{poll}",
+                 json={"token": token3.hex(), "sig": sig3.hex(), "choices": ["Ja"]})
+    check("Batch: unter k bleibt der Puffer bestehen",
+          svc.store.pending_stand(poll)[0] == 2)
+
+    client.post(f"/api/admin/close/{poll}")
+    check("Batch: Schliessen veroeffentlicht den Puffer vollstaendig",
+          svc.store.pending_stand(poll)[0] == 0)
+    check("Batch: Ergebnis nach Schliessen vollstaendig",
+          svc.tally(poll) == {"Ja": 2, "Nein": 1}, str(svc.tally(poll)))
+    bericht = svc.pruefbericht(poll)
+    check("Batch: Batch-Kette nach allem intakt",
+          bericht.chain.sound and bericht.accounting.ok)
+
+    # Export enthaelt die Batch-Parameter - wer den Beleg bekommt, muss wissen,
+    # wovon die Sichtbarkeit abhaengt (ADR E3).
+    export = client.get(f"/api/board/{poll}").json()
+    check("Batch: Export nennt k und Zeitdeckel",
+          export.get("batch_k") == 4 and export.get("batch_deckel_s") == 6 * 3600,
+          json.dumps({k: export.get(k) for k in ("batch_k", "batch_deckel_s")}))
+
+
+def sitzungstrennung() -> None:
+    """Phase B ohne Sitzungskontext (EIP-T-033, Baustein F).
+
+    Der Abstimm-Request braucht keine Identitaet - das Token ist die ganze
+    Berechtigung. Drei Zusagen werden geprueft: Eine Stimme ohne Cookie wird
+    angenommen und erzeugt keinen Befund; eine Stimme, die trotzdem das
+    Session-Cookie mitbringt (Altclient), zaehlt, landet aber als Befund im
+    Debug-Modul; und die Phasen-Routen antworten nie schneller als der
+    Antwort-Floor, damit die Dauer keine Auskunft gibt. Dazu: keine der
+    Phase-B-Antworten setzt ein Cookie.
+    """
+    import secrets as sec
+    import time as zeit
+
+    from debug import log as debug_log
+
+    floor = 0.2
+    eigen = create_app(
+        store_path=Path(tempfile.mkdtemp()) / "sitzung.sqlite3",
+        settings=Settings(admin_token="admin", batch_k=1, antwort_floor_s=floor),
+    )
+    svc = eigen.state.deps.service
+    poll = "sitzung"
+    admin = TestClient(eigen)
+    admin.post("/api/admin/login", json={"token": "admin"})
+    admin.post("/api/admin/create",
+               json={"poll_id": poll, "question": "Getrennt?", "options": ["Ja", "Nein"]})
+
+    def hole_token(credential: str) -> tuple[TestClient, bytes, bytes, float]:
+        client = TestClient(eigen)
+        client.post("/api/auth", json={"credential": credential})
+        token = sec.token_bytes(32)
+        blinded, inv = blind.blind(token, *svc.poll_params(poll))
+        start = zeit.monotonic()
+        resp = client.post(f"/api/token/{poll}", json={"blinded": blinded.hex()})
+        dauer = zeit.monotonic() - start
+        sig = blind.finalize(bytes.fromhex(resp.json()["blind_sig"]), inv, svc.poll_params(poll)[0])
+        return client, token, sig, dauer
+
+    # Regulaerer Weg: Phase A angemeldet, Phase B auf einem Client ohne
+    # Cookie-Speicher - das Gegenstueck zu credentials "omit" in ballot.js.
+    _, token, sig, dauer_a = hole_token("testperson70")
+    vorher = debug_log.counts()["inconsistency"]
+    anon = TestClient(eigen)
+    start = zeit.monotonic()
+    voted = anon.post(f"/api/vote/{poll}",
+                      json={"token": token.hex(), "sig": sig.hex(), "choices": ["Ja"]})
+    dauer_b = zeit.monotonic() - start
+    check("Sitzungstrennung: Stimme ohne Sitzungskontext angenommen",
+          voted.status_code == 200, str(voted.json())[:80])
+    check("Sitzungstrennung: sauberer Abstimm-Request erzeugt keinen Befund",
+          debug_log.counts()["inconsistency"] == vorher)
+    check("Sitzungstrennung: Abstimm-Antwort setzt kein Cookie",
+          "set-cookie" not in voted.headers)
+    board = anon.get(f"/board/{poll}")
+    check("Sitzungstrennung: Board-Seite setzt kein Cookie",
+          board.status_code == 200 and "set-cookie" not in board.headers)
+    check("Sitzungstrennung: Antwort-Floor auf beiden Phasen-Routen",
+          dauer_a >= floor * 0.95 and dauer_b >= floor * 0.95,
+          f"A={dauer_a:.3f}s B={dauer_b:.3f}s floor={floor}s")
+
+    # Altclient-Fall: Der angemeldete Client stimmt selbst ab, das
+    # Session-Cookie faehrt mit. Die Stimme zaehlt (die Verkettung ist mit dem
+    # Empfang passiert, eine Abweisung schuetzte nichts mehr), aber der
+    # Betreiber sieht den Befund statt einer stillen Duldung.
+    client2, token2, sig2, _ = hole_token("testperson71")
+    voted2 = client2.post(f"/api/vote/{poll}",
+                          json={"token": token2.hex(), "sig": sig2.hex(), "choices": ["Nein"]})
+    befunde = [e for e in debug_log.events("inconsistency")
+               if e.category == "unverkettbarkeit" and e.detail.get("poll") == poll]
+    check("Sitzungstrennung: mitgesandtes Session-Cookie wird als Befund gemeldet",
+          voted2.status_code == 200 and len(befunde) == 1,
+          f"status={voted2.status_code} befunde={len(befunde)}")
+    check("Sitzungstrennung: Befund benennt, was mitkam",
+          bool(befunde) and "eidpoll_session" in befunde[0].detail.get("mitgesandt", ""),
+          str(befunde[0].detail if befunde else {}))
 
 
 def demo_schalter() -> None:
@@ -604,7 +1017,7 @@ def demo_schalter() -> None:
     """
     oeffentlich = create_app(
         store_path=Path(tempfile.mkdtemp()) / "public.sqlite3",
-        settings=Settings(public=True, admin_token="admin"),
+        settings=Settings(public=True, admin_token="admin", antwort_floor_s=0),
     )
     pub = TestClient(oeffentlich)
     pub.post("/api/admin/login", json={"token": "admin"})
@@ -622,7 +1035,7 @@ def demo_schalter() -> None:
     vorfuehrung = TestClient(
         create_app(
             store_path=Path(tempfile.mkdtemp()) / "vorfuehrung.sqlite3",
-            settings=Settings(public=True, admin_token="admin", demos=True),
+            settings=Settings(public=True, admin_token="admin", demos=True, antwort_floor_s=0),
         )
     )
     ohne_anmeldung = vorfuehrung.post("/api/admin/demo/stuff/x", json={"choice": "Ja"})
@@ -637,6 +1050,7 @@ def main() -> int:
     eintragsformat()
     pruefung_ohne_datenbank()
     umfrage_schluessel()
+    signaturschluessel()
 
     # Punkt 1 - App laeuft, offene Umfrage sichtbar
     client.post("/api/admin/login", json={"token": "admin"})
@@ -655,7 +1069,7 @@ def main() -> int:
         return 1
     token, sig = issued
     check("Punkt 2b: Signatur ist eine gueltige RSASSA-PSS-Signatur (RFC 9474)",
-          blind.verify(service._key.public_key(), token, sig))
+          blind.verify(service.poll_pubkey(POLL), token, sig))
 
     # Phase A ein zweites Mal mit derselben Identitaet
     check("Punkt 2c: zweites Token fuer dieselbe Identitaet wird abgewiesen", get_token(client) is None)
@@ -712,6 +1126,8 @@ def main() -> int:
     parallel_participation()
     anspruch_atomar()
     laufende_pruefung()
+    batch_veroeffentlichung()
+    sitzungstrennung()
     demo_schalter()
 
     # Angriff 1 - Ballot-Stuffing wird von der Abrechnung entlarvt
@@ -723,11 +1139,12 @@ def main() -> int:
     check("Angriff Ballot-Stuffing: Abrechnung schlaegt aus",
           not acc.ok, f"{acc.n_votes} Stimmen bei {acc.n_eligible} Berechtigten")
 
-    # Angriff 2 - Board umschreiben bricht die Kette und verhindert das Ergebnis
-    vote_index = next(e.index for e in service.board(POLL) if e.kind == "VOTE")
-    demo.tamper_board(service, POLL, vote_index, "Nein")
+    # Angriff 2 - Board umschreiben bricht die Batch-Kette und verhindert das Ergebnis
+    vote_leaf = next(e.leaf_hash for e in service.board(POLL) if e.kind == "VOTE")
+    demo.tamper_board(service, POLL, vote_leaf, "Nein")
     status = service.chain_status(POLL)
-    check("Angriff Board-Manipulation: Kette bricht sichtbar", not status.ok, f"ab #{status.broken_at}")
+    check("Angriff Board-Manipulation: Batch-Kette bricht sichtbar",
+          not status.ok, f"Batch {status.broken_at}")
     try:
         service.tally(POLL)
         check("Angriff Board-Manipulation: kein Ergebnis mehr", False)

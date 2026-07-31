@@ -22,7 +22,7 @@
 <div class="stats">
   <div class="stat">
     <div class="value {{ 'good' if status.ok else 'bad' }}">{{ 'OK' if status.ok else 'BRUCH' }}</div>
-    <div class="label">Kette — nichts nachträglich geändert{% if not status.ok %} (ab #{{ status.broken_at }}){% endif %}</div>
+    <div class="label">Batch-Kette — nichts nachträglich geändert{% if not status.ok %} (Batch {{ status.broken_at }}){% endif %}</div>
   </div>
   <div class="stat">
     <div class="value {{ 'good' if status.signatures_ok else 'bad' }}">{{ 'OK' if status.signatures_ok else 'FEHLER' }}</div>
@@ -50,14 +50,23 @@
 {% endif %}
 {% if not status.ok %}
   <div class="banner err">
-    Ein Eintrag wurde nachträglich verändert — ab Nummer {{ status.broken_at }} stimmt die Kette nicht mehr.
+    Ein Eintrag wurde nachträglich verändert — in Batch {{ status.broken_at }} passen die Einträge
+    nicht mehr zur veröffentlichten Prüfsumme.
     <small>
-      Reichweite dieser Prüfung: Sie entlarvt nur einen Angreifer, der die Hashes stehen lässt. Ein
-      Betreiber mit Schreibzugriff rechnet die Kette dahinter neu und bleibt hier unsichtbar. Dagegen
-      hilft erst ein Anker außerhalb dieses Servers.
+      Reichweite dieser Prüfung: Sie entlarvt nur einen Angreifer, der die Prüfsummen stehen lässt.
+      Ein Betreiber mit Schreibzugriff rechnet Wurzeln und Kette dahinter neu und bleibt hier
+      unsichtbar. Dagegen hilft erst ein Anker außerhalb dieses Servers.
     </small>
   </div>
 {% endif %}
+
+<p class="faint small" style="margin-top:12px">
+  Einträge erscheinen hier nicht sofort, sondern gebündelt: veröffentlicht wird, sobald mindestens
+  {{ batch_k }} neue Einträge vorliegen, spätestens nach {{ batch_deckel_h }} Stunden, in jedem Fall
+  beim Ende der Umfrage. Innerhalb eines Bündels gibt es keine Reihenfolge — so lässt sich aus dem
+  Board nicht ablesen, wann eine einzelne Stimme eintraf. Dein Beleg bindet uns trotzdem sofort:
+  Fehlt dein Eintrag im zugesagten Batch, ist der Beleg der Nachweis dafür.
+</p>
 
 <p class="faint small" style="margin-top:12px">
   Was diese Prüfungen nicht abdecken: Die Signatur belegt, dass eine Berechtigung mit dem Schlüssel
@@ -107,30 +116,35 @@
 </div>
 
 <details class="explain">
-  <summary>Alle {{ entries | length }} Einträge im Detail ansehen</summary>
+  <summary>Alle {{ n_entries }} Einträge in {{ batches | length }} Batches ansehen</summary>
   <div class="explain-body">
     <p>
-      Jede Zeile ist ein Eintrag, der nur angehängt und nie geändert werden kann. Jeder trägt den
-      Fingerabdruck des vorherigen — deshalb fällt jede nachträgliche Änderung auf.
+      Jeder Batch ist eine Menge von Einträgen ohne Reihenfolge, zusammengefasst zu einer
+      Merkle-Wurzel. Die Wurzeln sind untereinander verkettet — deshalb fällt jede nachträgliche
+      Änderung und jede gelöschte Zeile auf.
     </p>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>#</th><th>Typ</th><th>Inhalt</th><th>prev</th><th>hash</th></tr>
-        </thead>
-        <tbody>
-          {% for entry in entries %}
-            <tr class="{{ 'broken' if status.broken_at is not none and entry.index >= status.broken_at }}">
-              <td class="mono">{{ entry.index }}</td>
-              <td><span class="tag">{{ entry.kind }}</span></td>
-              <td class="mono">{{ entry.payload }}</td>
-              <td class="mono hash">{{ entry.prev_hash[:12] }}…</td>
-              <td class="mono hash">{{ entry.entry_hash[:12] }}…</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+    {% for batch in batches %}
+      <p class="mono small" style="margin:14px 0 4px">
+        Batch {{ batch.n }} · {{ batch.entries | length }} Einträge ·
+        root {{ batch.merkle_root[:12] }}… · Kette {{ batch.batch_root[:12] }}…
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Blatt</th><th>Typ</th><th>Inhalt</th></tr>
+          </thead>
+          <tbody>
+            {% for entry in batch.entries %}
+              <tr class="{{ 'broken' if status.broken_at is not none and batch.n >= status.broken_at }}">
+                <td class="mono hash">{{ entry.leaf_hash[:12] }}…</td>
+                <td><span class="tag">{{ entry.kind }}</span></td>
+                <td class="mono">{{ entry.payload }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endfor %}
   </div>
 </details>
 
@@ -139,8 +153,10 @@
   <div class="explain-body">
     <p>
       Mit diesem öffentlichen Schlüssel lässt sich jede Stimme unabhängig prüfen: RSASSA-PSS über
-      SHA-384 mit Salt-Länge 0 (RFC 9474, RSABSSA-SHA384-PSS-Deterministic). Die Kette rechnet sich
-      nach über <code>sha256("index|prev_hash|payload")</code>.
+      SHA-384 mit Salt-Länge 0 (RFC 9474, RSABSSA-SHA384-PSS-Deterministic). Das Board rechnet sich
+      nach über Blatt-Hashes <code>sha256(0x00‖payload)</code>, je Batch einen Merkle-Baum über die
+      aufsteigend sortierten Blätter (<code>sha256(0x01‖links‖rechts)</code>, ungerade Knoten werden
+      durchgereicht) und die Kette <code>batch_root = sha256(0x02‖merkle_root‖vorherige_root)</code>.
     </p>
     <p>
       Nachrechnen muss man nichts selbst schreiben: <a href="/api/board/{{ poll.poll_id }}">Das
@@ -150,11 +166,24 @@
     <div class="receipt">curl -o board.json {{ request.url.scheme }}://{{ request.url.netloc }}/api/board/{{ poll.poll_id }}
 python3 verifikation.py board.json</div>
     <p>
-      Der Export enthält den öffentlichen Schlüssel mit. Wer diesem Server nicht glauben will,
-      nimmt ihn woanders her und übergibt ihn mit <code>--pubkey</code> — sonst prüft man das Board
-      nur gegen sich selbst.
+      Diese Umfrage hat einen <strong>eigenen</strong> Token-Schlüssel. Er steht im
+      Eröffnungseintrag des Boards und damit unter der Merkle-Wurzel — nachträglich austauschen
+      ließe er sich nur, indem die Kette bricht. Ein Token aus einer anderen Umfrage ist hier
+      wertlos. Wer den Schlüssel aus einer unabhängigen Quelle hat, lässt ihn mit
+      <code>--pubkey</code> dagegenhalten; eine Abweichung ist ein Befund.
     </p>
     <div class="receipt">{{ public_key }}</div>
+    <p>
+      Sobald die Umfrage endet, wird der <em>private</em> Teil dieses Schlüssels vernichtet. Ab
+      dann kann niemand mehr gültige Stimm-Token für sie herstellen — auch der Betreiber nicht.
+      Solange sie läuft, kann er es; dagegen hilft nur, dass mehrere Stellen unabhängig
+      signieren, und das ist nicht gebaut.
+    </p>
+    <p>
+      Belege der Stimmabgabe sind mit einem eigenen Ed25519-Schlüssel signiert
+      (über das kanonische JSON <code>{"batch":…,"leaf":…,"poll":…,"typ":"BELEG"}</code>):
+    </p>
+    <div class="receipt">{{ beleg_public_key }}</div>
   </div>
 </details>
 {% endblock %}

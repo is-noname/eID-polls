@@ -16,10 +16,13 @@
     </div>
   {% else %}
     <div class="banner err">
-      Zu diesem Token gibt es keinen Eintrag in „{{ sel_poll }}".
+      Zu diesem Token gibt es keinen veröffentlichten Eintrag in „{{ sel_poll }}".
       <small>
-        Möglich ist: damit wurde noch nicht abgestimmt, es gehört zu einer anderen Umfrage, oder es
-        hat sich beim Kopieren ein Zeichen verändert. Prüfe die Umfrage und das Token noch einmal.
+        Möglich ist: Die Stimme wartet noch auf ihre Veröffentlichung — Einträge erscheinen
+        gebündelt, sobald mindestens {{ batch_k }} vorliegen, spätestens nach
+        {{ batch_deckel_h }} Stunden und in jedem Fall beim Ende der Umfrage; dein signierter Beleg
+        bindet uns schon jetzt. Oder: damit wurde noch nicht abgestimmt, es gehört zu einer anderen
+        Umfrage, oder beim Kopieren hat sich ein Zeichen verändert.
       </small>
     </div>
   {% endif %}

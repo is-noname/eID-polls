@@ -1,10 +1,11 @@
 // Gemeinsame Helfer fuer alle Seiten. Die Krypto steht in blind.js.
 
-export async function postJSON(url, body) {
+export async function postJSON(url, body, init) {
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body || {}),
+    ...(init || {}),
   });
   const data = await response.json().catch(() => ({ error: "Antwort nicht lesbar." }));
   if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);

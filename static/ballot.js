@@ -97,20 +97,35 @@ export async function obtainBallot(pollId, nHex, eHex) {
 
 /** Gibt die Stimme ab. Berechtigung wird geholt, falls noch keine offene existiert.
  *
- * Rueckgabe: { index, entryHash, token, participation } - der Inhalt des Belegs.
+ * Rueckgabe: { leaf, batch, belegSig, token, participation } - der Inhalt des
+ * Belegs (EIP-ADR-20260728-001, E4): Blatt-Hash des Eintrags, zugesagte
+ * Batch-Nummer und die Ed25519-Signatur des Betreibers ueber diese Zusage.
  * Wirft die Fehlermeldung des Servers weiter (verbrauchtes Token, geschlossene
  * Umfrage, fehlende Berechtigung).
  */
 export async function castBallot(pollId, nHex, eHex, choices) {
   const record = pendingBallot(pollId) || await obtainBallot(pollId, nHex, eHex);
 
-  const result = await postJSON(`/api/vote/${pollId}`, {
-    token: record.token, sig: record.sig, choices,
-  });
+  // Phase B ohne Sitzungskontext (EIP-T-033, Baustein F): Das Token ist die
+  // ganze Berechtigung. "omit" haelt das eID-Session-Cookie aus dem Request,
+  // "no-referrer" die Seite, von der er kommt - sonst empfinge der Server
+  // Identitaet und Stimme im selben Request und die Trennung der Phasen
+  // waere nur noch Behauptung. Kommt doch Kontext an, meldet der Server das
+  // im Debug-Modul als Befund.
+  const result = await postJSON(
+    `/api/vote/${pollId}`,
+    { token: record.token, sig: record.sig, choices },
+    { credentials: "omit", referrerPolicy: "no-referrer" },
+  );
 
   // Das Token verlaesst den Speicher, sobald es verbraucht ist - danach traegt
   // nur noch der Beleg den Bezug zur Stimme (EIP-T-011).
-  const receipt = { voted: true, index: result.board_index, entryHash: result.entry_hash };
+  const receipt = {
+    voted: true,
+    leaf: result.leaf_hash,
+    batch: result.batch,
+    belegSig: result.beleg_sig,
+  };
   saveState(pollId, receipt);
 
   return { ...receipt, token: record.token, participation: result.participation };

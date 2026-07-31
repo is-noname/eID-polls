@@ -95,7 +95,7 @@ with sync_playwright() as p:
         "Punkt 3c: Token nach Abgabe aus dem Speicher entfernt, Belegdaten bleiben",
         stored_after_vote is not None
         and '"token"' not in stored_after_vote
-        and '"index"' in stored_after_vote,
+        and '"leaf"' in stored_after_vote,
         stored_after_vote,
     )
 

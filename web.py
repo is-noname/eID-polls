@@ -15,9 +15,11 @@ ihre Abhaengigkeiten ueber ``deps(request)`` aus dem App-Zustand.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import os
+import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -88,7 +90,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
         except Rejected as exc:
             log.reject("system", f"Demo-Umfrage nicht angelegt: {exc}")
-    yield
+
+    # Zeitdeckel der Batch-Veroeffentlichung (EIP-ADR-20260728-001, E3): Der
+    # Deckel darf nicht davon abhaengen, dass zufaellig noch eine Anfrage
+    # kommt - sonst wartet ein Beleg bei stillstehender Umfrage unbegrenzt.
+    async def _batch_deckel() -> None:
+        while True:
+            await asyncio.sleep(60)
+            d.service.publiziere_faellige()
+
+    deckel_task = asyncio.create_task(_batch_deckel())
+    try:
+        yield
+    finally:
+        deckel_task.cancel()
 
 
 def create_app(
@@ -105,12 +120,39 @@ def create_app(
     """
     store_path.parent.mkdir(parents=True, exist_ok=True)
     app = FastAPI(title="eID-Umfrage", docs_url=None, redoc_url=None, lifespan=lifespan)
+    effective = settings if settings is not None else Settings.from_env()
     app.state.deps = Deps(
-        service=PollService(store_path),
+        service=PollService(
+            store_path,
+            batch_k=effective.batch_k,
+            batch_deckel_s=int(effective.batch_deckel_h * 3600),
+        ),
         authenticator=authenticator if authenticator is not None else CodeAuthenticator(),
-        settings=settings if settings is not None else Settings.from_env(),
+        settings=effective,
         templates=Jinja2Templates(directory=str(BASE_DIR / "templates")),
     )
+    # Antwortzeit-Floor der Phasen-Routen (EIP-T-033, Baustein F): /api/token
+    # und /api/vote antworten fruehestens nach antwort_floor_s. Ohne den Floor
+    # unterscheidet die Dauer eine schnelle Abweisung von einer langsamen
+    # RSA-Signatur - die Latenz wuerde zum Seitenkanal. Als Middleware statt in
+    # den Routen, damit auch Abweisungen (Rejected laeuft ueber den
+    # Exception-Handler) unter dem Floor liegen. Ehrlich dazu: ein Floor, keine
+    # Konstante - dauert die Bearbeitung laenger als der Floor, ist die Dauer
+    # wieder sichtbar. Netz-Jitter jenseits des Servers deckt er nie ab.
+    floor_s = effective.antwort_floor_s
+
+    @app.middleware("http")
+    async def _antwort_floor(request: Request, call_next):  # type: ignore[no-untyped-def]
+        pfad = request.url.path
+        if floor_s <= 0 or not (pfad.startswith("/api/token/") or pfad.startswith("/api/vote/")):
+            return await call_next(request)
+        start = time.monotonic()
+        response = await call_next(request)
+        rest = floor_s - (time.monotonic() - start)
+        if rest > 0:
+            await asyncio.sleep(rest)
+        return response
+
     app.mount("/static", RevalidatingStatics(directory=str(BASE_DIR / "static")), name="static")
     app.add_exception_handler(Rejected, _rejected_handler)
     app.add_exception_handler(AuthError, _auth_handler)
@@ -244,13 +286,16 @@ async def index(request: Request) -> HTMLResponse:
 async def poll_page(request: Request, poll_id: str) -> HTMLResponse:
     service = deps(request).service
     poll = service.poll(poll_id)
+    # Die Blinding-Parameter gehoeren zu genau dieser Umfrage (EIP-T-069) - ein
+    # Token, das der Browser gegen sie rechnet, ist anderswo wertlos.
+    n, e = service.poll_params(poll_id)
     return page(
         request,
         "poll.html",
         poll=poll,
         participation=service.participation(poll_id),
-        n=hex(service.n)[2:],
-        e=hex(service.e)[2:],
+        n=hex(n)[2:],
+        e=hex(e)[2:],
     )
 
 
@@ -273,12 +318,16 @@ async def board_page(request: Request, poll_id: str) -> HTMLResponse:
         request,
         "board.html",
         poll=poll,
-        entries=bericht.entries,
+        batches=bericht.batches,
+        n_entries=bericht.n_entries,
         status=status,
         accounting=accounting,
         result=result,
         result_error=result_error,
-        public_key=service.public_key_pem,
+        public_key=service.poll_pubkey_pem(poll_id),
+        beleg_public_key=service.beleg_public_key_pem,
+        batch_k=service.batch_k,
+        batch_deckel_h=service.batch_deckel_s // 3600,
     )
 
 
@@ -299,6 +348,8 @@ async def verify_page(request: Request, poll: str = "", token: str = "") -> HTML
         token=token,
         found=found,
         searched=searched,
+        batch_k=service.batch_k,
+        batch_deckel_h=service.batch_deckel_s // 3600,
     )
 
 
@@ -420,6 +471,28 @@ async def api_token(request: Request, poll_id: str, payload: dict) -> JSONRespon
 
 @router.post("/api/vote/{poll_id}")
 async def api_vote(request: Request, poll_id: str, payload: dict) -> JSONResponse:
+    # Phase B kommt ohne Identitaet aus - das Token ist die ganze Berechtigung.
+    # Traegt der Request trotzdem Sitzungskontext aus Phase A (Cookie,
+    # Auth-Header, Referrer), empfaengt der Server Identitaet und Stimme im
+    # selben Request und die Trennung aus §2 ist Behauptung statt Struktur
+    # (EIP-T-033, Baustein F). Der Client sendet deshalb nichts davon
+    # (ballot.js, credentials "omit"); kommt doch etwas an, ist das ein
+    # sichtbarer Befund, keine stille Duldung. Nicht abweisen: Die Verkettung
+    # ist mit dem Empfang bereits passiert, eine Abweisung wuerde nur die
+    # Stimme kosten, nichts schuetzen.
+    mitgesandt = [name for name in (SESSION_COOKIE, ADMIN_COOKIE) if name in request.cookies]
+    if request.headers.get("authorization"):
+        mitgesandt.append("authorization")
+    if request.headers.get("referer"):
+        mitgesandt.append("referer")
+    if mitgesandt:
+        log.inconsistency(
+            "unverkettbarkeit",
+            "Abstimm-Request traegt Sitzungskontext aus Phase A - "
+            "Identitaet und Stimme im selben Request (EIP-T-033 F).",
+            poll=poll_id,
+            mitgesandt=", ".join(mitgesandt),
+        )
     service = deps(request).service
     try:
         token = bytes.fromhex(str(payload.get("token", "")))
@@ -427,13 +500,16 @@ async def api_vote(request: Request, poll_id: str, payload: dict) -> JSONRespons
     except ValueError as exc:
         raise Rejected("Token oder Signatur ist kein Hex.") from exc
     choices = [str(c) for c in payload.get("choices", [])]
-    entry = service.cast_vote(poll_id, token, sig, choices)
+    beleg = service.cast_vote(poll_id, token, sig, choices)
     return JSONResponse(
         {
             "ok": True,
-            "board_index": entry.index,
-            "entry_hash": entry.entry_hash,
+            "leaf_hash": beleg.entry.leaf_hash,
+            "batch": beleg.batch,
+            "beleg_sig": beleg.sig_hex,
             "token": token.hex(),
+            # Oeffentlich gezaehlt wird nur Veroeffentlichtes: die eigene
+            # Stimme erscheint erst mit ihrem Batch (ADR E4).
             "participation": service.participation(poll_id),
         }
     )

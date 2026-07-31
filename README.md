@@ -60,7 +60,7 @@ Identität ebenfalls — die Abwehr greift auf beiden Ebenen (Pseudonym in Phase
 | `static/blind.js` | Dieselbe Krypto im Browser. Muss dort liegen, sonst gibt es kein Wahlgeheimnis gegen den Betreiber. |
 | `static/ballot.js` | Der Stimmzettel-Flow: Token erzeugen, verblinden, signieren lassen, entblinden, abgeben — samt Zwischenstand nach Abbruch (EIP-ADR-20260725-002). Zusammen mit `blind.js` die vollständige Client-Strecke. |
 | `static/beleg.js` | Der Beleg: Kassenbon, QR-Code, Textdatei. Reine Darstellung, kein Krypto. |
-| `store.py` | SQLite: Eligibility-Ledger, Vote-Ledger, Board-Hash-Kette. Board-Payloads als kanonisches JSON. |
+| `store.py` | SQLite: Eligibility-Ledger, Vote-Ledger, Board mit Batch-Kette (EIP-ADR-20260728-001). Board-Payloads als kanonisches JSON. |
 | `poll_service.py` | Kern aus `PROTOTYPE_two-ledger/poll_logic.py`, Board als einzige Auszählungsquelle. |
 | `demo.py` | Angriffsdemos (§9): Stimme einschleusen, Board-Eintrag umschreiben, Testzugang zurücksetzen. Liegt außerhalb des Kerns und wird nur eingehängt, wenn `Settings.demos` gesetzt ist — lokal an, öffentlich nur mit `EIDPOLL_DEMOS=1`. |
 | `debug.py` + `/debug` | Fehler, Abweisungen, Inkonsistenzen in Echtzeit. Nur mit Admin-Anmeldung. |
@@ -110,7 +110,7 @@ beiden Seiten, Python und JavaScript. Das ist besser als der textbook-Chaum des 
 ersetzt trotzdem keinen Audit. §4 bleibt für einen echten Betrieb offen.
 
 **3. Der Betreiber-Schutz ist unvollständig — wie im RFC beschrieben:**
-- Die Hash-Kette entlarvt nur den Angreifer, der die Hashes stehen lässt. Wer Schreibzugriff hat,
+- Die Batch-Kette entlarvt nur den Angreifer, der die Wurzeln stehen lässt. Wer Schreibzugriff hat,
   rechnet sie neu. Dagegen hilft erst ein extern verankerter Merkle-Root (§12).
 - Die Ledger-Abrechnung macht Ballot-Stuffing sichtbar, aber ein Alleinbetreiber könnte die
   Berechtigten-Zahl mitfälschen. Echter Fix erst mit verteilter Schwellensignatur (§12).

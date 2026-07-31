@@ -1,23 +1,30 @@
-"""SQLite-Persistenz: Eligibility-Ledger, Vote-Ledger, Board-Hash-Kette.
+"""SQLite-Persistenz: Eligibility-Ledger, Vote-Ledger, Board mit Batch-Kette.
 
-Datenmodell nach EIP-RFC-20260725-001 §6/§9 und dem Prototyp-Fund aus
-PROTOTYPE_two-ledger/NOTES.md:
+Datenmodell nach EIP-RFC-20260725-001 §6/§9, dem Prototyp-Fund aus
+PROTOTYPE_two-ledger/NOTES.md und EIP-ADR-20260728-001:
 
   eligibility  gehashte Pseudonyme - weiss "hat abgeholt", nicht "wie gestimmt"
   spent        verbrauchte Tokens - reiner Doppelabstimmungs-Index, KEINE Stimmen
-  board        die Hash-Kette; traegt die Stimmen und ist die einzige
-               Auszaehlungsquelle (§7)
+  board        die Eintraege; ohne Eingangsreihenfolge, jeder Eintrag gehoert zu
+               einem veroeffentlichten Batch oder wartet im Puffer (batch NULL)
+  batches      die veroeffentlichten Batches mit Merkle-Root und Batch-Kette -
+               zusammen mit board die einzige Auszaehlungsquelle (§7)
 
-Board-Payloads sind kanonisches JSON (sortierte Schluessel, keine Leerzeichen)
-statt der String-Zeile des Prototyps. Damit faellt dessen Grenze weg, dass
-Optionen kein Leerzeichen, '+' oder '=' enthalten duerfen.
+Keine Tabelle traegt eine Eingangsreihenfolge (EIP-T-033, Baustein E):
+eligibility und spent sind WITHOUT ROWID ueber ihre Primaerschluessel, board
+haengt an (poll_id, leaf_hash) - der Blatt-Hash ist gleichverteilt und sagt
+nichts ueber die Zeit. Die einzige Ordnung ist die Batch-Nummer, und deren
+Granularitaet ist die Anonymitaetsmenge (ADR E3).
+
+Der Puffer-Zeitpunkt (fuer den Zeitdeckel) wird **auf die Stunde gerundet** je
+Umfrage gespeichert, nicht je Eintrag: Ein exakter Zeitstempel des ersten
+Eintrags eines Batches waere genau der Korrelationsanker, den der Umbau
+entfernt. Fuer einen 6-Stunden-Deckel reicht die Stunde.
 
 Das Board-*Format* selbst steht nicht hier, damit ein Dritter es ohne diese
 Datei - und damit ohne Datenbank - nachrechnen kann (§7): kanonisches JSON,
-Eintrags-Hash und BoardEntry in board_eintrag.py (EIP-T-046), die Kettenpruefung
-in verifikation.py (EIP-T-045). Hier bleibt die Persistenz. Die Namen werden
-weiter re-exportiert, weil sie zum Board gehoeren und Aufrufer sie neben board()
-erwarten.
+Blatt-Hash, Merkle-Baum und Batch-Kette in board_eintrag.py (EIP-T-046), die
+Pruefung in verifikation.py (EIP-T-045). Hier bleibt die Persistenz.
 """
 
 from __future__ import annotations
@@ -26,22 +33,22 @@ import json
 import secrets
 import sqlite3
 import threading
-from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from board_eintrag import GENESIS, BoardEntry, canonical, entry_hash
-from verifikation import verify_chain
+import board_eintrag
+from board_eintrag import GENESIS, BoardEntry, canonical
+from verifikation import Batch
 
 __all__ = [
     "GENESIS",
+    "Batch",
     "BoardEntry",
     "PollRow",
     "Store",
     "canonical",
-    "entry_hash",
-    "verify_chain",
 ]
 
 SCHEMA = """
@@ -60,21 +67,31 @@ CREATE TABLE IF NOT EXISTS eligibility (
     poll_id   TEXT NOT NULL,
     voter_key TEXT NOT NULL,
     PRIMARY KEY (poll_id, voter_key)
-);
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS spent (
     poll_id   TEXT NOT NULL,
     token_hex TEXT NOT NULL,
     PRIMARY KEY (poll_id, token_hex)
-);
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS board (
-    poll_id    TEXT NOT NULL,
-    idx        INTEGER NOT NULL,
-    prev_hash  TEXT NOT NULL,
-    payload    TEXT NOT NULL,
-    entry_hash TEXT NOT NULL,
-    PRIMARY KEY (poll_id, idx)
-);
+    poll_id   TEXT NOT NULL,
+    leaf_hash TEXT NOT NULL,
+    payload   TEXT NOT NULL,
+    batch     INTEGER,
+    PRIMARY KEY (poll_id, leaf_hash)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS batches (
+    poll_id     TEXT NOT NULL,
+    batch       INTEGER NOT NULL,
+    merkle_root TEXT NOT NULL,
+    batch_root  TEXT NOT NULL,
+    published   TEXT NOT NULL,
+    PRIMARY KEY (poll_id, batch)
+) WITHOUT ROWID;
 """
+
+# Praefix des gerundeten Puffer-Beginns je Umfrage (Zeitdeckel, ADR E3).
+PENDING_SINCE = "pending_since:"
 
 
 @dataclass(frozen=True)
@@ -98,6 +115,7 @@ class Store:
         # warten statt sofort abzubrechen.
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA busy_timeout=5000")
+        self._weise_altformat_ab()
         self._conn.executescript(SCHEMA)
         self._conn.commit()
         # Alle Threads teilen sich diese eine Verbindung (check_same_thread=False).
@@ -109,14 +127,50 @@ class Store:
         # Das Lock ist privat (EIP-T-047): es sichert diese eine Verbindung, es
         # ist *nicht* der Grund, warum ein Ausweis nur ein Token bekommt. Diese
         # Regel setzen beanspruche_berechtigung und verbrauche_token selbst
-        # durch. Frueher klammerte poll_service.py "pruefen + einfuegen" von
-        # aussen in dieses Lock - ein Vertrag, dessen Verlust keine Pruefung
-        # ueber die Schnittstelle bemerkt haette. RLock bleibt, weil die
-        # zusammengesetzten Operationen hier drin schachteln (momentaufnahme).
-        # Bei der Groessenordnung dieser Umfrage (rund 100 Teilnehmende) kostet
-        # die Serialisierung nichts Spuerbares; eine Verbindung pro Thread waere
-        # der naechste Schritt, wenn das je knapp wird.
+        # durch. RLock bleibt, weil die zusammengesetzten Operationen hier drin
+        # schachteln (momentaufnahme, publiziere).
         self._lock = threading.RLock()
+
+    def _weise_altformat_ab(self) -> None:
+        """Datenbanken im Ketten-Format (vor ADR-20260728-001) nicht stillschweigend
+        weiterbenutzen.
+
+        Der Formatwechsel ist ein bewusster Bruch (ADR, "Formatbruch"): Eintraege
+        verlieren ihre Nummern, die Kette wird zur Batch-Kette. Ein Altbestand
+        laesst sich nicht verlustfrei ueberfuehren, ohne seine Eingangsreihenfolge
+        mitzunehmen - und genau die soll weg. Die Migrationsentscheidung der ADR:
+        Vorfuehrdaten verwerfen. Sichtbar statt still - deshalb Abbruch mit
+        Anleitung statt eines leeren Boards neben vollen Ledgern.
+        """
+        spalten = {
+            r["name"]
+            for r in self._conn.execute("PRAGMA table_info(board)").fetchall()
+        }
+        if "idx" in spalten:
+            raise RuntimeError(
+                f"Die Datenbank {self.path} stammt aus dem Ketten-Format vor "
+                "EIP-ADR-20260728-001 (Merkle-Set mit Batch-Kette). Sie enthaelt nur "
+                "Vorfuehrdaten und wird verworfen: Datei loeschen oder EIDPOLL_DB auf "
+                "einen neuen Pfad setzen, dann neu starten."
+            )
+        # Boards ohne Token-Schluessel im POLL_OPEN-Eintrag (vor EIP-T-069)
+        # liessen sich nicht mehr pruefen: Der globale Schluessel, gegen den
+        # ihre Signaturen gelten, wird beim Start vernichtet. Auch das ist
+        # Vorfuehrbestand und wird sichtbar verworfen, statt als Board mit
+        # lauter unlesbaren Eroeffnungseintraegen weiterzulaufen.
+        if spalten:
+            alt = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM board "
+                "WHERE payload LIKE '%\"POLL_OPEN\"%' AND payload NOT LIKE '%\"pubkey\"%'"
+            ).fetchone()
+            if alt and int(alt["n"]):
+                raise RuntimeError(
+                    f"Die Datenbank {self.path} stammt aus der Zeit vor EIP-T-069 (ein "
+                    "globaler Token-Signaturschluessel statt einem je Umfrage). Ihre "
+                    "Boards nennen keinen Schluessel und waeren nach dem Start nicht mehr "
+                    "pruefbar. Sie enthaelt nur Vorfuehrdaten und wird verworfen: Datei "
+                    "loeschen oder EIDPOLL_DB auf einen neuen Pfad setzen, dann neu starten."
+                )
 
     # -- config ------------------------------------------------------------
     def get_config(self, key: str) -> str | None:
@@ -203,14 +257,14 @@ class Store:
 
     # -- Eligibility-Ledger: ein Ausweis, ein Token (§6) --------------------
     def beanspruche_berechtigung(
-        self, poll_id: str, voter_key: str, eintrag: Callable[[int], dict[str, Any]]
+        self, poll_id: str, voter_key: str, eintrag: dict[str, Any]
     ) -> BoardEntry | None:
         """Erhebt den Anspruch auf genau ein Stimm-Token und vermerkt die
-        Ausgabe auf dem Board.
+        Ausgabe im Board-Puffer.
 
-        Rueckgabe: der Board-Eintrag der Ausgabe, oder ``None``, wenn fuer
-        diesen Ausweis in dieser Umfrage schon eine Berechtigung ausgegeben
-        wurde.
+        Rueckgabe: der gepufferte Board-Eintrag der Ausgabe, oder ``None``,
+        wenn fuer diesen Ausweis in dieser Umfrage schon eine Berechtigung
+        ausgegeben wurde.
 
         Pruefen und Eintragen sind *ein* Schritt, durchgesetzt vom PRIMARY KEY
         der Tabelle: ``INSERT OR IGNORE`` traegt ein oder tut nichts, und
@@ -222,10 +276,6 @@ class Store:
         Der Board-Eintrag gehoert in denselben Schritt: sonst zeigt die
         Abrechnung fuer einen Moment einen Ledger-Eintrag ohne Board-Eintrag,
         und das Debug-Modul meldet eine Inkonsistenz, die es nicht gibt.
-
-        ``eintrag`` baut den Board-Payload aus der laufenden Nummer der
-        Ausgabe - die steht erst hier fest. Als Rueckruf, damit das
-        Board-*Format* ausserhalb dieser Datei bleibt (Modul-Docstring).
         """
         with self._lock:
             cur = self._conn.execute(
@@ -234,12 +284,10 @@ class Store:
             )
             if cur.rowcount == 0:
                 return None
-            row = self._conn.execute(
-                "SELECT COUNT(*) AS n FROM eligibility WHERE poll_id = ?", (poll_id,)
-            ).fetchone()
             try:
-                # append_board committet - und damit auch den Anspruch oben.
-                return self.append_board(poll_id, eintrag(int(row["n"])))
+                # _puffer committet - und damit auch den Anspruch oben.
+                entry, _ = self._puffer(poll_id, eintrag)
+                return entry
             except Exception:
                 self._conn.rollback()  # kein Board-Eintrag, kein Anspruch
                 raise
@@ -247,11 +295,14 @@ class Store:
     # -- Vote-Ledger: ein Token, eine Stimme (§9) --------------------------
     def verbrauche_token(
         self, poll_id: str, token_hex: str, eintrag: dict[str, Any]
-    ) -> BoardEntry | None:
-        """Verbraucht ein Stimm-Token und schreibt die Stimme aufs Board.
+    ) -> tuple[BoardEntry, int] | None:
+        """Verbraucht ein Stimm-Token und puffert die Stimme fuers Board.
 
-        Rueckgabe: der Board-Eintrag der Stimme, oder ``None``, wenn dieses
-        Token in dieser Umfrage schon verbraucht war.
+        Rueckgabe: ``(Board-Eintrag, zugesagte Batch-Nummer)``, oder ``None``,
+        wenn dieses Token in dieser Umfrage schon verbraucht war. Die zugesagte
+        Batch-Nummer ist Teil des signierten Belegs (ADR E4): Jede
+        Veroeffentlichung nimmt den ganzen Puffer mit, also ist der naechste
+        Batch nach dem Einfuegen genau der, in dem dieser Eintrag erscheint.
 
         Wie beanspruche_berechtigung ein einziger Schritt ueber den PRIMARY
         KEY - und aus demselben Grund zusammen mit dem Board-Eintrag. Der
@@ -266,7 +317,7 @@ class Store:
             if cur.rowcount == 0:
                 return None
             try:
-                return self.append_board(poll_id, eintrag)
+                return self._puffer(poll_id, eintrag)
             except Exception:
                 self._conn.rollback()  # keine Stimme, kein verbrauchtes Token
                 raise
@@ -288,46 +339,140 @@ class Store:
             ).fetchone()
         return int(row["eligible"]), int(row["spent"])
 
-    def momentaufnahme(self, poll_id: str) -> tuple[list[BoardEntry], int, int]:
-        """(Board, ausgegebene Berechtigungen, verbrauchte Tokens) in einem Zug.
-
-        Board und Ledger unter einem Schritt gelesen und erst danach geprueft:
-        die teuren Signaturpruefungen duerfen nicht zwischen den Lesezugriffen
-        liegen (siehe ledger_stand).
+    def momentaufnahme(
+        self, poll_id: str
+    ) -> tuple[list[Batch], list[BoardEntry], int, int]:
+        """(Batches, Puffer, ausgegebene Berechtigungen, verbrauchte Tokens) in
+        einem Zug - erst danach pruefen: die teuren Signaturpruefungen duerfen
+        nicht zwischen den Lesezugriffen liegen (siehe ledger_stand).
         """
         with self._lock:
-            entries = self.board(poll_id)
+            batches = self.veroeffentlichte_batches(poll_id)
+            pending = self.pending(poll_id)
             eligible, spent = self.ledger_stand(poll_id)
-        return entries, eligible, spent
+        return batches, pending, eligible, spent
 
-    # -- Board -------------------------------------------------------------
-    def board(self, poll_id: str) -> list[BoardEntry]:
+    # -- Board: Puffer und Batches (EIP-ADR-20260728-001) -------------------
+    def _puffer(self, poll_id: str, payload: dict[str, Any]) -> tuple[BoardEntry, int]:
+        """Legt einen Eintrag in den Puffer. Rueckgabe: (Eintrag, naechste Batch-Nummer)."""
+        entry = BoardEntry.from_payload(payload)
+        self._conn.execute(
+            "INSERT INTO board (poll_id, leaf_hash, payload, batch) VALUES (?, ?, ?, NULL)",
+            (poll_id, entry.leaf_hash, entry.payload),
+        )
+        # Puffer-Beginn fuer den Zeitdeckel, auf die Stunde gerundet
+        # (Modul-Docstring: keine feinen Zeitstempel neben den Eintraegen).
+        key = PENDING_SINCE + poll_id
+        row = self._conn.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()
+        if row is None:
+            stunde = datetime.now().replace(minute=0, second=0, microsecond=0)
+            self._conn.execute(
+                "INSERT INTO config (key, value) VALUES (?, ?)",
+                (key, stunde.isoformat(timespec="seconds")),
+            )
+        zusage = int(
+            self._conn.execute(
+                "SELECT COUNT(*) AS n FROM batches WHERE poll_id = ?", (poll_id,)
+            ).fetchone()["n"]
+        )
+        self._conn.commit()
+        return entry, zusage
+
+    def puffer_eintrag(self, poll_id: str, payload: dict[str, Any]) -> BoardEntry:
+        """Eintrag ohne Ledger-Anspruch puffern (POLL_OPEN, POLL_CLOSED)."""
+        with self._lock:
+            entry, _ = self._puffer(poll_id, payload)
+        return entry
+
+    def pending(self, poll_id: str) -> list[BoardEntry]:
+        """Der unveroeffentlichte Puffer - Betreibersicht, nicht Teil des
+        oeffentlichen Boards. Sortiert nach Blatt-Hash, damit auch diese Sicht
+        keine Eingangsreihenfolge zeigt."""
         with self._lock:
             rows = self._conn.execute(
-                "SELECT idx, prev_hash, payload, entry_hash FROM board "
-                "WHERE poll_id = ? ORDER BY idx",
+                "SELECT leaf_hash, payload FROM board "
+                "WHERE poll_id = ? AND batch IS NULL ORDER BY leaf_hash",
                 (poll_id,),
             ).fetchall()
-        return [BoardEntry(r["idx"], r["prev_hash"], r["payload"], r["entry_hash"]) for r in rows]
+        return [BoardEntry(r["payload"], r["leaf_hash"], None) for r in rows]
 
-    def board_head(self, poll_id: str) -> tuple[int, str]:
-        """(naechster_index, head_hash)."""
+    def pending_stand(self, poll_id: str) -> tuple[int, datetime | None]:
+        """(Anzahl im Puffer, gerundeter Puffer-Beginn oder None)."""
         with self._lock:
             row = self._conn.execute(
-                "SELECT idx, entry_hash FROM board WHERE poll_id = ? ORDER BY idx DESC LIMIT 1",
+                "SELECT COUNT(*) AS n FROM board WHERE poll_id = ? AND batch IS NULL",
                 (poll_id,),
             ).fetchone()
-        return (0, GENESIS) if row is None else (row["idx"] + 1, row["entry_hash"])
+            since = self.get_config(PENDING_SINCE + poll_id)
+        return int(row["n"]), datetime.fromisoformat(since) if since else None
 
-    def append_board(self, poll_id: str, payload: dict[str, Any]) -> BoardEntry:
+    def veroeffentlichte_batches(self, poll_id: str) -> list[Batch]:
         with self._lock:
-            index, prev = self.board_head(poll_id)
-            line = canonical(payload)
-            digest = entry_hash(index, prev, line)
+            batch_rows = self._conn.execute(
+                "SELECT batch, merkle_root, batch_root FROM batches "
+                "WHERE poll_id = ? ORDER BY batch",
+                (poll_id,),
+            ).fetchall()
+            entry_rows = self._conn.execute(
+                "SELECT leaf_hash, payload, batch FROM board "
+                "WHERE poll_id = ? AND batch IS NOT NULL ORDER BY batch, leaf_hash",
+                (poll_id,),
+            ).fetchall()
+        je_batch: dict[int, list[BoardEntry]] = {}
+        for r in entry_rows:
+            je_batch.setdefault(int(r["batch"]), []).append(
+                BoardEntry(r["payload"], r["leaf_hash"], int(r["batch"]))
+            )
+        return [
+            Batch(
+                n=int(r["batch"]),
+                merkle_root=r["merkle_root"],
+                batch_root=r["batch_root"],
+                entries=tuple(je_batch.get(int(r["batch"]), ())),
+            )
+            for r in batch_rows
+        ]
+
+    def publiziere(self, poll_id: str) -> Batch | None:
+        """Veroeffentlicht den gesamten Puffer als naechsten Batch.
+
+        Rueckgabe: der neue Batch, oder ``None`` bei leerem Puffer. Merkle-Root
+        und Kettenglied werden hier berechnet und gespeichert; die Pruefung
+        (verifikation.py) rechnet beides aus den Eintraegen nach und behandelt
+        die gespeicherten Werte als Behauptung.
+        """
+        with self._lock:
+            pending = self.pending(poll_id)
+            if not pending:
+                return None
+            n = int(
+                self._conn.execute(
+                    "SELECT COUNT(*) AS n FROM batches WHERE poll_id = ?", (poll_id,)
+                ).fetchone()["n"]
+            )
+            prev_row = self._conn.execute(
+                "SELECT batch_root FROM batches WHERE poll_id = ? AND batch = ?",
+                (poll_id, n - 1),
+            ).fetchone()
+            prev = prev_row["batch_root"] if prev_row else GENESIS
+            root = board_eintrag.merkle_root(e.leaf_hash for e in pending)
+            glied = board_eintrag.batch_root(root, prev)
             self._conn.execute(
-                "INSERT INTO board (poll_id, idx, prev_hash, payload, entry_hash) "
+                "UPDATE board SET batch = ? WHERE poll_id = ? AND batch IS NULL",
+                (n, poll_id),
+            )
+            self._conn.execute(
+                "INSERT INTO batches (poll_id, batch, merkle_root, batch_root, published) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (poll_id, index, prev, line, digest),
+                (poll_id, n, root, glied, datetime.now().isoformat(timespec="seconds")),
+            )
+            self._conn.execute(
+                "DELETE FROM config WHERE key = ?", (PENDING_SINCE + poll_id,)
             )
             self._conn.commit()
-            return BoardEntry(index, prev, line, digest)
+            return Batch(
+                n=n,
+                merkle_root=root,
+                batch_root=glied,
+                entries=tuple(BoardEntry(e.payload, e.leaf_hash, n) for e in pending),
+            )

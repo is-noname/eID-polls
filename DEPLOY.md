@@ -114,9 +114,9 @@ Ein Ablauf, der das trägt:
 3. **Abstimmen**, **Beleg sichern**, unter *Stimme prüfen* den eigenen Eintrag im Board finden.
 4. **Zweiter Versuch mit `testperson1`** — abgewiesen, obwohl der Server nicht weiß, wie diese
    Person gestimmt hat. Das ist der Kern des Verfahrens.
-5. **Board öffnen:** Hash-Kette, Ledger-Abrechnung, Auszählung aus der geprüften Kette.
+5. **Board öffnen:** Batch-Kette, Ledger-Abrechnung, Auszählung aus dem geprüften Board.
 6. Mit Admin-Token: unter *Admin* die Demo-Knöpfe **Eintrag verfälschen** und **Stimme
-   einschleusen** — das Board meldet sofort gebrochene Kette bzw. eine Abrechnung, die nicht
+   einschleusen** — das Board meldet sofort eine gebrochene Batch-Kette bzw. eine Abrechnung, die nicht
    aufgeht. Der Nachweis, dass die Prüfung nicht dekorativ ist.
    Öffentlich erscheinen diese Knöpfe nur mit `EIDPOLL_DEMOS=1`; ohne die Variable gibt es die
    Routen nicht, nicht bloß eine Abweisung.
