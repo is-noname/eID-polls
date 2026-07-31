@@ -586,9 +586,12 @@ Stand 2026-07-31:
   → EIP-T-074. Bis dahin trägt es Disziplin
 - **§ 10** — erfüllt: Kodex, Verstoßprotokoll und Transparenzbericht sind auf der Instanz ohne
   Anmeldung erreichbar (Version 10, EIP-T-063)
-- **§ 1** — weiterhin nur teilweise: Die App protokolliert keine IPs mehr, was der Hoster daneben
-  mitschreibt, ist ungeprüft (V-002, Wirksamkeit auf der Instanz nicht bestätigt). **Die einzige
-  gerissene Fälligkeit dieser Betriebsstufe**
+- **§ 1** — weiterhin nur teilweise, aber die Hälfte steht: Dass die App keine IPs mehr
+  protokolliert, ist seit dem 2026-07-31 **am wirksamen Ort belegt** — der Startbefehl der Instanz
+  trägt `--no-access-log`, und über dutzende Anfragen fällt keine Zugriffszeile an (V-002 damit
+  geschlossen). Was Renders Loadbalancer und TLS-Endpunkt daneben mitschreiben, ist ungeprüft und
+  erscheint im Container-Log gar nicht → EIP-T-041.
+  **Bleibt die einzige gerissene Fälligkeit dieser Betriebsstufe**
 
 Die Spalte *Seit* nennt das Datum der Kodex-Version, in der der Vermerk zuerst stand, nicht das
 Datum dieser Übersicht. Ein Vermerk wird durch die Aufnahme hier nicht jünger.

@@ -389,8 +389,9 @@ der Betriebsstufe `öffentlich erreichbar` bleibt allein § 1 gerissen (V-002, E
 
 ### V-002 — Vollständige IP-Adressen im Zugriffslog der öffentlichen Instanz
 **Datum des Eintrags:** 2026-07-28 · **Paragraphen:** § 1, § 4, § 18 ·
-**Ticket:** EIP-T-041 · **Status:** Korrektur ausgeliefert am 2026-07-28, Wirksamkeit auf der Instanz
-noch nicht bestätigt
+**Ticket:** EIP-T-041 · **Status:** behoben, Wirksamkeit auf der Instanz bestätigt am 2026-07-31
+(siehe Nachtrag unten). Der uvicorn-Zugriffslog war der Gegenstand dieses Verstoßes; was Render
+darüber hinaus protokolliert, ist offen und gehört weiter zu EIP-T-041
 
 **Was geschah.** Die öffentliche Instanz startet uvicorn ohne `--no-access-log` und mit
 `--proxy-headers --forwarded-allow-ips='*'` (`render.yaml`, `Dockerfile`). Uvicorn schreibt damit für
@@ -440,3 +441,29 @@ Fehler aus V-001 — ein abgehaktes Kriterium ohne Prüfung am wirksamen Ort.
 unabhängig von der App. Das liegt außerhalb dessen, was ein Startbefehl regelt, und bleibt in
 EIP-T-041 offen. § 1 ist damit weiterhin `Disziplin` und die Fälligkeit an der Betriebsstufe
 `öffentlich erreichbar` weiterhin gerissen.
+
+**Nachtrag 2026-07-31 — im Dashboard nachgesehen, Wirksamkeit bestätigt.** Der Betreiber hat den
+Log-Stream des Services geöffnet. Zwei Belege, beide aus dem Zeitraum 15:55:36–16:25:22 UTC:
+
+1. **Der Startbefehl ist übernommen.** Jede Startzeile des Zeitraums lautet
+   `==> Running 'uvicorn web:app --host 0.0.0.0 --port $PORT --proxy-headers
+   --forwarded-allow-ips='*' --no-access-log'` — fünfmal, über drei Deploys und beide
+   Container-Generationen. Die Sorge, ein Blueprint ziehe die geänderte `startCommand` nicht nach,
+   war unbegründet.
+2. **Es fällt keine Zugriffszeile an.** In dem Zeitraum liefen mehrere Dutzend Anfragen gegen die
+   Instanz (Deploy-Prüfläufe im Sekundentakt, zwei Versionsabgleiche, Abrufe von `/kodex`). Der Log
+   enthält für keine davon eine Zeile, weder mit noch ohne IP. Sichtbar sind ausschließlich
+   Prozess-, Start- und Deploy-Meldungen.
+
+**Wie belastbar der zweite Beleg ist.** Er stammt nicht aus dem dafür gesetzten Markierungsaufruf:
+Der lief um 16:29:53 UTC und damit nach dem Ende des vorliegenden Ausschnitts. Der Nachweis stützt
+sich stattdessen auf die Anfragen *innerhalb* des abgedeckten Fensters — dieselbe Aussage, aus mehr
+Anfragen, nur ohne die vorgesehene Beschriftung. Das wird hier gesagt, statt den Markierungstest als
+bestanden auszugeben, den niemand gesehen hat.
+
+**Was das nicht bedeutet.** Der Verstoß betraf den uvicorn-Zugriffslog, und der ist aus. Renders
+eigene Protokollierung am Loadbalancer und TLS-Endpunkt ist damit **nicht** geprüft — sie erscheint
+in diesem Log-Stream gar nicht, weil er nur stdout des Containers zeigt. Der Absatz darüber gilt
+unverändert: § 1 bleibt `Disziplin`, die Fälligkeit an der Betriebsstufe `öffentlich erreichbar`
+bleibt gerissen, und die Schuldenzahl ändert sich nicht (11 von 20). V-002 ist geschlossen, § 1 ist
+es nicht.
