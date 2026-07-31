@@ -98,6 +98,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         while True:
             await asyncio.sleep(60)
             d.service.publiziere_faellige()
+            # Derselbe Takt fuer den Ablauf des Wiederhol-Puffers (EIP-T-070):
+            # eine Lebensdauer, die nur beim naechsten Zugriff geprueft wird,
+            # laesst die Zeilen bei stillstehender Umfrage unbegrenzt liegen.
+            try:
+                d.service.verwirf_abgelaufene_wiederholungen()
+            except Exception as exc:
+                log.exception("phase-a", exc)
 
     deckel_task = asyncio.create_task(_batch_deckel())
     try:
@@ -126,6 +133,7 @@ def create_app(
             store_path,
             batch_k=effective.batch_k,
             batch_deckel_s=int(effective.batch_deckel_h * 3600),
+            retry_cache_s=int(effective.retry_cache_h * 3600),
         ),
         authenticator=authenticator if authenticator is not None else CodeAuthenticator(),
         settings=effective,

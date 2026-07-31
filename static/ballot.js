@@ -65,6 +65,9 @@ export function resetSession() {
  *
  * Quelle ist entweder die laufende Sitzung oder der localStorage - nach einem
  * Reload existiert nur letzterer.
+ *
+ * Eine bloss *abgeschickte* Anfrage (siehe openRequest) zaehlt hier nicht: Ohne
+ * Signatur ist sie keine Berechtigung, mit der man abstimmen koennte.
  */
 export function pendingBallot(pollId) {
   if (held) return held;
@@ -76,20 +79,47 @@ export function pendingBallot(pollId) {
   return null;
 }
 
+/** Eine abgeschickte, aber unbeantwortete Token-Anfrage, oder null (EIP-T-070). */
+function openRequest(pollId) {
+  const state = loadState(pollId);
+  if (state && state.token && state.blinded && state.inv && !state.sig && !state.voted) {
+    return state;
+  }
+  return null;
+}
+
 /** Holt die Stimmberechtigung: Token erzeugen, verblinden, signieren lassen, entblinden.
  *
- * Vor der Rueckgabe landen Token und Signatur im localStorage. Das ist der
- * einzige Grund, warum hier ueberhaupt noch etwas gespeichert wird: Bricht der
- * anschliessende Vote-Aufruf ab (Netz weg, Tab zu), ist die Berechtigung im
- * Eligibility-Ledger verbraucht, waehrend die Stimme nicht steht. Ohne diesen
- * Zwischenstand waere die Person raus - der Server gibt kein zweites Token aus
- * und kann das auch nicht (EIP-ADR-20260725-002).
+ * Gespeichert wird **zweimal**, und beide Male aus demselben Grund - der Weg
+ * darf an keiner Stelle so abbrechen, dass die Berechtigung verbraucht ist und
+ * niemand mehr etwas davon hat:
+ *
+ * 1. *Vor* dem Absenden Token, verblindete Form und Blinding-Faktor. Bricht die
+ *    Antwort weg (Netz, Tab zu), hat der Server im Zweifel schon signiert und
+ *    das Pseudonym als versorgt vermerkt. Nur wer dieselbe verblindete Anfrage
+ *    noch einmal stellen kann, bekommt dann dieselbe Signatur wiederholt
+ *    (EIP-T-070) - ein neu gewuerfeltes Token waere eine andere Anfrage und
+ *    wuerde zu Recht abgewiesen.
+ * 2. Nach dem Entblinden Token und fertige Signatur. Bricht der anschliessende
+ *    Vote-Aufruf ab, ist die Berechtigung im Eligibility-Ledger verbraucht,
+ *    waehrend die Stimme nicht steht (EIP-ADR-20260725-002).
+ *
+ * Der Blinding-Faktor liegt damit kurzzeitig im localStorage. Er ist kein
+ * Geheimnis gegenueber dem Server - im Gegenteil, er ist genau das, was der
+ * Server *nicht* hat und auch aus dem Speicher nicht bekommt; er verlaesst das
+ * Geraet nicht. Mit dem Zustand nach Schritt 2 (Token im Klartext) steht er
+ * ohnehin auf einer Stufe, und mit der Abgabe verschwindet beides (EIP-T-011).
  */
 export async function obtainBallot(pollId, nHex, eHex) {
-  const token = newToken();
-  const { blindedHex, inv } = await blindToken(token, nHex, eHex);
-  const { blind_sig } = await postJSON(`/api/token/${pollId}`, { blinded: blindedHex });
-  const record = { token: bytesToHex(token), sig: finalizeSignature(blind_sig, inv, nHex) };
+  let request = openRequest(pollId);
+  if (!request) {
+    const token = newToken();
+    const { blindedHex, inv } = await blindToken(token, nHex, eHex);
+    request = { token: bytesToHex(token), blinded: blindedHex, inv };
+    saveState(pollId, request);
+  }
+  const { blind_sig } = await postJSON(`/api/token/${pollId}`, { blinded: request.blinded });
+  const record = { token: request.token, sig: finalizeSignature(blind_sig, request.inv, nHex) };
   saveState(pollId, record);
   held = record;
   return record;

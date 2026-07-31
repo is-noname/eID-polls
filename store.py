@@ -9,12 +9,23 @@ PROTOTYPE_two-ledger/NOTES.md und EIP-ADR-20260728-001:
                einem veroeffentlichten Batch oder wartet im Puffer (batch NULL)
   batches      die veroeffentlichten Batches mit Merkle-Root und Batch-Kette -
                zusammen mit board die einzige Auszaehlungsquelle (§7)
+  issue_retry  kurzlebiger Wiederhol-Puffer der Ausgabe (EIP-T-070): verblindete
+               Anfrage und ihre Blindsignatur, damit ein Abbruch nach dem
+               Signieren nicht die Berechtigung verbrennt. Wird nach Ablauf und
+               beim Schliessen geloescht, faellt aus Sicherungskopien heraus
 
 Keine Tabelle traegt eine Eingangsreihenfolge (EIP-T-033, Baustein E):
 eligibility und spent sind WITHOUT ROWID ueber ihre Primaerschluessel, board
 haengt an (poll_id, leaf_hash) - der Blatt-Hash ist gleichverteilt und sagt
 nichts ueber die Zeit. Die einzige Ordnung ist die Batch-Nummer, und deren
 Granularitaet ist die Anonymitaetsmenge (ADR E3).
+
+issue_retry ist die eine Ausnahme und deshalb ausdruecklich benannt: Sie traegt
+eine Zeit, weil ein Ablauf sie braucht. Auf die *Stunde gerundet*, wie der
+Puffer-Beginn - eine Stunde ist zu grob, um daraus eine Reihenfolge zu bauen,
+und die Zeile verschwindet ohnehin mit dem Ablauf. Was sie verbindet
+(voter_key -> verblindete Anfrage), sieht der Issuer im regulaeren Ablauf
+ohnehin; das entblindete Token kommt darin nicht vor.
 
 Der Puffer-Zeitpunkt (fuer den Zeitdeckel) wird **auf die Stunde gerundet** je
 Umfrage gespeichert, nicht je Eintrag: Ein exakter Zeitstempel des ersten
@@ -87,6 +98,14 @@ CREATE TABLE IF NOT EXISTS batches (
     batch_root  TEXT NOT NULL,
     published   TEXT NOT NULL,
     PRIMARY KEY (poll_id, batch)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS issue_retry (
+    poll_id   TEXT NOT NULL,
+    voter_key TEXT NOT NULL,
+    blinded_h TEXT NOT NULL,
+    blind_sig TEXT NOT NULL,
+    stunde    TEXT NOT NULL,
+    PRIMARY KEY (poll_id, voter_key)
 ) WITHOUT ROWID;
 """
 
@@ -263,7 +282,8 @@ class Store:
         das Original, ohne dessen Schutz.
 
         Deshalb kopiert diese Methode nicht die Datei, sondern die Datenbank
-        *ohne* ihre config-Tabelle bis auf ``KOPIERBARE_CONFIG_PRAEFIXE``.
+        *ohne* ihre config-Tabelle bis auf ``KOPIERBARE_CONFIG_PRAEFIXE`` und
+        ohne den Wiederhol-Puffer ``issue_retry`` (EIP-T-070, siehe unten).
         Ledger, Board und Batches bleiben vollstaendig - sie sind der Grund,
         eine Kopie zu haben, und ohne Schluessel geben sie keine Zuordnung her
         (das prueft smoke_test.datenabzug_nach_schluss am Original).
@@ -312,6 +332,12 @@ class Store:
                 f"WHERE NOT ({behalten})", muster
             )
             kopie.execute(f"DELETE FROM config WHERE NOT ({behalten})", muster)
+            # Der Wiederhol-Puffer (EIP-T-070) ist Betriebszustand von heute,
+            # kein Bestand. In einer Kopie ueberlebte er seinen eigenen Ablauf -
+            # dieselbe Bewegung wie das server_secret in data.backup.<zeit>/,
+            # nur eine Tabelle weiter. Er faellt deshalb heraus, ohne dass es
+            # jemand beim Anlegen der Kopie bedenken muss.
+            kopie.execute("DELETE FROM issue_retry")
             kopie.commit()
             kopie.execute("VACUUM")
             kopie.execute("PRAGMA journal_mode=DELETE")
@@ -358,7 +384,12 @@ class Store:
 
     # -- Eligibility-Ledger: ein Ausweis, ein Token (§6) --------------------
     def beanspruche_berechtigung(
-        self, poll_id: str, voter_key: str, eintrag: dict[str, Any]
+        self,
+        poll_id: str,
+        voter_key: str,
+        eintrag: dict[str, Any],
+        blinded_h: str | None = None,
+        blind_sig_hex: str | None = None,
     ) -> BoardEntry | None:
         """Erhebt den Anspruch auf genau ein Stimm-Token und vermerkt die
         Ausgabe im Board-Puffer.
@@ -366,6 +397,13 @@ class Store:
         Rueckgabe: der gepufferte Board-Eintrag der Ausgabe, oder ``None``,
         wenn fuer diesen Ausweis in dieser Umfrage schon eine Berechtigung
         ausgegeben wurde.
+
+        ``blinded_h`` und ``blind_sig_hex`` gehen in denselben Schritt
+        (EIP-T-070): Wer den Anspruch verbraucht, muss die Antwort nachher noch
+        einmal bekommen koennen. Laege der Wiederhol-Puffer in einer zweiten
+        Transaktion, waere genau der Fall wieder offen, den das Ticket schliesst
+        - Anspruch weg, Antwort nirgends. Ohne die beiden (Puffer abgeschaltet)
+        bleibt es beim alten Verhalten.
 
         Pruefen und Eintragen sind *ein* Schritt, durchgesetzt vom PRIMARY KEY
         der Tabelle: ``INSERT OR IGNORE`` traegt ein oder tut nichts, und
@@ -386,12 +424,70 @@ class Store:
             if cur.rowcount == 0:
                 return None
             try:
+                if blinded_h is not None and blind_sig_hex is not None:
+                    self._conn.execute(
+                        "INSERT OR REPLACE INTO issue_retry "
+                        "(poll_id, voter_key, blinded_h, blind_sig, stunde) VALUES (?, ?, ?, ?, ?)",
+                        (poll_id, voter_key, blinded_h, blind_sig_hex, self._stunde()),
+                    )
                 # _puffer committet - und damit auch den Anspruch oben.
                 entry, _ = self._puffer(poll_id, eintrag)
                 return entry
             except Exception:
                 self._conn.rollback()  # kein Board-Eintrag, kein Anspruch
                 raise
+
+    @staticmethod
+    def _stunde() -> str:
+        return datetime.now().replace(minute=0, second=0, microsecond=0).isoformat(
+            timespec="seconds"
+        )
+
+    def wiederhol_signatur(self, poll_id: str, voter_key: str, blinded_h: str) -> str | None:
+        """Die zuvor ausgegebene Blindsignatur, wenn dieselbe verblindete
+        Anfrage noch einmal kommt (EIP-T-070). Sonst ``None``.
+
+        ``None`` heisst zweierlei und darf es auch: kein Puffer-Eintrag mehr
+        (abgelaufen), oder ein *anderes* ``blinded_msg`` von einem bereits
+        versorgten Ausweis. Beides endet in derselben Abweisung - der Aufrufer
+        unterscheidet sie fuer das Debug-Modul, nicht fuer die Antwort.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT blind_sig FROM issue_retry "
+                "WHERE poll_id = ? AND voter_key = ? AND blinded_h = ?",
+                (poll_id, voter_key, blinded_h),
+            ).fetchone()
+        return row["blind_sig"] if row else None
+
+    def verwirf_wiederhol_puffer(
+        self, poll_id: str | None = None, aelter_als: datetime | None = None
+    ) -> int:
+        """Loescht Wiederhol-Eintraege und gibt zurueck, wie viele es waren.
+
+        Ohne Argumente: alles. ``poll_id`` grenzt auf eine Umfrage ein (beim
+        Schliessen - danach ist kein Token mehr etwas wert), ``aelter_als`` auf
+        die abgelaufenen (Ablaufdurchlauf). Der Vergleich laeuft ueber den
+        ISO-Text, der sortiert wie die Zeit.
+        """
+        bedingungen: list[str] = []
+        werte: list[Any] = []
+        if poll_id is not None:
+            bedingungen.append("poll_id = ?")
+            werte.append(poll_id)
+        if aelter_als is not None:
+            bedingungen.append("stunde < ?")
+            werte.append(aelter_als.isoformat(timespec="seconds"))
+        wo = (" WHERE " + " AND ".join(bedingungen)) if bedingungen else ""
+        with self._lock:
+            cur = self._conn.execute(f"DELETE FROM issue_retry{wo}", werte)
+            self._conn.commit()
+        return cur.rowcount
+
+    def wiederhol_puffer_stand(self) -> int:
+        with self._lock:
+            row = self._conn.execute("SELECT COUNT(*) AS n FROM issue_retry").fetchone()
+        return int(row["n"])
 
     # -- Vote-Ledger: ein Token, eine Stimme (§9) --------------------------
     def verbrauche_token(

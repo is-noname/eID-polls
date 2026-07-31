@@ -40,6 +40,8 @@ globalThis.localStorage = {
 let tokenCalls = 0;
 let voteCalls = 0;
 let voteHandler = null; // (body) -> Antwort, oder wirft fuer "Netz weg"
+let tokenHandler = null; // dasselbe fuer Phase A; null = Standardantwort
+const tokenBodies = []; // was der Client jeweils verblindet geschickt hat
 
 globalThis.fetch = async (url, options) => {
   const body = JSON.parse(options.body || "{}");
@@ -51,6 +53,8 @@ globalThis.fetch = async (url, options) => {
 
   if (url.startsWith("/api/token/")) {
     tokenCalls += 1;
+    tokenBodies.push(body);
+    if (tokenHandler) return tokenHandler(body, reply);
     // Attrappe: irgendeine Zahl < n. Der Client entblindet sie unbesehen.
     return reply(200, { blind_sig: "42" });
   }
@@ -163,6 +167,52 @@ check("gesperrter Speicher liefert keinen Zustand statt zu scheitern", () => {
   assert.equal(ballot.pendingBallot(POLL), null);
 });
 globalThis.localStorage = blocked;
+
+// --- Fall 6: Antwort auf die Token-Anfrage geht verloren (EIP-T-070)
+//
+// Der Gegenpart zum Server-seitigen Wiederhol-Puffer: Damit der ueberhaupt
+// greifen kann, muss der Client dieselbe verblindete Anfrage ein zweites Mal
+// stellen koennen. Wuerfelte er neu, waere das fuer den Server eine andere
+// Anfrage - zu Recht abgewiesen, und die Berechtigung waere verloren.
+store.clear();
+ballot.resetSession();
+tokenCalls = 0;
+tokenBodies.length = 0;
+tokenHandler = () => { throw new TypeError("fetch failed"); };
+let tokenError = null;
+try {
+  await ballot.castBallot(POLL, N_HEX, E_HEX, ["Ja"]);
+} catch (err) {
+  tokenError = err;
+}
+const angefragt = state();
+
+check("Abbruch in Phase A wird nach oben gemeldet", () => assert.ok(tokenError));
+check("EIP-T-070: die abgeschickte Anfrage ist gesichert", () => {
+  assert.ok(angefragt, "kein Zustand gespeichert");
+  assert.match(angefragt.token, /^[0-9a-f]{64}$/);
+  assert.ok(angefragt.blinded, "verblindete Form nicht gesichert");
+  assert.ok(angefragt.inv, "Blinding-Faktor nicht gesichert");
+  assert.ok(!angefragt.sig, "Signatur vorgetaeuscht");
+});
+check("EIP-T-070: eine unbeantwortete Anfrage ist keine Berechtigung", () => {
+  ballot.resetSession();
+  assert.equal(ballot.pendingBallot(POLL), null);
+});
+
+// Zweiter Anlauf nach Reload: derselbe Blinded-Wert, kein neues Token.
+ballot.resetSession();
+tokenHandler = null;
+voteHandler = (_body, reply) =>
+  reply(200, { leaf_hash: "beef", batch: 2, beleg_sig: "ab", participation: 1 });
+const nachAbbruch = await ballot.castBallot(POLL, N_HEX, E_HEX, ["Ja"]);
+check("EIP-T-070: der zweite Anlauf schickt dieselbe verblindete Anfrage", () => {
+  assert.equal(tokenCalls, 2);
+  assert.equal(tokenBodies[1].blinded, tokenBodies[0].blinded);
+});
+check("EIP-T-070: dasselbe Token wie vor dem Abbruch", () => {
+  assert.equal(nachAbbruch.token, angefragt.token);
+});
 
 const failed = results.filter(([ok]) => !ok);
 for (const [ok, label] of results) console.log(`[${ok ? "  ok  " : " FEHL "}] ${label}`);

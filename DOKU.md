@@ -117,6 +117,29 @@ Timing-Rückschlüsse.
 > für den nächsten Versuch bereit; ein zweites wird weiterhin nicht ausgegeben, denn das ist die
 > Doppelabstimmungs-Abwehr.
 
+> **Wenn die Antwort auf dem Weg verlorengeht.** Ein zweiter Abbruchpunkt liegt eine Stufe früher:
+> Der Server hat die verblindete Anfrage signiert und den Ausweis als versorgt vermerkt — und dann
+> erreicht die Antwort den Browser nicht (Netz weg, Tab zu). Ohne Gegenmaßnahme wäre die
+> Berechtigung verbraucht und niemand hätte ein Token; ein legitim Berechtigter wäre dauerhaft
+> ausgeschlossen. Deshalb merkt sich der Server für **24 Stunden**, welche Blindsignatur er auf
+> welche verblindete Anfrage ausgegeben hat. Kommt *dieselbe* Anfrage noch einmal, wiederholt er
+> dieselbe Antwort. Der Browser hält die Anfrage dafür lokal fest, bevor er sie abschickt.
+>
+> Das ist keine zweite Ausgabe: Eine *abweichende* Anfrage desselben Ausweises wird weiterhin
+> abgewiesen, Ledger und Board bekommen keinen zweiten Eintrag, und eine zweite Signatur derselben
+> verblindeten Anfrage wäre ohnehin Bit für Bit die erste.
+>
+> **Warum das die Anonymität nicht bricht.** Der Merkposten verbindet den
+> Wahlberechtigungs-Schlüssel mit der *verblindeten* Anfrage und ihrer *verblindeten* Signatur —
+> genau die beiden Werte, die der Server im regulären Ablauf ohnehin sieht und selbst berechnet.
+> Das entblindete Stimm-Token kommt darin nicht vor; es entsteht im Browser und wird dort
+> entblindet. Wer den Merkposten liest, kann daraus so wenig auf eine Stimme schließen wie aus dem
+> Mitschnitt der ursprünglichen Anfrage. Was er zusätzlich trägt, ist eine Zeitangabe — auf die
+> Stunde gerundet, aus demselben Grund wie beim Puffer-Zeitpunkt (EIP-T-033, Baustein E) — und die
+> verschwindet mit dem Eintrag: nach Ablauf, spätestens beim Schließen der Umfrage. Aus
+> Sicherungskopien fällt er heraus, sonst überlebte er seinen eigenen Ablauf (EIP-T-070,
+> EIP-T-067).
+
 ### Eigene Stimme prüfen
 
 **Verifikation** → Umfrage wählen, Token aus dem Beleg einfügen. Die App zeigt die Auswahl, die
@@ -275,7 +298,7 @@ static/ballot.js (+ blind.js)            web.py          HTTP, Cookies
 | `static/blind.js` | Dieselbe Krypto im Browser. Beide Seiten müssen bitgenau gleich rechnen. |
 | `static/ballot.js` | Der Weg einer Stimme im Browser: Token erzeugen, verblinden, signieren lassen, entblinden, abgeben — plus der Zwischenstand, wenn die Abgabe danach abbricht (EIP-ADR-20260725-002). `blind.js` rechnet, `ballot.js` führt. `templates/poll.html` enthält nur noch die DOM-Verdrahtung. |
 | `static/beleg.js` | Der Beleg: Kassenbon, QR-Code, Textdatei. Reine Darstellung — kein Krypto, kein Netz, kein Speicher. |
-| `store.py` | SQLite: `polls`, `eligibility`, `spent`, `board`, `batches` — ohne Eingangsreihenfolge (`WITHOUT ROWID`, EIP-T-033 E). Puffert Einträge und veröffentlicht sie als Batch. Alle Zugriffe — auch lesende — laufen über ein `RLock`, weil sich alle Threads eine Verbindung teilen (EIP-T-019). |
+| `store.py` | SQLite: `polls`, `eligibility`, `spent`, `board`, `batches` und der kurzlebige `issue_retry` (EIP-T-070) — ohne Eingangsreihenfolge (`WITHOUT ROWID`, EIP-T-033 E). Puffert Einträge und veröffentlicht sie als Batch. Alle Zugriffe — auch lesende — laufen über ein `RLock`, weil sich alle Threads eine Verbindung teilen (EIP-T-019). |
 | `board_eintrag.py` | Das Eintragsformat: kanonisches JSON, Blatt-Hash, Merkle-Baum, Batch-Kette, Konstruktoren (`vote`, `token_issued`, `poll_open` — trägt den öffentlichen Token-Schlüssel der Umfrage —, `poll_closed`) und `parse(entry) -> Vote \| TokenIssued \| PollOpen \| PollClosed \| Unlesbar`. Rohe Dicts baut und liest niemand mehr selbst. Ein Eintrag, den `parse` nicht deuten kann, wird zu `Unlesbar` — er zählt nirgends mit und macht das Ergebnis unbelastbar, statt still zu verschwinden. |
 | `verifikation.py` | Die gesamte Prüfung über das veröffentlichte Board: `pruefe(batches, options) -> Pruefbericht` — Merkle-Wurzeln, Batch-Kette, Signaturen, Abrechnung, Auszählung. Den öffentlichen Schlüssel holt sie sich aus dem Board selbst (`schluessel_aus_board`); ein unabhängig mitgegebener wird dagegen gehalten. Ohne Datenbank, ohne privaten Schlüssel, auch als Kommandozeilen-Werkzeug für Dritte lauffähig. |
 | `poll_service.py` | Phasenlogik, Regeln, Konsistenzprüfung. Die Auszählung selbst delegiert es an `verifikation.py` und übersetzt Befunde in Abweisungen. Hält den Lebenszyklus beider Umfrage-Schlüssel: erzeugen beim Anlegen, `vernichte_poll_secret()` und `vernichte_poll_key()` beim Schließen. Den privaten Signaturschlüssel liest es bewusst **ohne Zwischenspeicher** aus der Datenbank — ein Cache im Prozess hielte ihn über seine Vernichtung hinaus am Leben. |
@@ -325,6 +348,7 @@ der anonyme Zustellkanal ist EIP-T-034).
 | `EIDPOLL_DB` | `app/data/eidpoll.sqlite3` | Datenbankdatei |
 | `EIDPOLL_ADMIN_TOKEN` | `admin` | Admin-Zugang |
 | `EIDPOLL_ANTWORT_FLOOR_S` | `0.3` | Mindest-Antwortzeit der Phasen-Routen in Sekunden, `0` schaltet ab (EIP-T-033 F) |
+| `EIDPOLL_RETRY_CACHE_H` | `24` | Lebensdauer des Wiederhol-Puffers der Token-Ausgabe in Stunden, `0` schaltet ab (EIP-T-070) |
 
 **Schlüssel und ihre Lebensdauer.** Es gibt keinen globalen Token-Signaturschlüssel mehr
 (EIP-T-069). Jede Umfrage bekommt beim Anlegen zwei eigene, beide in der Datenbank, beide beim

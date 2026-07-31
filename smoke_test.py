@@ -12,6 +12,7 @@ from __future__ import annotations
 import shutil
 import sys
 import tempfile
+from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -256,6 +257,128 @@ def anspruch_atomar(n: int = 8) -> None:
                       if z.level == "reject" and poll in str(z.detail.get("pfad", "")))
     check("Wettlauf: jede Abweisung im Debug-Modul sichtbar",
           abweisungen == 2 * (n - 1), f"{abweisungen} statt {2 * (n - 1)}")
+
+
+def abbruch_nach_signatur() -> None:
+    """Netzabbruch nach dem Signieren (EIP-T-070).
+
+    Der Fall, der ohne Wiederhol-Puffer einen Berechtigten dauerhaft
+    ausschliesst: Der Server hat signiert und das Pseudonym als versorgt
+    vermerkt, die Antwort kommt nie an. Nachgestellt wird er, indem der Test die
+    erste Antwort schlicht wegwirft - fuer den Server ist das nicht von einem
+    Verbindungsabbruch zu unterscheiden.
+
+    Geprueft wird beides: dass die *unveraendert* wiederholte Anfrage dieselbe
+    Signatur zurueckbekommt, und dass eine *andere* Anfrage desselben Ausweises
+    weiter abgewiesen wird. Ohne den zweiten Teil waere der Puffer ein zweites
+    Token durch die Hintertuer.
+    """
+    import secrets as sec
+
+    retry_app = create_app(
+        store_path=Path(tempfile.mkdtemp()) / "retry.sqlite3",
+        settings=Settings(admin_token="admin", batch_k=1, antwort_floor_s=0),
+    )
+    svc = retry_app.state.deps.service
+    client = TestClient(retry_app)
+    poll = "abbruch"
+    client.post("/api/admin/login", json={"token": "admin"})
+    client.post("/api/admin/create",
+                json={"poll_id": poll, "question": "Nochmal?", "options": ["Ja", "Nein"]})
+    client.post("/api/auth", json={"credential": "testperson70"})
+
+    n, e = svc.poll_params(poll)
+    token = sec.token_bytes(32)
+    blinded, inv = blind.blind(token, n, e)
+
+    # 1) Anfrage geht durch, die Antwort "erreicht den Client nicht".
+    erste = client.post(f"/api/token/{poll}", json={"blinded": blinded.hex()})
+    check("Abbruch: erste Anfrage wird signiert", erste.status_code == 200)
+    check("Abbruch: Berechtigung gilt danach als verbraucht",
+          svc.store.ledger_stand(poll)[0] == 1)
+
+    # 2) Dieselbe verblindete Anfrage noch einmal - der Nutzer laedt neu.
+    zweite = client.post(f"/api/token/{poll}", json={"blinded": blinded.hex()})
+    check("Abbruch: unveraendert wiederholte Anfrage wird beantwortet",
+          zweite.status_code == 200, str(zweite.json())[:100])
+    check("Abbruch: dieselbe Blindsignatur, keine neue Ausgabe",
+          zweite.status_code == 200
+          and zweite.json().get("blind_sig") == erste.json()["blind_sig"])
+    check("Abbruch: kein zweiter Ledger-Eintrag, kein zweiter Board-Eintrag",
+          svc.store.ledger_stand(poll)[0] == 1
+          and len([x for x in svc.board(poll) if x.kind == "TOKEN_ISSUED"]) == 1)
+
+    # Und die wiederholte Signatur taugt wirklich zum Abstimmen.
+    sig = blind.finalize(bytes.fromhex(zweite.json()["blind_sig"]), inv, n)
+    check("Abbruch: wiederholte Signatur ist gueltig", blind.verify(svc.poll_pubkey(poll), token, sig))
+    gestimmt = client.post(f"/api/vote/{poll}",
+                           json={"token": token.hex(), "sig": sig.hex(), "choices": ["Ja"]})
+    check("Abbruch: damit laesst sich abstimmen", gestimmt.status_code == 200)
+
+    # 3) Ein *anderes* blinded_msg desselben Ausweises bleibt abgewiesen.
+    anderes, _ = blind.blind(sec.token_bytes(32), n, e)
+    dritte = client.post(f"/api/token/{poll}", json={"blinded": anderes.hex()})
+    check("Abbruch: abweichende Anfrage desselben Ausweises abgewiesen",
+          dritte.status_code == 400, str(dritte.json())[:80])
+
+    from debug import log as debug_log
+
+    sichtbar = any(z.level == "reject" and poll in str(z.detail.get("pfad", ""))
+                   for z in debug_log.teilnahme())
+    check("Abbruch: die Abweisung steht im Debug-Modul", sichtbar)
+
+    # 4) Ablauf: nach der Lebensdauer ist der Puffer leer und die Wiederholung
+    #    endet wie jede andere zweite Anfrage.
+    check("Abbruch: Puffer haelt genau einen Eintrag",
+          svc.store.wiederhol_puffer_stand() == 1)
+    # Der Eintrag traegt die angebrochene Stunde, nicht den Zeitpunkt (keine
+    # feinen Zeitstempel neben den Ledgern). Ein Ablauf laesst sich deshalb
+    # nicht durch Warten pruefen, sondern nur, indem die Ablaufgrenze in die
+    # Zukunft gelegt wird - geprueft ist damit der Loeschweg, nicht die Uhr.
+    svc.store.verwirf_wiederhol_puffer(aelter_als=datetime.now() + timedelta(hours=1))
+    check("Abbruch: abgelaufene Eintraege verschwinden", svc.store.wiederhol_puffer_stand() == 0)
+
+    client2 = TestClient(retry_app)
+    client2.post("/api/auth", json={"credential": "testperson71"})
+    blinded2, _ = blind.blind(sec.token_bytes(32), n, e)
+    client2.post(f"/api/token/{poll}", json={"blinded": blinded2.hex()})
+    svc.store.verwirf_wiederhol_puffer(aelter_als=datetime.now() + timedelta(hours=1))
+    nach_ablauf = client2.post(f"/api/token/{poll}", json={"blinded": blinded2.hex()})
+    check("Abbruch: nach Ablauf keine Wiederholung mehr", nach_ablauf.status_code == 400)
+
+    # 5) Schliessen raeumt den Puffer der Umfrage ab - eine wiederholte
+    #    Signatur waere danach fuer nichts mehr gut.
+    client3 = TestClient(retry_app)
+    client3.post("/api/auth", json={"credential": "testperson72"})
+    blinded3, _ = blind.blind(sec.token_bytes(32), n, e)
+    client3.post(f"/api/token/{poll}", json={"blinded": blinded3.hex()})
+    check("Abbruch: Puffer gefuellt vor dem Schliessen", svc.store.wiederhol_puffer_stand() >= 1)
+    client.post(f"/api/admin/close/{poll}")
+    check("Abbruch: Schliessen loescht den Puffer der Umfrage",
+          svc.store.wiederhol_puffer_stand() == 0)
+
+
+def puffer_abschaltbar() -> None:
+    """retry_cache_h=0 stellt das alte Verhalten wieder her (EIP-T-070)."""
+    import secrets as sec
+
+    aus_app = create_app(
+        store_path=Path(tempfile.mkdtemp()) / "ohne_retry.sqlite3",
+        settings=Settings(admin_token="admin", batch_k=1, antwort_floor_s=0, retry_cache_h=0),
+    )
+    svc = aus_app.state.deps.service
+    client = TestClient(aus_app)
+    poll = "ohnepuffer"
+    client.post("/api/admin/login", json={"token": "admin"})
+    client.post("/api/admin/create",
+                json={"poll_id": poll, "question": "Ohne?", "options": ["Ja", "Nein"]})
+    client.post("/api/auth", json={"credential": "testperson73"})
+    blinded, _ = blind.blind(sec.token_bytes(32), *svc.poll_params(poll))
+    client.post(f"/api/token/{poll}", json={"blinded": blinded.hex()})
+    zweite = client.post(f"/api/token/{poll}", json={"blinded": blinded.hex()})
+    check("Puffer aus: auch die identische Wiederholung wird abgewiesen",
+          zweite.status_code == 400, str(zweite.json())[:80])
+    check("Puffer aus: nichts gespeichert", svc.store.wiederhol_puffer_stand() == 0)
 
 
 def umfrage_schluessel() -> None:
@@ -1437,6 +1560,8 @@ def main() -> int:
     anspruch_atomar()
     laufende_pruefung()
     batch_veroeffentlichung()
+    abbruch_nach_signatur()
+    puffer_abschaltbar()
     sitzungstrennung()
     datenabzug_nach_schluss()
     sicherungskopie_ohne_geheimnisse()

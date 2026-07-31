@@ -94,14 +94,27 @@ class Beleg:
 
 class PollService:
     def __init__(
-        self, db_path: Path, batch_k: int = 10, batch_deckel_s: int = 6 * 3600
+        self,
+        db_path: Path,
+        batch_k: int = 10,
+        batch_deckel_s: int = 6 * 3600,
+        retry_cache_s: int = 24 * 3600,
     ) -> None:
         """``batch_k`` und ``batch_deckel_s`` sind die Parameter aus ADR E3:
         Mindest-Anonymitaetsmenge je Batch und Zeitdeckel, beide nach aussen zu
-        nennen (Board-Seite, Beleg-Erklaertext)."""
+        nennen (Board-Seite, Beleg-Erklaertext).
+
+        ``retry_cache_s`` ist die Lebensdauer des Wiederhol-Puffers der
+        Token-Ausgabe (EIP-T-070); 0 schaltet ihn ab."""
         self.store = Store(db_path)
         self.batch_k = max(1, int(batch_k))
         self.batch_deckel_s = max(60, int(batch_deckel_s))
+        self.retry_cache_s = max(0, int(retry_cache_s))
+        if self.retry_cache_s == 0:
+            # Abgeschaltet heisst auch: kein Rest von vorher. Sonst liefe die
+            # Wiederholung nach einem Neustart mit anderer Einstellung weiter,
+            # ohne dass jemand sie eingeschaltet haette.
+            self.store.verwirf_wiederhol_puffer()
         # Letzter Bericht je Umfrage, damit der Abstimmpfad nicht bei jeder
         # Stimme jede fruehere Signatur neu prueft (EIP-T-051). Nur eine
         # Abkuerzung fuer den laufenden Betrieb: pruefbericht() prueft ohne
@@ -463,6 +476,11 @@ class PollService:
         # auch dann, wenn spaeter jemand den Ablauf umbaut.
         self.vernichte_poll_secret(poll_id)
         self.vernichte_poll_key(poll_id)
+        # Der Wiederhol-Puffer dieser Umfrage hat mit dem Schluessel seinen
+        # Zweck verloren: Es gibt nichts mehr, wofuer eine wiederholte
+        # Blindsignatur gut waere (EIP-T-070). Er endet deshalb hier und nicht
+        # erst mit seiner Lebensdauer.
+        self.store.verwirf_wiederhol_puffer(poll_id)
         log.info("poll", f"Umfrage '{poll_id}' geschlossen.")
 
     # -- Batch-Veroeffentlichung (EIP-ADR-20260728-001, E3) -----------------
@@ -499,6 +517,27 @@ class PollService:
             except Exception as exc:  # ein haengender Puffer ist genau der stille Fehler
                 log.exception("batch", exc)
 
+    # -- Ablauf des Wiederhol-Puffers (EIP-T-070) --------------------------
+    def verwirf_abgelaufene_wiederholungen(self) -> int:
+        """Loescht abgelaufene Eintraege des Wiederhol-Puffers.
+
+        Laeuft in derselben Hintergrundaufgabe wie der Zeitdeckel: Eine
+        Lebensdauer, die erst ablaeuft, wenn zufaellig noch jemand vorbeikommt,
+        waere keine. Rueckgabe: wie viele Zeilen verschwunden sind.
+        """
+        if not self.retry_cache_s:
+            return 0
+        weg = self.store.verwirf_wiederhol_puffer(
+            aelter_als=datetime.now() - timedelta(seconds=self.retry_cache_s)
+        )
+        if weg:
+            log.info(
+                "phase-a",
+                f"{weg} abgelaufene Eintraege des Wiederhol-Puffers geloescht "
+                f"(Lebensdauer {self.retry_cache_s // 3600} h, EIP-T-070).",
+            )
+        return weg
+
     # -- Phase A: Wahlberechtigung (mit Pseudonym) -------------------------
     def issue_blind_signature(self, poll_id: str, pseudonym: str, blinded_msg: bytes) -> bytes:
         poll = self.poll(poll_id)
@@ -524,18 +563,55 @@ class PollService:
         except ValueError as exc:
             raise Rejected(f"Verblindete Anfrage ungueltig: {exc}") from exc
 
+        blinded_h = hashlib.sha256(blinded_msg).hexdigest()
+
         # Ein Ausweis, ein Token: pruefen, eintragen und im Board-Puffer
         # vermerken sind ein Schritt (store.beanspruche_berechtigung, EIP-T-047).
         vermerkt = self.store.beanspruche_berechtigung(
-            poll_id, key, board_eintrag.token_issued(poll_id)
+            poll_id,
+            key,
+            board_eintrag.token_issued(poll_id),
+            blinded_h if self.retry_cache_s else None,
+            blind_sig.hex() if self.retry_cache_s else None,
         )
         if vermerkt is None:
+            # Verbrauchter Anspruch heisst nicht zwingend "hat sein Token"
+            # (EIP-T-070): Die Antwort kann unterwegs verloren gegangen sein -
+            # Verbindungsabbruch, geschlossener Tab im falschen Moment. Kommt
+            # *dieselbe* verblindete Anfrage wieder, wird dieselbe Antwort
+            # wiederholt statt neu ausgegeben. Das gibt niemandem ein zweites
+            # Token: eine zweite Blindsignatur derselben verblindeten Anfrage
+            # ist bitgleich die erste (RSA ist deterministisch), und ein
+            # *anderes* blinded_msg faellt unten durch.
+            wiederholt = (
+                self.store.wiederhol_signatur(poll_id, key, blinded_h)
+                if self.retry_cache_s
+                else None
+            )
+            if wiederholt is not None:
+                log.info(
+                    "phase-a",
+                    f"Blindsignatur fuer '{poll_id}' wiederholt - gleiche verblindete "
+                    "Anfrage, verlorene Antwort (EIP-T-070).",
+                    poll=poll_id,
+                )
+                return bytes.fromhex(wiederholt)
+            # Kein eigenes log.reject: Die Abweisung geht als Rejected nach
+            # oben und wird dort einmal gezaehlt (web._rejected_handler). Ein
+            # zweites Reject hier hiesse, jede Abweisung doppelt zu zaehlen -
+            # eine Aufsicht, die zu hohe Zahlen zeigt, ist so wenig wert wie
+            # eine, die zu niedrige zeigt. Die Meldung unten benennt den
+            # Unterschied zum Wiederholfall, sie steht damit auch im Log.
             raise Rejected(
-                "Fuer diesen Ausweis wurde bereits eine Stimmberechtigung ausgegeben - eine "
-                "zweite ist bewusst nicht vorgesehen: Der Server sieht das Stimm-Token nie in "
+                "Fuer diesen Ausweis wurde bereits eine Stimmberechtigung ausgegeben, und "
+                "diese Anfrage ist eine andere als damals - eine zweite Berechtigung ist "
+                "bewusst nicht vorgesehen: Der Server sieht das Stimm-Token nie in "
                 "Klarschrift und kann einen ehrlichen Verlust nicht von einem nur versteckten "
-                "Token unterscheiden. Wurde damit abgestimmt, steht die Stimme im "
-                "oeffentlichen Board und laesst sich mit dem Beleg unter /verify pruefen."
+                "Token unterscheiden. Ging nur die Antwort verloren, hilft ein erneuter "
+                "Versuch im selben Browserfenster - die unveraendert wiederholte Anfrage "
+                "bekommt fuer kurze Zeit dieselbe Signatur noch einmal. Wurde bereits "
+                "abgestimmt, steht die Stimme im oeffentlichen Board und laesst sich mit dem "
+                "Beleg unter /verify pruefen."
             )
         # Bewusst ohne voter_key: fuer die Fehlersuche reicht "ein Token wurde
         # ausgegeben". Wer es war, zusammen mit dem Zeitstempel, waere die halbe

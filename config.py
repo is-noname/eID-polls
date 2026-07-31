@@ -66,6 +66,18 @@ class Settings:
     # (schnelle Abweisung vs. langsame Signatur). Ein Floor, keine Konstante:
     # dauert die Bearbeitung laenger, wird nicht gekappt. 0 schaltet ab (Tests).
     antwort_floor_s: float = 0.3
+    # Lebensdauer des Wiederhol-Puffers der Token-Ausgabe in Stunden
+    # (EIP-T-070). Innerhalb dieser Zeit bekommt eine unveraendert wiederholte
+    # verblindete Anfrage dieselbe Blindsignatur noch einmal - der Fall
+    # "signiert, Antwort verloren, Berechtigung verbrannt".
+    #
+    # Warum 24 Stunden und nicht die Umfrage-Laufzeit: Der Puffer verbindet
+    # voter_key mit einer verblindeten Anfrage. Das ist keine Zuordnung zur
+    # Stimme, aber es ist mehr, als der Ledger danach noch braucht - und die
+    # Umfrage-Laufzeit ist nach oben offen. Ein Tag deckt den Fall ab, um den es
+    # geht (Abbruch, spaeter derselbe Browser), und laesst den Rest verfallen.
+    # 0 schaltet den Puffer ab; dann gilt wieder "Anspruch weg, Token weg".
+    retry_cache_h: float = 24.0
     seed_demo: bool = False
     seed_poll_id: str = "demo"
     seed_question: str = DEFAULT_QUESTION
@@ -99,6 +111,7 @@ class Settings:
             batch_k=int(os.environ.get("EIDPOLL_BATCH_K", "10") or 10),
             batch_deckel_h=float(os.environ.get("EIDPOLL_BATCH_DECKEL_H", "6") or 6),
             antwort_floor_s=float(os.environ.get("EIDPOLL_ANTWORT_FLOOR_S", "0.3") or 0.3),
+            retry_cache_h=float(os.environ.get("EIDPOLL_RETRY_CACHE_H", "24") or 24),
             # Demo-Umfrage beim Start, wenn noch keine existiert. Auf
             # Gratis-Hosting ohne persistente Platte ist die Datenbank nach
             # jedem Neustart leer - ohne das hier stuende ein Besucher vor einer
@@ -127,5 +140,10 @@ class Settings:
         lines.append(
             f"Batch-Veroeffentlichung: k={self.batch_k}, Zeitdeckel {self.batch_deckel_h} h "
             "(EIP-ADR-20260728-001)"
+        )
+        lines.append(
+            "Wiederhol-Puffer der Token-Ausgabe: "
+            + (f"{self.retry_cache_h} h" if self.retry_cache_h > 0 else "abgeschaltet")
+            + " (EIP-T-070)"
         )
         return lines
