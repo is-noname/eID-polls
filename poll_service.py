@@ -336,7 +336,11 @@ class PollService:
         nicht nur unerwuenscht.
 
         Die Grenze der Zusage steht bei ``Store.vernichte_config``: sie gilt fuer
-        die Datenbankdatei, nicht fuer Sicherungskopien.
+        die Datenbankdatei. Fuer Sicherungskopien gilt seit EIP-T-067 die Regel
+        aus EIP-RPT-20260731-002 §3.3 - keine Kopie, die diese Vernichtung
+        ueberdauert, und wenn eine angelegt wird, dann ueber
+        ``Store.kopiere_ohne_geheimnisse``. Die Zusage ist damit eine ueber
+        einen Bestand und nicht mehr nur ueber eine Datei.
         """
         vernichtet = self.store.vernichte_config(POLL_SECRET + poll_id)
         if vernichtet:
@@ -360,7 +364,8 @@ class PollService:
         ersetzt sie nicht.
 
         Der oeffentliche Teil bleibt im Board und damit pruefbar; die Grenze der
-        Loeschzusage steht bei ``Store.vernichte_config``.
+        Loeschzusage steht bei ``Store.vernichte_config``, die Regel fuer
+        Sicherungskopien bei ``vernichte_poll_secret`` (EIP-T-067).
         """
         vernichtet = self.store.vernichte_config(POLL_KEY + poll_id)
         if vernichtet:

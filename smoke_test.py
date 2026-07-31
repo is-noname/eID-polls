@@ -1184,6 +1184,98 @@ def datenabzug_nach_schluss() -> None:
           geheim.encode() not in _verzeichnis_bytes(pfad.parent))
 
 
+def sicherungskopie_ohne_geheimnisse() -> None:
+    """Eine Kopie nach ``Store.kopiere_ohne_geheimnisse`` traegt keinen Schluessel
+    (EIP-T-067, Akzeptanzkriterium 2).
+
+    Der Test spielt genau den Fall nach, der das Ticket ausgeloest hat, nur
+    richtigherum: eine Kopie einer **offenen** Umfrage - also zu dem Zeitpunkt,
+    an dem alle Schluessel noch da sind und eine gedankenlose Dateikopie am
+    meisten anrichtet.
+
+    Geprueft wird beides, was eine Kopie taugen laesst: dass die Geheimnisse
+    fehlen *und* dass die Ledger vollstaendig sind. Eine Kopie, die nichts mehr
+    enthaelt, waere trivial sicher und nutzlos.
+    """
+    import sqlite3
+
+    from poll_service import POLL_KEY, POLL_SECRET
+
+    pfad = Path(tempfile.mkdtemp()) / "kopie-quelle.sqlite3"
+    eigen = create_app(
+        store_path=pfad,
+        settings=Settings(admin_token="admin", batch_k=1, antwort_floor_s=0),
+    )
+    svc = eigen.state.deps.service
+    poll = "kopie"
+    admin = TestClient(eigen)
+    admin.post("/api/admin/login", json={"token": "admin"})
+    admin.post("/api/admin/create",
+               json={"poll_id": poll, "question": "Kopierbar?", "options": ["Ja", "Nein"]})
+
+    client = TestClient(eigen)
+    client.post("/api/auth", json={"credential": "testperson60"})
+    token = __import__("secrets").token_bytes(32)
+    blinded, inv = blind.blind(token, *svc.poll_params(poll))
+    resp = client.post(f"/api/token/{poll}", json={"blinded": blinded.hex()})
+    sig = blind.finalize(bytes.fromhex(resp.json()["blind_sig"]), inv, svc.poll_params(poll)[0])
+    anonym = TestClient(eigen)
+    anonym.post(f"/api/vote/{poll}",
+                json={"token": token.hex(), "sig": sig.hex(), "choices": ["Ja"]})
+
+    geheimnisse = {
+        "poll_secret": svc.store.get_config(POLL_SECRET + poll) or "",
+        "poll_key": svc.store.get_config(POLL_KEY + poll) or "",
+        "cookie_secret": svc.store.get_config("cookie_secret") or "",
+        "beleg_key": svc.store.get_config("beleg_key_pem") or "",
+    }
+    check("Kopie: die Quelle fuehrt die Schluessel wirklich (sonst prueft der Test nichts)",
+          all(geheimnisse.values()), str({k: bool(v) for k, v in geheimnisse.items()}))
+
+    ziel_verzeichnis = Path(tempfile.mkdtemp()) / "backup"
+    ziel = ziel_verzeichnis / "ohne-geheimnisse.sqlite3"
+    entfernt = svc.store.kopiere_ohne_geheimnisse(ziel)
+
+    check("Kopie: nennt die entfernten Konfigurationswerte",
+          set(entfernt) >= {POLL_SECRET + poll, POLL_KEY + poll, "cookie_secret",
+                            "beleg_key_pem"},
+          str(entfernt))
+
+    # Der Abzug wieder als rohe Bytes ueber das ganze Verzeichnis, nicht ueber
+    # die Tabelle: ein DELETE gaebe die Seite nur frei (V-003).
+    roh = _verzeichnis_bytes(ziel_verzeichnis)
+    for name, wert in geheimnisse.items():
+        check(f"Kopie: kein {name} in der Kopie", wert.encode() not in roh)
+
+    check("Kopie: kein WAL neben der Kopie liegengeblieben",
+          [p.name for p in ziel_verzeichnis.iterdir()] == [ziel.name],
+          str(sorted(p.name for p in ziel_verzeichnis.iterdir())))
+
+    # ... und trotzdem brauchbar: die Kopie ist der Grund, sie zu haben.
+    kopie = sqlite3.connect(ziel)
+    zeilen = {
+        t: kopie.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+        for t in ("eligibility", "spent", "board", "batches", "polls")
+    }
+    kopie.close()
+    original = {
+        t: sqlite3.connect(pfad).execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+        for t in ("eligibility", "spent", "board", "batches", "polls")
+    }
+    check("Kopie: Ledger, Board und Batches sind vollstaendig",
+          zeilen == original and zeilen["board"] > 0, f"{zeilen} vs {original}")
+
+    # Eine bestehende Datei wird nicht ueberschrieben - sonst bliebe ihr alter
+    # Inhalt im Freispeicher stehen, und die Kopie waere schlechter als keine.
+    try:
+        svc.store.kopiere_ohne_geheimnisse(ziel)
+        check("Kopie: bestehende Datei wird nicht ueberschrieben", False)
+    except FileExistsError as exc:
+        check("Kopie: bestehende Datei wird nicht ueberschrieben", True, str(exc)[:60])
+
+    shutil.rmtree(ziel_verzeichnis)
+
+
 def offenlegungsseiten() -> None:
     """Kodex, Verstossprotokoll und Transparenzbericht sind von aussen erreichbar.
 
@@ -1347,6 +1439,7 @@ def main() -> int:
     batch_veroeffentlichung()
     sitzungstrennung()
     datenabzug_nach_schluss()
+    sicherungskopie_ohne_geheimnisse()
     offenlegungsseiten()
     demo_schalter()
 

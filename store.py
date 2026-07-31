@@ -93,6 +93,14 @@ CREATE TABLE IF NOT EXISTS batches (
 # Praefix des gerundeten Puffer-Beginns je Umfrage (Zeitdeckel, ADR E3).
 PENDING_SINCE = "pending_since:"
 
+# Was aus der config-Tabelle eine Sicherungskopie ueberleben darf
+# (EIP-T-067). Bewusst eine *Positiv*liste: Eine Liste der Geheimnisse waere
+# eine Liste von heute - der naechste Schluessel, den jemand hinzufuegt, laege
+# still in jeder Kopie, und genau dieser Fund (ein vernichtetes server_secret,
+# das in data.backup.<zeit>/ weiterlebte) hat das Ticket ausgeloest. Ein neuer
+# Eintrag muss hier bewusst freigegeben werden, sonst faellt er heraus.
+KOPIERBARE_CONFIG_PRAEFIXE = (PENDING_SINCE,)
+
 
 @dataclass(frozen=True)
 class PollRow:
@@ -211,6 +219,15 @@ class Store:
         Programm ueberschreiben kann - ein truncate gibt Bloecke frei, es
         loescht sie nicht physisch. Wer die Zusage vollstaendig halten will,
         braucht eine Backup-Regel dazu - nicht nur diesen Aufruf.
+
+        Diese Regel gibt es seit EIP-T-067: EIP-RPT-20260731-002 §3.3 sagt,
+        wann eine Kopie existieren darf (Regel 1: keine, die eine
+        Schluesselvernichtung ueberdauert), und ``kopiere_ohne_geheimnisse``
+        gibt den Weg vor, eine anzulegen, die keine Schluessel traegt. Der Satz
+        oben bleibt trotzdem stehen: Dateisystem-Snapshots und die
+        Blockverwaltung einer SSD erreicht auch diese Regel nicht - sie ist
+        Disziplin plus ein Test ueber das Datenverzeichnis, kein Beweis ueber
+        den Datentraeger.
         """
         with self._lock:
             row = self._conn.execute(
@@ -229,6 +246,78 @@ class Store:
             # voller Laenge liegen, samt des Frames, der den alten Wert traegt.
             self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         return True
+
+    def kopiere_ohne_geheimnisse(self, ziel: Path) -> list[str]:
+        """Legt eine Sicherungskopie an, die keine Schluessel traegt (EIP-T-067).
+
+        Rueckgabe: die entfernten config-Schluessel, sortiert - damit der
+        Aufrufer *sieht*, was herausgefallen ist, statt es zu glauben.
+
+        Die Zusage von ``vernichte_config`` gilt fuer eine Datei. Eine Kopie
+        daneben hebt sie auf, und zwar lautlos: Am 2026-07-31 lag in
+        ``data.backup.<zeit>/`` ein ``server_secret``, das die Datenbank
+        daneben laengst vernichtet hatte - damit waren die Eligibility-Zeilen
+        aller Umfragen weiter auf ihr Pseudonym zurueckrechenbar (EIP-T-033,
+        Baustein D). Eine Kopie mit Schluesseln ist kein Backup, sondern ein
+        zweiter Angriffspunkt: nach KODEX §5 ist sie beschlagnahmefaehig wie
+        das Original, ohne dessen Schutz.
+
+        Deshalb kopiert diese Methode nicht die Datei, sondern die Datenbank
+        *ohne* ihre config-Tabelle bis auf ``KOPIERBARE_CONFIG_PRAEFIXE``.
+        Ledger, Board und Batches bleiben vollstaendig - sie sind der Grund,
+        eine Kopie zu haben, und ohne Schluessel geben sie keine Zuordnung her
+        (das prueft smoke_test.datenabzug_nach_schluss am Original).
+
+        Drei Feinheiten, die je einen Fehlschlag gekostet haben:
+
+        - ``VACUUM INTO`` statt Dateikopie: schreibt die Zielseiten neu, also
+          ohne Freispeicher, und braucht kein WAL daneben. Eine Kopie mit
+          ``shutil`` waere ohne ihr WAL unvollstaendig - und *mit* ihm traege
+          sie genau die Frames, die V-003 ausgemacht haben.
+        - Nach dem Loeschen in der Kopie noch einmal VACUUM: ein DELETE gibt
+          die Seite nur frei, der Wert steht weiter im Freispeicher.
+        - ``journal_mode=DELETE`` am Ende: sonst bleibt neben der Kopie ein
+          ``-wal`` liegen, und beim Aufraeumen zaehlt das Verzeichnis, nicht
+          die Datei (V-003 eine Ebene hoeher).
+
+        Was die Methode **nicht** leistet: Sie macht ein Backup einer offenen
+        Umfrage nicht unbedenklich. Ohne ``poll_secret`` laesst sich aus der
+        Kopie zwar nichts zurueckrechnen, aber Regel 1 der Backup-Regel
+        (EIP-RPT-20260731-002 §3.3) bleibt der Massstab: Sie sagt, *wann* eine
+        Kopie existieren darf, diese Methode nur, *wie* sie dann aussieht.
+        """
+        ziel = Path(ziel)
+        if ziel.exists():
+            raise FileExistsError(
+                f"{ziel} gibt es schon. Eine Sicherungskopie wird nicht ueberschrieben - "
+                "sonst bleibt der alte Inhalt im Freispeicher der Datei stehen."
+            )
+        ziel.parent.mkdir(parents=True, exist_ok=True)
+        with self._lock:
+            self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            self._conn.execute("VACUUM INTO ?", (str(ziel),))
+
+        kopie = sqlite3.connect(ziel)
+        try:
+            behalten = " OR ".join(["key LIKE ?"] * len(KOPIERBARE_CONFIG_PRAEFIXE))
+            muster = [p + "%" for p in KOPIERBARE_CONFIG_PRAEFIXE]
+            entfernt = [
+                r[0] for r in kopie.execute(
+                    f"SELECT key FROM config WHERE NOT ({behalten}) ORDER BY key", muster
+                ).fetchall()
+            ]
+            kopie.execute(
+                f"UPDATE config SET value = "
+                f"substr(hex(randomblob(length(value))), 1, length(value)) "
+                f"WHERE NOT ({behalten})", muster
+            )
+            kopie.execute(f"DELETE FROM config WHERE NOT ({behalten})", muster)
+            kopie.commit()
+            kopie.execute("VACUUM")
+            kopie.execute("PRAGMA journal_mode=DELETE")
+        finally:
+            kopie.close()
+        return entfernt
 
     # -- polls -------------------------------------------------------------
     def create_poll(self, poll_id: str, question: str, options: list[str], created: str) -> None:

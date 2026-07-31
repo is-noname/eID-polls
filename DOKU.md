@@ -48,7 +48,11 @@ nicht Jahre später. Ein Meinungsprofil über mehrere Umfragen hinweg ist damit 
 sondern unmöglich, weil je Umfrage ein eigener Schlüssel gilt und keiner davon überlebt.
 
 Die Grenze dazu, ehrlich: Die Zusage gilt für die Datenbankdatei. Wer Sicherungskopien anlegt, muss
-sie in dieselbe Regel einbeziehen — sonst lebt der Schlüssel dort weiter. Solange eine Umfrage
+sie in dieselbe Regel einbeziehen — sonst lebt der Schlüssel dort weiter. Genau das ist einmal
+passiert (eine liegengebliebene Kopie mit einem längst vernichteten Schlüssel), deshalb gibt es
+seither eine Regel dazu und einen Befehl, der sie befolgbar macht: `python3 app/backup.py <ziel>`
+schreibt eine Kopie ohne jeden Schlüssel. Nicht abgedeckt bleiben Dateisystem-Snapshots und andere
+Datenträger. Solange eine Umfrage
 **läuft**, existiert ihr Schlüssel notwendigerweise; die Zuordnung ist in diesem Zeitraum für den
 Betreiber möglich. Vernichtet wird beim Schließen, nicht vorher (`EIP-T-033`, Baustein D).
 
@@ -297,7 +301,8 @@ Ehrlich dazu, in beide Richtungen: Die Vernichtung wirkt **ab dem Schließen, ni
 eine Umfrage läuft, hält der Betreiber ihren Signaturschlüssel allein und könnte sich Token
 ausstellen — dagegen hilft nur, dass mehrere Stellen unabhängig signieren (§12, nicht gebaut); was
 bleibt, ist die Ledger-Abrechnung, die den Überschuss sichtbar macht. Und die Löschzusage gilt für
-die Datenbankdatei, nicht für Sicherungskopien, Snapshots oder die Blockverwaltung einer SSD.
+die Datenbankdatei; für Sicherungskopien gilt die Regel oben (`app/backup.py`), für Snapshots und
+die Blockverwaltung einer SSD gilt sie weiterhin nicht.
 
 **Sitzungstrennung der Abstimm-Route (EIP-T-033, Baustein F):** Phase B braucht keine Identität —
 das Token ist die ganze Berechtigung. Damit der Server Identität und Stimme nie im selben Request
