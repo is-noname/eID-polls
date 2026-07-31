@@ -11,7 +11,7 @@
 > Historie: [Kodex-Protokoll](/kodex/protokoll) · Begriffe: Glossar (projektintern) ·
 > These: EIP-RFC-20260726-001
 
-**Version 10 — 2026-07-31**
+**Version 11 — 2026-07-31**
 
 ---
 
@@ -476,8 +476,35 @@ Beleg dafür, ob der Kodex Entscheidungen geformt hat oder ihnen nur hinterherge
 **Regel.** Verstöße gegen diesen Kodex werden im Verstoßprotokoll ([Kodex-Protokoll](/kodex/protokoll)) dokumentiert:
 was geschah, welcher Paragraph, was daraus folgte. Auch dann, wenn niemand außerhalb es bemerkt hätte.
 
+**Protokoll oder Ticket-Verlauf.** Drei Fragen, in dieser Reihenfolge:
+
+1. **Berührt der Befund eine Zusage dieses Kodex?** Nein → Ticket-Verlauf. Ein Fehler ohne
+   Kodex-Bezug ist Arbeit, kein Verstoß.
+2. **War der Bruch wirksam?** Wirksam heißt: ausgeliefert, veröffentlicht, an Dritte gegeben oder als
+   Entscheidung getroffen. Was im Arbeitsbaum entsteht und dort behoben wird, bevor es einen
+   ausgelieferten Stand erreicht, ist Arbeit. Was auf der öffentlichen Instanz stand, war wirksam —
+   auch für eine Stunde, auch unbemerkt, auch wenn es niemand aufgerufen hat.
+3. **Ist die Lücke schon als `offen` oder `Disziplin` vermerkt?** Dann trägt sie die
+   Schuldenübersicht, nicht das Protokoll. Es sei denn, die Fälligkeit ist gerissen — das Ereignis ist
+   eingetreten oder die Betriebsstufe erreicht, und der Vermerk steht noch. Dann ist es ein Verstoß.
+
+Im Zweifel ins Protokoll. Maßgeblich ist nicht, wie schwer der Fall demjenigen wiegt, der ihn gemacht
+hat, sondern wie er aussähe, wenn ihn jemand von außen fände.
+
+**Ein Sachverhalt, ein Eintrag.** Der Faktenkern steht im Verstoßprotokoll, das Ticket verweist darauf
+und trägt den Arbeitsweg. Nicht umgekehrt, nicht zweimal — eine zweite Fassung driftet von der ersten
+weg (EIP-T-044).
+
 **Warum.** Siehe § 10. Dieselbe Logik gilt für Regelbrüche wie für Bugs. Ein leeres Verstoßprotokoll nach
-Jahren Betrieb ist kein gutes Zeichen, sondern ein verdächtiges.
+Jahren Betrieb ist kein gutes Zeichen, sondern ein verdächtiges. Die Abgrenzung steht hier, weil sie
+sonst im Einzelfall gezogen wird — und dann regelmäßig zugunsten der Stelle, die niemand außerhalb
+liest: Der erste Verstoß dieses Projekts lag ein halbes Jahr als Ticket-Notiz vor, während das
+Protokoll leer blieb (V-001, EIP-T-058).
+
+**Konkret verboten.** Einen Befund, der die drei Fragen passiert, allein im Ticket-Verlauf ablegen.
+Den Eintrag sparen, weil der Fehler bereits behoben ist — behoben ändert die Folge, nicht die
+Pflicht. Einen bestehenden Eintrag nachträglich entschärfen oder entfernen; Korrekturen sind
+Nachträge, kein Umschreiben (§ 17 sinngemäß).
 
 **Status.** `bindend`.
 
@@ -511,7 +538,7 @@ Hash-Veröffentlichung und Prüfanleitung sind `offen` → EIP-T-007, fällig vo
 dem ersten echten Durchlauf (Betriebsstufe `produktiv`).
 
 Bis dahin ist die Übereinstimmung von Repository und Auslieferung `Disziplin` und wird so gesagt
-(§ 4) → EIP-T-058, fällig ab Betriebsstufe `öffentlich
+(§ 4) → EIP-T-074, fällig ab Betriebsstufe `öffentlich
 erreichbar`. Nach V-001 wieder hergestellt (Stand `c63dd06`, 2026-07-28) — und weil nur Disziplin sie
 hält, reißt sie mit jedem lokalen Commit erneut, der nicht ausgeliefert wird.
 
@@ -546,12 +573,16 @@ das war die bewusste Entscheidung, keine private Adresse dauerhaft an das Projek
 | 14 | Rechtsform und Nachfolgebindung | EIP-T-065 | `produktiv`, jed. vor Trägerwechsel | 2026-07-26 |
 | 16 | Durchsetzung über Nutzungsbedingungen | EIP-T-062 | erste Einbettung, spät. `produktiv` | 2026-07-26 |
 | 20 | Reproduzierbarer Build, Hash, Prüfanleitung | EIP-T-007 | `produktiv` | 2026-07-27 |
-| 20 | Übereinstimmung Repository und Auslieferung | EIP-T-058 | `öffentlich erreichbar` | 2026-07-27 |
+| 20 | Übereinstimmung Repository und Auslieferung | EIP-T-074 | `öffentlich erreichbar` | 2026-07-27 |
 
 Drei Fälligkeiten hängen an der Betriebsstufe `öffentlich erreichbar`, die seit dem 2026-07-27 läuft.
 Stand 2026-07-31:
 
-- **§ 20** — erfüllt, Auslieferung entspricht dem Repository (V-001 behoben, Deploy `c63dd06`)
+- **§ 20** — **gerade nicht erfüllt**: Version 11 liegt geschrieben im Arbeitsbaum
+  (`app/KODEX.md`, `app/KODEX-PROTOKOLL.md` synchronisiert), die öffentliche Instanz zeigt
+  Version 10. Kein Verstoß nach § 18 — die Instanz sagt korrekt, welchen Stand sie zeigt, und
+  genau dieses Reißen bei jedem nicht ausgelieferten Commit ist als Disziplin vermerkt
+  (→ EIP-T-074). Zuletzt erfüllt: Deploy `ad45d76`
 - **§ 10** — erfüllt: Kodex, Verstoßprotokoll und Transparenzbericht sind auf der Instanz ohne
   Anmeldung erreichbar (Version 10, EIP-T-063)
 - **§ 1** — weiterhin nur teilweise: Die App protokolliert keine IPs mehr, was der Hoster daneben

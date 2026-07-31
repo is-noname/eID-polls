@@ -15,6 +15,31 @@
 
 ## Änderungsprotokoll
 
+### Version 11 — 2026-07-31
+
+§ 18 bekommt die Abgrenzung, die ihm gefehlt hat: **wann ein Befund ins Verstoßprotokoll gehört und
+wann in den Ticket-Verlauf.** Drei Fragen (Kodex-Bezug, Wirksamkeit, schon vermerkte Schuld), die
+Zweifelsregel zugunsten des Protokolls, und die Regel „ein Sachverhalt, ein Eintrag". Dazu ein
+`Konkret verboten`-Teil — der Paragraph hatte keinen, und nach der Leseanleitung ist er ohne diesen
+Teil Dekoration.
+
+**Grund.** Die Lücke war nicht theoretisch. Der erste Verstoß dieses Projekts (V-001, falsche
+Anonymitätszusagen auf der öffentlichen Instanz) lag als Notiz in einem Ticket-Verlauf, während das
+Verstoßprotokoll leer blieb — bemerkt hat das erst EIP-T-058, und zwar nicht aus einer Regel
+heraus, sondern weil jemand hinsah. Ohne geschriebene Grenze fällt die Entscheidung im Einzelfall,
+und sie fällt vorhersehbar: Der Ticket-Verlauf ist die bequemere Ablage, weil ihn nur wir lesen.
+Genau die Asymmetrie, gegen die § 18 Satz 2 geschrieben ist.
+
+Die zweite Frage (Wirksamkeit) zieht die Grenze bewusst am ausgelieferten Stand und nicht an der
+Schwere: „stand eine Stunde auf der öffentlichen Instanz" ist ein Verstoß, „im Arbeitsbaum gebaut und
+dort behoben" ist es nicht. Das ist prüfbar, während „wie schlimm war es" es nicht ist. Die dritte
+Frage hält Schuldenübersicht und Protokoll auseinander: Eine bewusst vermerkte, noch nicht fällige
+Lücke ist kein Verstoß — eine gerissene Fälligkeit schon (so schon im Abschnitt Betriebsstufen).
+
+**Die Zahl ändert sich nicht: 11 von 20, Grenze 8, der Baustopp gilt weiter.** § 18 stand und steht
+`bindend`; die Änderung schärft ihn, ohne eine Schuld zu tilgen oder zu erzeugen. Zulässig unter
+§ 4 b als Arbeit, die einen Verstoß dokumentiert und seine Wiederholung erschwert.
+
 ### Version 10 — 2026-07-31
 
 § 10 ist vollständig `bindend`. Der Paragraph stand seit Version 1 mit drei offenen Punkten da —
