@@ -166,6 +166,16 @@
     <div class="receipt">curl -o board.json {{ request.url.scheme }}://{{ request.url.netloc }}/api/board/{{ poll.poll_id }}
 python3 verifikation.py board.json</div>
     <p>
+      Nur ist <code>verifikation.py</code> ein Modul <em>dieser</em> App. Wer ihr nicht glaubt,
+      hat damit nichts geprüft, sondern dieselbe Behauptung zweimal ausgeführt. Dafür gibt es
+      <code>auditor.py</code>: eine einzelne, absichtlich kleine Datei, die nichts aus diesem
+      Projekt importiert, das Board aus seiner öffentlichen Beschreibung neu rechnet und die
+      eigene Auszählung gegen das hält, was diese Seite behauptet. Sie prüft zusätzlich, dass
+      kein Stimm-Token zweimal im Board steht — die einzige Spur, die eine Doppelabgabe hier
+      hinterlassen würde.
+    </p>
+    <div class="receipt">python3 auditor.py {{ request.url.scheme }}://{{ request.url.netloc }}/api/board/{{ poll.poll_id }}</div>
+    <p>
       Diese Umfrage hat einen <strong>eigenen</strong> Token-Schlüssel. Er steht im
       Eröffnungseintrag des Boards und damit unter der Merkle-Wurzel — nachträglich austauschen
       ließe er sich nur, indem die Kette bricht. Ein Token aus einer anderen Umfrage ist hier
@@ -181,7 +191,12 @@ python3 verifikation.py board.json</div>
     </p>
     <p>
       Belege der Stimmabgabe sind mit einem eigenen Ed25519-Schlüssel signiert
-      (über das kanonische JSON <code>{"batch":…,"leaf":…,"poll":…,"typ":"BELEG"}</code>):
+      (über das kanonische JSON <code>{"batch":…,"leaf":…,"poll":…,"typ":"BELEG"}</code>).
+      <code>auditor.py --beleg beleg.json</code> prüft die Signatur und rechnet den
+      Inklusionspfad des Blattes zur Wurzel seines Batches nach. Dieser Schlüssel steht
+      allerdings <strong>nicht</strong> unter der Merkle-Wurzel — ein Beleg, der nur gegen den
+      hier ausgelieferten Schlüssel geprüft wird, bindet den Betreiber nicht. Wer ihn früher
+      oder anderswo notiert hat, übergibt ihn mit <code>--belegkey</code>.
     </p>
     <div class="receipt">{{ beleg_public_key }}</div>
   </div>

@@ -684,6 +684,88 @@ def eintragsformat() -> None:
           not any(m in be.__dict__ for m in ("Store", "store", "sqlite3")))
 
 
+def auditor_unabhaengig() -> None:
+    """Der Auditor als zweite, unabhaengige Implementierung (EIP-T-071).
+
+    auditor.py rechnet das Board aus seiner oeffentlichen Beschreibung nach und
+    importiert dafuer nichts aus der App. Genau daraus entsteht das Risiko, das
+    dieser Block absichert: Zwei Implementierungen koennen auseinanderlaufen,
+    und dann prueft der Auditor ein Format, das die App gar nicht schreibt.
+    Geprueft wird deshalb beides - dass die Formeln uebereinstimmen, und dass
+    der Auditor an einem echten Export dieselben Befunde erhebt.
+    """
+    import json
+    import secrets
+
+    import auditor as au
+    import board_eintrag as be
+
+    for n in (1, 2, 3, 4, 5, 8, 9):
+        payloads = [be.canonical({"i": i, "x": secrets.token_hex(4)}) for i in range(n)]
+        blaetter = [be.leaf_hash(p) for p in payloads]
+        check(f"Auditor: Blatt-Hash und Merkle-Root stimmen ueberein (n={n})",
+              [au.blatt(p) for p in payloads] == blaetter
+              and au.wurzel(blaetter) == be.merkle_root(blaetter))
+        # Der Inklusionspfad ist die Zusage aus EIP-T-033 B: er belegt ein
+        # einzelnes Blatt, ohne dass der Pruefende das ganze Board braucht.
+        root = be.merkle_root(blaetter)
+        check(f"Auditor: Inklusionspfad fuehrt fuer jedes Blatt zur Root (n={n})",
+              all(au.pfad_prueft(b, au.pfad(blaetter, b) or [], root) for b in blaetter))
+    check("Auditor: Kettenglied stimmt ueberein",
+          au.kettenglied("aa" * 32, be.GENESIS) == be.batch_root("aa" * 32, be.GENESIS))
+    check("Auditor: fremdes Blatt hat keinen Pfad",
+          au.pfad([be.leaf_hash("a"), be.leaf_hash("b")], "cc" * 32) is None)
+
+    # Ein echter Export dieser Instanz, geprueft mit dem fremden Code.
+    export = service.board_export(POLL)
+    a = au.Auditor(export)
+    a.pruefe_struktur()
+    a.pruefe_eintraege(a.token_schluessel(None))
+    check("Auditor: Export dieser Instanz ist unauffaellig",
+          a.belastbar, "; ".join(a.befunde))
+    check("Auditor: Zaehlung stimmt mit der eigenen Auszaehlung ueberein",
+          a.counts == service.tally_von(service.pruefbericht(POLL)), str(a.counts))
+    a.pruefe_ergebnis({"participation": len(a.stimmen), "n_eligible": a.n_token,
+                       "result": a.counts})
+    check("Auditor: Ergebnisabgleich ohne Abweichung", not a.befunde, "; ".join(a.befunde))
+
+    # Umgeschriebene Stimme bei stehengelassener Root - dieselbe Demo wie in
+    # pruefung_ohne_datenbank, nur mit dem Code eines Dritten.
+    kaputt = json.loads(json.dumps(export))
+    for batch in kaputt["batches"]:
+        stimmen = [i for i, p in enumerate(batch["entries"]) if '"VOTE"' in p]
+        if stimmen:
+            daten = json.loads(batch["entries"][stimmen[0]])
+            daten["choices"] = ["Nein" if daten["choices"] == ["Ja"] else "Ja"]
+            batch["entries"][stimmen[0]] = be.canonical(daten)
+            break
+    b = au.Auditor(kaputt)
+    b.pruefe_struktur()
+    b.pruefe_eintraege(b.token_schluessel(None))
+    check("Auditor: umgeschriebene Stimme faellt auf",
+          not b.belastbar and any("Merkle-Root" in f for f in b.befunde), "; ".join(b.befunde))
+
+    # Dieselbe Stimme zweimal, Roots und Kette sauber nachgerechnet. Diese
+    # Pruefung hat verifikation.py nicht: dort verhindert der Ledger die
+    # Doppelabgabe, und der ist von aussen nicht einsehbar.
+    doppelt = json.loads(json.dumps(export))
+    stimme = next(p for batch in doppelt["batches"] for p in batch["entries"] if '"VOTE"' in p)
+    doppelt["batches"][-1]["entries"].append(stimme)
+    vorher = be.GENESIS
+    for batch in doppelt["batches"]:
+        batch["merkle_root"] = be.merkle_root(be.leaf_hash(p) for p in batch["entries"])
+        batch["batch_root"] = be.batch_root(batch["merkle_root"], vorher)
+        vorher = batch["batch_root"]
+    c = au.Auditor(doppelt)
+    c.pruefe_struktur()
+    c.pruefe_eintraege(c.token_schluessel(None))
+    check("Auditor: zweimal dasselbe Token faellt auf",
+          not c.belastbar and any("zweimal" in f for f in c.befunde), "; ".join(c.befunde))
+
+    check("Auditor: importiert nichts aus der App",
+          not any(m in au.__dict__ for m in ("board_eintrag", "verifikation", "blind", "store")))
+
+
 def pruefung_ohne_datenbank() -> None:
     """Die Pruefung eines Dritten (EIP-T-045).
 
@@ -1555,6 +1637,10 @@ def main() -> int:
     check("Punkt 7: Board-Seite mit Abrechnung und Kettenpruefung",
           board_page.status_code == 200 and accounting.ok and status.sound,
           f"eligible={accounting.n_eligible} votes={accounting.n_votes} kette={status.ok}")
+
+    # Erst hier: der Auditor prueft den *echten* Export dieser Umfrage, es muss
+    # also abgestimmt und geschlossen sein.
+    auditor_unabhaengig()
 
     parallel_participation()
     anspruch_atomar()

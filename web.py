@@ -603,9 +603,23 @@ async def api_board(request: Request, poll_id: str) -> JSONResponse:
 
 @router.get("/api/status/{poll_id}")
 async def api_status(request: Request, poll_id: str) -> JSONResponse:
+    """Die veroeffentlichten Zahlen dieser Umfrage - maschinenlesbar.
+
+    ``result`` ist dieselbe Auszaehlung, die /board/{poll_id} anzeigt, und steht
+    hier, damit ein unabhaengiger Pruefer sie gegen seine eigene halten kann
+    (auditor.py, EIP-T-071). Ohne sie muesste er die HTML-Seite auslesen und
+    haette am Ende verglichen, was er selbst geparst hat. Solange die Umfrage
+    laeuft, gibt es kein Ergebnis - dann steht in ``result_error``, warum.
+    """
     service = deps(request).service
     poll = service.poll(poll_id)
-    accounting = service.laufender_bericht(poll_id).accounting
+    bericht = service.laufender_bericht(poll_id)
+    accounting = bericht.accounting
+    try:
+        result: dict[str, int] | None = service.tally(poll_id, bericht)
+        result_error: str | None = None
+    except Rejected as exc:
+        result, result_error = None, str(exc)
     return JSONResponse(
         {
             "poll": poll.poll_id,
@@ -613,6 +627,8 @@ async def api_status(request: Request, poll_id: str) -> JSONResponse:
             "participation": accounting.n_votes,
             "n_eligible": accounting.n_eligible,
             "accounting_ok": accounting.ok,
+            "result": result,
+            "result_error": result_error,
         }
     )
 

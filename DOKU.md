@@ -201,6 +201,45 @@ zwei verschiedene, jeweils in sich stimmige Boards bekommen, und ein Betreiber m
 rechnet die Kette nach einer Änderung neu durch. Dagegen hilft nur ein extern verankerter
 Merkle-Root und Gegenzeichner (§12).
 
+### Ohne unseren Code nachrechnen: `auditor.py`
+
+`verifikation.py` ist ein Modul dieser App. Wer ihr misstraut, prüft mit ihr nichts nach — er
+führt dieselbe Behauptung ein zweites Mal aus. `auditor.py` ist deshalb bewusst eine **zweite,
+unabhängige Implementierung**: eine einzelne Datei, die nichts aus dem Projekt importiert und das
+Board allein aus seiner öffentlichen Beschreibung nachrechnet (EIP-T-071). Sie ist klein genug,
+um selbst gelesen zu werden — das ist ihr eigentlicher Zweck.
+
+```bash
+python3 app/auditor.py https://<instanz>/api/board/<poll-id>
+python3 app/auditor.py board.json --pubkey key.pem --token <mein-token-hex>
+python3 app/auditor.py board.json --beleg beleg.json --belegkey beleg.pem
+```
+
+Geprüft wird: Blatt-Hashes, Merkle-Wurzeln und Batch-Kette (aus den Einträgen neu gerechnet, die
+im Export genannten Wurzeln gelten als Behauptung), die RSASSA-PSS-Signatur jeder Stimme gegen den
+Schlüssel aus dem `POLL_OPEN`-Eintrag, **Token-Eindeutigkeit**, die Ledger-Abrechnung (§9) und die
+eigene Auszählung gegen das, was die Instanz unter `/api/status/{poll_id}` veröffentlicht. Wird das
+Board über eine URL geladen, holt der Auditor diesen Status von selbst; sonst nimmt er ihn über
+`--status`. Exit-Code 0 heißt: kein Befund, 1 heißt: mindestens einer, und die Zahlen darüber sind
+nicht belastbar.
+
+Die Token-Eindeutigkeit prüft nur der Auditor, nicht `verifikation.py`: Im Betrieb verhindert der
+Vote-Ledger die zweite Abgabe desselben Tokens — von außen ist der Ledger aber nicht einsehbar,
+und im Board ist die Wiederholung die einzige sichtbare Spur.
+
+Mit `--beleg` prüft er zusätzlich einen Abgabebeleg: die Ed25519-Signatur und den
+**Inklusionspfad** des Blattes zur Merkle-Wurzel seines Batches — also den logarithmischen
+Nachweis, dass genau diese Stimme im veröffentlichten Board steht. Fehlt das Blatt im zugesagten
+Batch, ist der Beleg der Nachweis dafür. Der zugehörige Schlüssel gehört aus einer unabhängigen
+Quelle (`--belegkey`): Anders als der Token-Schlüssel steht der Beleg-Schlüssel **nicht** unter der
+Merkle-Wurzel, ein Beleg gegen den vom Server mitgelieferten Schlüssel prüft also wenig. Der
+Auditor sagt das in seiner Ausgabe.
+
+Was auch der Auditor nicht leisten kann: Er zeigt, dass die veröffentlichten Einträge zueinander
+passen — nicht, dass *alle* abgegebenen Stimmen darin stehen (dafür braucht es die Belege der
+Abstimmenden) und nicht, dass die ausgegebenen Token an Berechtigte gingen (das ist Phase A und im
+Board grundsätzlich nicht sichtbar).
+
 ### Debug-Modul
 
 `/debug`, Auto-Refresh alle 3 Sekunden. Erreichbar **nur mit Admin-Anmeldung**. Im Phase-A-Eintrag
@@ -301,6 +340,7 @@ static/ballot.js (+ blind.js)            web.py          HTTP, Cookies
 | `store.py` | SQLite: `polls`, `eligibility`, `spent`, `board`, `batches` und der kurzlebige `issue_retry` (EIP-T-070) — ohne Eingangsreihenfolge (`WITHOUT ROWID`, EIP-T-033 E). Puffert Einträge und veröffentlicht sie als Batch. Alle Zugriffe — auch lesende — laufen über ein `RLock`, weil sich alle Threads eine Verbindung teilen (EIP-T-019). |
 | `board_eintrag.py` | Das Eintragsformat: kanonisches JSON, Blatt-Hash, Merkle-Baum, Batch-Kette, Konstruktoren (`vote`, `token_issued`, `poll_open` — trägt den öffentlichen Token-Schlüssel der Umfrage —, `poll_closed`) und `parse(entry) -> Vote \| TokenIssued \| PollOpen \| PollClosed \| Unlesbar`. Rohe Dicts baut und liest niemand mehr selbst. Ein Eintrag, den `parse` nicht deuten kann, wird zu `Unlesbar` — er zählt nirgends mit und macht das Ergebnis unbelastbar, statt still zu verschwinden. |
 | `verifikation.py` | Die gesamte Prüfung über das veröffentlichte Board: `pruefe(batches, options) -> Pruefbericht` — Merkle-Wurzeln, Batch-Kette, Signaturen, Abrechnung, Auszählung. Den öffentlichen Schlüssel holt sie sich aus dem Board selbst (`schluessel_aus_board`); ein unabhängig mitgegebener wird dagegen gehalten. Ohne Datenbank, ohne privaten Schlüssel, auch als Kommandozeilen-Werkzeug für Dritte lauffähig. |
+| `auditor.py` | Die unabhängige Gegenprobe (EIP-T-071): eine Datei, kein Import aus dem Projekt, rechnet Struktur, Signaturen, Token-Eindeutigkeit, Abrechnung und Auszählung allein aus dem Board-Export nach und hält sie gegen `/api/status`. Prüft mit `--beleg` auch Beleg-Signatur und Inklusionspfad. Gehört bewusst **nicht** zum Kern — sie darf nichts von ihm wissen. |
 | `poll_service.py` | Phasenlogik, Regeln, Konsistenzprüfung. Die Auszählung selbst delegiert es an `verifikation.py` und übersetzt Befunde in Abweisungen. Hält den Lebenszyklus beider Umfrage-Schlüssel: erzeugen beim Anlegen, `vernichte_poll_secret()` und `vernichte_poll_key()` beim Schließen. Den privaten Signaturschlüssel liest es bewusst **ohne Zwischenspeicher** aus der Datenbank — ein Cache im Prozess hielte ihn über seine Vernichtung hinaus am Leben. |
 | `demo.py` | Die Angriffsdemos aus §9 — außerhalb des Kerns (EIP-T-050). Sie benutzen `PollService` von außen und schreiben an der Anwendung vorbei direkt in die Datenbank, weil genau das das Angreifermodell ist: Wer die Platte hat, braucht keine API. Verdrahtet nur bei `Settings.demos` (`EIDPOLL_DEMOS`, lokal an, öffentlich aus). |
 | `debug.py` | Ringpuffer im Prozessspeicher (500 Ereignisse), bewusst keine zweite Wahrheit. |

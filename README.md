@@ -62,6 +62,7 @@ Identität ebenfalls — die Abwehr greift auf beiden Ebenen (Pseudonym in Phase
 | `static/beleg.js` | Der Beleg: Kassenbon, QR-Code, Textdatei. Reine Darstellung, kein Krypto. |
 | `store.py` | SQLite: Eligibility-Ledger, Vote-Ledger, Board mit Batch-Kette (EIP-ADR-20260728-001). Board-Payloads als kanonisches JSON. |
 | `poll_service.py` | Kern aus `PROTOTYPE_two-ledger/poll_logic.py`, Board als einzige Auszählungsquelle. |
+| `auditor.py` | Unabhängige Nachrechnung des Boards — eine Datei, ohne Import aus dieser App. Wer der App misstraut, prüft mit ihr, nicht mit `verifikation.py` (EIP-T-071). |
 | `demo.py` | Angriffsdemos (§9): Stimme einschleusen, Board-Eintrag umschreiben, Testzugang zurücksetzen. Liegt außerhalb des Kerns und wird nur eingehängt, wenn `Settings.demos` gesetzt ist — lokal an, öffentlich nur mit `EIDPOLL_DEMOS=1`. |
 | `debug.py` + `/debug` | Fehler, Abweisungen, Inkonsistenzen in Echtzeit. Nur mit Admin-Anmeldung. |
 | `web.py` | Seiten und JSON-API. `create_app(store_path, authenticator, settings)` baut eine Instanz; der Authenticator-Tausch ist damit ein Argument, kein Eingriff. `web:app` bleibt der uvicorn-Einstieg. |
@@ -75,6 +76,9 @@ python3 app/smoke_test.py    # sieben Abnahmepunkte, beide Angriffe, Zugangsschu
                              # zehn gleichzeitige Teilnahmen
 node app/ballot_test.mjs     # Stimmzettel-Flow gegen einen gestellten Server,
                              # ohne Browser: Zwischenstand nach Abbruch (ADR-002)
+
+# Board unabhängig nachrechnen (nichts aus dieser App importiert):
+python3 app/auditor.py https://<instanz>/api/board/<poll-id>
 
 # im echten Browser (braucht Playwright und eine leere Datenbank):
 cd app && EIDPOLL_DB=/tmp/bt.sqlite3 python3 -m uvicorn web:app --port 8899 &
