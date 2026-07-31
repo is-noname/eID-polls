@@ -470,8 +470,9 @@ es nicht.
 
 ### V-003 — Vernichteter Umfrage-Schlüssel überlebte im WAL der Datenbank
 **Datum des Eintrags:** 2026-07-31 · **Paragraphen:** § 1, § 4, § 18 ·
-**Ticket:** EIP-T-041 · **Status:** behoben am 2026-07-31, mit reproduzierbarem Nachweis
-(`smoke_test.datenabzug_nach_schluss`)
+**Ticket:** EIP-T-041 · **Status:** im Code behoben am 2026-07-31, mit reproduzierbarem Nachweis
+(`smoke_test.datenabzug_nach_schluss`); ausgeliefert mit `6b19bed`, **Wirksamkeit auf der laufenden
+Instanz nicht bestätigt** — siehe „Was das nicht bedeutet"
 
 **Was geschah.** `Store.vernichte_config` überschreibt den Wert, löscht die Zeile und schreibt die
 Datei mit `VACUUM` neu. Der Docstring behauptete dazu, VACUUM räume das Write-Ahead-Log gleich mit
@@ -507,7 +508,15 @@ eine Zusage, sondern durch `smoke_test.datenabzug_nach_schluss` — der Test zie
 den SQL-Abzug, die rohen Bytes von Datenbank, `-wal` und `-shm` sowie den vollständigen Inhalt des
 Debug-Moduls und sucht darin nach Pseudonym, Zugangscode und beiden Schlüsseln.
 
-**Was das nicht bedeutet.** Ein `truncate` gibt Blöcke frei, es löscht sie nicht physisch.
+**Was das nicht bedeutet — zuerst: nicht, dass die Instanz den Fix hat.** Der Nachweis oben gilt für
+den Arbeitsbaum. Zwischen dem Eintrag hier und der Auslieferung lag ein Stand, in dem dieser Absatz
+„behoben" sagte, während <https://eid-poll.onrender.com> die Lücke noch trug. Ausgeliefert ist der
+Fix seit `6b19bed` (2026-07-31); ob die laufende Instanz ihn übernommen hat, ist **von außen nicht
+feststellbar** — die App hat keine Versionsanzeige, und die Änderung wirkt in Dateien im Container,
+nicht in einer Antwort. Bestätigen kann das nur die Deploy-Liste im Render-Dashboard. Das ist
+dieselbe Lücke wie bei V-002, und sie wird hier genauso offen benannt statt abgehakt.
+
+**Was das ebenfalls nicht bedeutet.** Ein `truncate` gibt Blöcke frei, es löscht sie nicht physisch.
 Sicherungskopien, Dateisystem-Snapshots und die Blockverwaltung einer SSD bleiben außerhalb dessen,
 was ein Programm überschreiben kann — das steht unverändert im Docstring und ist keine Formalie: Die
 Backup-Regel dazu ist offen und gehört zu EIP-T-041 (Akzeptanzkriterium 3). Bis sie steht, ist die
