@@ -44,9 +44,10 @@ Das ist kein Rechentrick, sondern der ehrliche Stand — gebaut wurde ein Weg na
 Kanal nach innen. Die Umsetzung war unter § 4 b zulässig: Sie trägt eine Schuld ab und behebt eine
 gerissene Fälligkeit.
 
-**Nebenwirkung, positiv.** Mit dem Weg schließt sich der letzte offene Punkt aus V-001 (siehe unten)
-und damit der Verstoß insgesamt. An der Betriebsstufe `öffentlich erreichbar` bleibt dann nur noch
-§ 1 gerissen (V-002, EIP-T-041).
+**Nebenwirkung, positiv.** Mit dem Weg hat sich der letzte offene Punkt aus V-001 (siehe unten)
+geschlossen und damit der Verstoß insgesamt — ausgeliefert und gegen die Instanz geprüft am
+2026-07-31, `ad45d76`. An der Betriebsstufe `öffentlich erreichbar` bleibt damit nur noch § 1
+gerissen (V-002, EIP-T-041).
 
 ### Version 9 — 2026-07-31
 
@@ -339,10 +340,20 @@ dieses Protokoll und der Transparenzbericht laufen als abgeleitete Kopien im App
 ohne Anmeldung ausgeliefert. Wer diesen Absatz auf der öffentlichen Instanz liest, liest damit die
 Offenlegung des Verstoßes, um dessentwillen der Weg entstanden ist.
 
-*Auslieferung ausstehend.* Dieser Nachtrag steht hier, bevor der Stand veröffentlicht ist — dieselbe
-Reihenfolge wie beim ersten Eintrag, aus demselben Grund (§ 18). Der Deploy-Commit und die Prüfung
-gegen die laufende Instanz werden hier ergänzt, sobald sie erfolgt sind; erst dann ist Punkt 4
-geschlossen.
+**Ausgeliefert 2026-07-31.** `c63dd06..ad45d76` nach `origin/prototype`. Gegen die laufende Instanz
+nachgeprüft — gegen die Instanz, nicht gegen den Arbeitsbaum:
+
+| Seite | Befund |
+|---|---|
+| `/kodex` | 200, Version 10, Schuldenübersicht sichtbar, § 10 als erfüllt ausgewiesen |
+| `/kodex/protokoll` | 200, V-001 und V-002 im Wortlaut, dieser Nachtrag eingeschlossen |
+| `/transparenz` | 200, Nullfall und Negativ-Vermerk |
+| `/manifest` | 200, unverändert erreichbar |
+| Startseite | Navigationspunkt **Kodex** vorhanden |
+| alle vier | ohne Anmeldung erreichbar, keine unaufgelösten Wikilinks |
+
+**V-001 ist damit vollständig geschlossen** — Behebung am 2026-07-28, Offenlegung am 2026-07-31. An
+der Betriebsstufe `öffentlich erreichbar` bleibt allein § 1 gerissen (V-002, EIP-T-041).
 
 ### V-002 — Vollständige IP-Adressen im Zugriffslog der öffentlichen Instanz
 **Datum des Eintrags:** 2026-07-28 · **Paragraphen:** § 1, § 4, § 18 ·
