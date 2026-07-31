@@ -1008,6 +1008,48 @@ def sitzungstrennung() -> None:
           str(befunde[0].detail if befunde else {}))
 
 
+def offenlegungsseiten() -> None:
+    """Kodex, Verstossprotokoll und Transparenzbericht sind von aussen erreichbar.
+
+    KODEX Paragraf 10 verlangt genau das (EIP-T-063): Eine Selbstbindung, die
+    nur der Betreiber lesen kann, ist keine. Der Test prueft die Erreichbarkeit
+    ohne Anmeldung - der urspruengliche Fehler in V-001 war, den Stand am
+    falschen Ort zu pruefen.
+    """
+    besucher = TestClient(app)  # bewusst ohne Login und ohne Admin-Cookie
+
+    seiten = {
+        "/manifest": "Manifest",
+        "/kodex": "Kodex",
+        "/kodex/protokoll": "Verstoßprotokoll",
+        "/transparenz": "Transparenzbericht",
+    }
+    for pfad, erwartet in seiten.items():
+        antwort = besucher.get(pfad)
+        check(f"Offenlegung: {pfad} ist ohne Anmeldung erreichbar",
+              antwort.status_code == 200 and erwartet in antwort.text,
+              f"status={antwort.status_code}")
+
+    kodex = besucher.get("/kodex").text
+    check("Offenlegung: Kodex nennt die Schuldenuebersicht",
+          "Schuldenübersicht" in kodex)
+    check("Offenlegung: Kodex-Seite verlinkt das Protokoll",
+          'href="/kodex/protokoll"' in kodex)
+    check("Offenlegung: Kodex ist aus der Hauptnavigation erreichbar",
+          'href="/kodex"' in besucher.get("/").text)
+
+    # Unaufgeloeste Wikilinks waeren ein Verweis, den ein Besucher fuer
+    # aufloesbar haelt und der ins Leere zeigt - das erledigt der Sync im
+    # Elternordner, hier wird sein Ergebnis geprueft.
+    for pfad in seiten:
+        check(f"Offenlegung: {pfad} ohne unaufgeloeste [[Wikilinks]]",
+              "[[" not in besucher.get(pfad).text)
+
+    protokoll = besucher.get("/kodex/protokoll").text
+    check("Offenlegung: Verstossprotokoll traegt die bisherigen Eintraege",
+          "V-001" in protokoll and "V-002" in protokoll)
+
+
 def demo_schalter() -> None:
     """Angriffsdemos haengen an EIDPOLL_DEMOS, nicht an der Anwendung (EIP-T-050).
 
@@ -1128,6 +1170,7 @@ def main() -> int:
     laufende_pruefung()
     batch_veroeffentlichung()
     sitzungstrennung()
+    offenlegungsseiten()
     demo_schalter()
 
     # Angriff 1 - Ballot-Stuffing wird von der Abrechnung entlarvt

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ titel }} — eID-Umfrage{% endblock %}
+
+{# Der Text steht in der jeweiligen Markdown-Datei, nicht hier (EIP-T-044, EIP-T-063).
+   Eine handgepflegte Zweitfassung lief schon einmal gegenueber dem Manifest
+   auseinander; beim Kodex waere sie zusaetzlich ein Verstoss gegen § 20. #}
+{% block content %}
+<div class="prose{{ ' wide' if breit }}">
+  {{ dokument | safe }}
+</div>
+{% endblock %}

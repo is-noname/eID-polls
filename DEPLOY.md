@@ -120,6 +120,11 @@ Ein Ablauf, der das trägt:
    aufgeht. Der Nachweis, dass die Prüfung nicht dekorativ ist.
    Öffentlich erscheinen diese Knöpfe nur mit `EIDPOLL_DEMOS=1`; ohne die Variable gibt es die
    Routen nicht, nicht bloß eine Abweisung.
+7. **Kodex öffnen** (`/kodex`) und bis zur **Schuldenübersicht** scrollen, von dort weiter ins
+   **Verstoßprotokoll** (`/kodex/protokoll`). Das ist der Teil, den sonst niemand zeigt: was das
+   Projekt sich verbietet, welche Zusagen heute nur durch Verhalten gedeckt sind — und was bereits
+   schiefgegangen ist. § 10 verlangt genau diese Erreichbarkeit (EIP-T-063); vorführen kann man sie
+   trotzdem.
 
 ## Was fehlt, bevor jemand ein Ergebnis ernst nehmen darf
 

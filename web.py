@@ -372,44 +372,102 @@ async def debug_page(request: Request, level: str = "all") -> HTMLResponse:
     )
 
 
-MANIFEST_PATH = BASE_DIR / "MANIFEST.md"
-_manifest_cache: tuple[float, str] | None = None
+# Markdown-Dokumente, die als eigene Seite ausgeliefert werden. Erzeugt werden
+# die Dateien von scripts/sync_public_docs.py im Elternordner, der nicht Teil
+# dieses Repos ist.
+#
+# Warum Kodex, Protokoll und Transparenzbericht hier stehen (EIP-T-063):
+# KODEX Paragraf 10 verlangt, dass Selbstbindung und Verstoesse von aussen
+# erreichbar sind. Ein Verstossprotokoll, das nur der Betreiber lesen kann,
+# erfuellt keine Offenlegungspflicht - das war der offene Punkt 4 aus V-001.
+DOKUMENTE = {
+    "manifest": ("MANIFEST.md", "Manifest"),
+    "kodex": ("KODEX.md", "Kodex"),
+    "kodex-protokoll": ("KODEX-PROTOKOLL.md", "Kodex-Protokoll"),
+    "transparenz": ("TRANSPARENZ.md", "Transparenzbericht"),
+}
+
+_dokument_cache: dict[str, tuple[float, str]] = {}
 
 
-def manifest_html() -> str:
-    """Rendert MANIFEST.md, gecacht bis die Datei sich aendert.
+def dokument_html(name: str) -> str:
+    """Rendert ein Markdown-Dokument aus DOKUMENTE, gecacht bis es sich aendert.
 
     Die Prosa steht bewusst nicht im Template: Sie lief dort schon einmal
     gegenueber dem Manifest auseinander und behauptete Zusagen, die das Manifest
     zurueckgenommen hatte (EIP-T-044). Nach KODEX.md bindet das Manifest jede
     Oberflaeche - eine zweite, handgepflegte Fassung ist deshalb kein
-    Duplikat, sondern eine Fehlerquelle mit Aussenwirkung.
-
-    MANIFEST.md hier ist eine abgeleitete Kopie; erzeugt wird sie von
-    scripts/sync_manifest.py im Elternordner, der nicht Teil dieses Repos ist.
+    Duplikat, sondern eine Fehlerquelle mit Aussenwirkung. Fuer Kodex und
+    Verstossprotokoll gilt dasselbe schaerfer: Eine abweichende Zweitfassung
+    waere hier nicht nur ungenau, sondern ein Verstoss gegen Paragraf 20.
     """
-    global _manifest_cache
+    dateiname, titel = DOKUMENTE[name]
+    pfad = BASE_DIR / dateiname
     try:
-        stamp = MANIFEST_PATH.stat().st_mtime
+        stamp = pfad.stat().st_mtime
     except OSError as exc:
-        log.error("manifest", f"MANIFEST.md nicht lesbar: {exc}")
-        return "<p>Das Manifest ist gerade nicht abrufbar.</p>"
+        log.error("dokument", f"{dateiname} nicht lesbar: {exc}")
+        return f"<p>{titel} ist gerade nicht abrufbar.</p>"
 
-    if _manifest_cache is None or _manifest_cache[0] != stamp:
-        text = MANIFEST_PATH.read_text(encoding="utf-8")
+    gecacht = _dokument_cache.get(name)
+    if gecacht is None or gecacht[0] != stamp:
+        text = pfad.read_text(encoding="utf-8")
         # Der Sync-Hinweis am Dateikopf richtet sich an Bearbeiter, nicht an Besucher.
         if text.lstrip().startswith("<!--"):
             text = text.split("-->", 1)[1]
-        html = markdown.markdown(text)
+        # Tabellen und Codebloecke: Der Kodex besteht zu einem guten Teil aus
+        # beidem - ohne die Erweiterungen liest sich die Schuldenuebersicht als
+        # Pipe-Wueste.
+        html = markdown.markdown(text, extensions=["tables", "fenced_code"])
         # Erster Absatz nach der Ueberschrift ist die Lead-Zeile der Seite.
         html = html.replace("</h1>\n<p>", '</h1>\n<p class="lead">', 1)
-        _manifest_cache = (stamp, html)
-    return _manifest_cache[1]
+        # Tabellen in den Scroll-Container der Anwendung haengen. Markdown kennt
+        # ihn nicht, und ohne ihn schiebt die Schuldenuebersicht auf schmalen
+        # Geraeten die ganze Seite zur Seite.
+        html = html.replace("<table>", '<div class="table-wrap"><table>')
+        html = html.replace("</table>", "</table></div>")
+        _dokument_cache[name] = (stamp, html)
+    return _dokument_cache[name][1]
 
 
 @router.get("/manifest", response_class=HTMLResponse)
 async def manifest_page(request: Request) -> HTMLResponse:
-    return page(request, "manifest.html", manifest=manifest_html())
+    return page(
+        request, "dokument.html", active="manifest",
+        dokument=dokument_html("manifest"), titel="Manifest",
+    )
+
+
+@router.get("/kodex", response_class=HTMLResponse)
+async def kodex_page(request: Request) -> HTMLResponse:
+    return page(
+        request, "dokument.html", active="kodex",
+        dokument=dokument_html("kodex"), titel="Kodex", breit=True,
+    )
+
+
+@router.get("/kodex/protokoll", response_class=HTMLResponse)
+async def kodex_protokoll_page(request: Request) -> HTMLResponse:
+    return page(
+        request,
+        "dokument.html",
+        active="kodex",
+        dokument=dokument_html("kodex-protokoll"),
+        titel="Kodex-Protokoll",
+        breit=True,
+    )
+
+
+@router.get("/transparenz", response_class=HTMLResponse)
+async def transparenz_page(request: Request) -> HTMLResponse:
+    return page(
+        request,
+        "dokument.html",
+        active="kodex",
+        dokument=dokument_html("transparenz"),
+        titel="Transparenzbericht",
+        breit=True,
+    )
 
 
 @router.get("/admin", response_class=HTMLResponse)

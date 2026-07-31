@@ -21,6 +21,10 @@
     <nav>
       <a href="/" class="{{ 'active' if active == 'index' }}">Umfragen</a>
       <a href="/manifest" class="{{ 'active' if active == 'manifest' }}">Manifest</a>
+      {# § 10: Kodex und Verstossprotokoll muessen von aussen erreichbar sein, sonst
+         ist die Selbstbindung nur fuer den Betreiber sichtbar (EIP-T-063). Deshalb
+         ein Punkt in der Hauptnavigation und kein Link im Kleingedruckten. #}
+      <a href="/kodex" class="{{ 'active' if active == 'kodex' }}">Kodex</a>
       <a href="/verify" class="{{ 'active' if active == 'verify' }}">Stimme prüfen</a>
       {# Betreiber-Bereiche erscheinen nur, wo sie auch zugaenglich sind (EIP-T-018).
          Der Admin-Link bleibt auf dem Betreiberrechner sichtbar, damit die Anmeldung

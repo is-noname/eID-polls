@@ -221,6 +221,25 @@ mehr von der Wahrheit zu unterscheiden. Die Kette schützt gegen unbemerkte nach
 durch Dritte — nicht gegen den Betreiber. Dafür bräuchte es einen extern verankerten Merkle-Root
 (§12, EIP-T-006 — die Batch-Kette liefert dafür bereits die zu verankernde `batch_root`).
 
+### Selbstbindung nachlesen
+
+Vier Seiten, alle ohne Anmeldung erreichbar:
+
+| Seite | Inhalt |
+|---|---|
+| `/manifest` | Wofür das Projekt da ist und was es behauptet |
+| `/kodex` | Was es sich selbst verbietet — inklusive **Schuldenübersicht**: welche Zusagen heute nur durch Verhalten gedeckt sind und nicht durch Technik |
+| `/kodex/protokoll` | Änderungen am Kodex und das **Verstoßprotokoll**: was schiefgegangen ist, seit wann bis wann, was daraus folgte |
+| `/transparenz` | Behördenanfragen, beginnend beim Nullfall |
+
+Dass diese Seiten existieren, ist keine Zugabe: § 10 des Kodex verlangt, dass Selbstbindung und
+Verstöße von außen erreichbar sind (EIP-T-063). Ein Verstoßprotokoll, das nur der Betreiber lesen
+kann, dokumentiert nichts, es beruhigt nur.
+
+Der Inhalt kommt aus Markdown-Dateien im App-Ordner, die außerhalb erzeugt werden
+(`scripts/sync_public_docs.py`). Eine handgepflegte Zweitfassung im Template wäre nach § 20 selbst
+ein Verstoß — und ist mit dem Manifest schon einmal auseinandergelaufen (EIP-T-044).
+
 ---
 
 ## 4. Aufbau

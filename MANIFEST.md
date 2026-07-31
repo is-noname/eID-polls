@@ -1,4 +1,4 @@
-<!-- Erzeugt von scripts/sync_manifest.py aus MANIFEST.md im Elternordner.
+<!-- Erzeugt von scripts/sync_public_docs.py aus MANIFEST.md im Elternordner.
      Nicht hier bearbeiten - Aenderungen gehoeren ins Original. -->
 # Manifest
 
@@ -56,7 +56,7 @@ Das Vollbild — eine Instanz, auf die sich alle einigen — ist ein Zielbild, k
 
 ## Wofür wir uns verbürgen
 
-Jede Zusage hier hat einen Paragraphen im [[KODEX]], an dem sie prüfbar wird.
+Jede Zusage hier hat einen Paragraphen im [Kodex](/kodex), an dem sie prüfbar wird.
 
 - **Wir fragen nur das Pseudonym ab.** Kein Name, kein Geburtsdatum, keine Adresse. Keine IP-Adressen in Logs, kein Tracking, keine Dienste Dritter. Wir könnten mehr, wir wollen nicht. (§ 1)
 - **Frage, Nenner und Schwelle stehen vor dem Start öffentlich fest.** Nach Sicht der Zahlen ändern wir daran nichts. (§ 7)
