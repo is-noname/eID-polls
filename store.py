@@ -193,15 +193,24 @@ class Store:
         Ein blosses DELETE gibt die Seite nur frei - der alte Wert steht danach
         weiter im Freispeicher der Datei und im WAL. Fuer einen Schluessel, mit
         dessen Loeschung wir *nach aussen* argumentieren (EIP-T-033, Baustein
-        D), waere das eine Behauptung statt einer Loeschung. Deshalb drei
+        D), waere das eine Behauptung statt einer Loeschung. Deshalb vier
         Schritte: Wert mit Zufallsbytes gleicher Laenge ueberschreiben, Zeile
-        loeschen, Datei neu schreiben (VACUUM raeumt zugleich das WAL ab).
+        loeschen, Datei neu schreiben (VACUUM), WAL leeren.
+
+        Der letzte Schritt ist nicht kosmetisch. Bis EIP-T-041 stand hier, VACUUM
+        raeume das WAL gleich mit ab - das tut es nicht: Der vernichtete
+        Schluessel lag danach vollstaendig in ``<datei>-wal``, und der Abzug in
+        smoke_test.datenabzug_nach_schluss hat ihn dort gefunden. Baustein D war
+        damit fuer jeden, der die Dateien neben der Datenbank mitnimmt, nicht
+        erfuellt. ``wal_checkpoint(TRUNCATE)`` schreibt das WAL in die (frisch
+        gevacuumte) Datei zurueck und setzt es auf Laenge 0.
 
         Die Grenze dieser Zusage, die nach KODEX § 4 mitzusagen ist: Sie gilt
-        fuer *diese Datei*. Sicherungskopien, Dateisystem-Snapshots und die
-        Blockverwaltung einer SSD liegen ausserhalb dessen, was ein Programm
-        ueberschreiben kann. Wer die Zusage vollstaendig halten will, braucht
-        eine Backup-Regel dazu - nicht nur diesen Aufruf.
+        fuer *diese Datei und ihr WAL*. Sicherungskopien, Dateisystem-Snapshots
+        und die Blockverwaltung einer SSD liegen ausserhalb dessen, was ein
+        Programm ueberschreiben kann - ein truncate gibt Bloecke frei, es
+        loescht sie nicht physisch. Wer die Zusage vollstaendig halten will,
+        braucht eine Backup-Regel dazu - nicht nur diesen Aufruf.
         """
         with self._lock:
             row = self._conn.execute(
@@ -216,6 +225,9 @@ class Store:
             # VACUUM kann nicht in einer Transaktion laufen - nach dem commit
             # oben ist keine offen.
             self._conn.execute("VACUUM")
+            # TRUNCATE statt des Default-PASSIVE: PASSIVE laesst das WAL in
+            # voller Laenge liegen, samt des Frames, der den alten Wert traegt.
+            self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         return True
 
     # -- polls -------------------------------------------------------------

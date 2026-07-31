@@ -33,7 +33,7 @@ from fastapi.templating import Jinja2Templates
 
 from auth import AuthError, Authenticator, CodeAuthenticator
 from config import Settings
-from debug import log
+from debug import kategorie_fuer_pfad, log
 from poll_service import PollService, Rejected
 
 BASE_DIR = Path(__file__).parent
@@ -227,7 +227,11 @@ def require_admin(request: Request) -> None:
 
 
 async def _rejected_handler(request: Request, exc: Exception) -> HTMLResponse | JSONResponse:
-    log.reject("abgewiesen", str(exc), pfad=request.url.path)
+    # Abweisungen aus Phase A und B laufen unter ihrer Phasen-Kategorie und
+    # werden dadurch gezaehlt statt gestromt (debug.TEILNAHME, EIP-T-041): Eine
+    # abgewiesene Stimmabgabe um 16:00:41 neben einer Token-Ausgabe um 16:00:03
+    # verkettet genauso wie zwei erfolgreiche Vorgaenge.
+    log.reject(kategorie_fuer_pfad(request.url.path, "abgewiesen"), str(exc), pfad=request.url.path)
     if request.url.path.startswith("/api/"):
         return JSONResponse({"error": str(exc)}, status_code=400)
     status = getattr(exc, "status_code", 400)
@@ -355,9 +359,11 @@ async def verify_page(request: Request, poll: str = "", token: str = "") -> HTML
 
 @router.get("/debug", response_class=HTMLResponse)
 async def debug_page(request: Request, level: str = "all") -> HTMLResponse:
-    # Das Debug-Log stellt Phase-A- und Phase-B-Ereignisse mit Zeitstempel
-    # nebeneinander. Wer beides sieht, kann ueber die Zeit korrelieren - genau
-    # die Zuordnung, die das Verfahren verhindern soll (EIP-T-018).
+    # Phase-A- und Phase-B-Vorgaenge stehen nicht mehr im Ereignisstrom, sondern
+    # in einer stundenweisen Zaehlung ohne Reihenfolge (debug.TEILNAHME,
+    # EIP-T-041). Vorher lagen sie mit Sekundenstempel nebeneinander - wer beides
+    # sah, konnte ueber die Zeit korrelieren, also genau die Zuordnung
+    # herstellen, die das Verfahren verhindern soll (EIP-T-018).
     require_admin(request)
     service = deps(request).service
     findings = service.check_all()
@@ -365,6 +371,7 @@ async def debug_page(request: Request, level: str = "all") -> HTMLResponse:
         request,
         "debug.html",
         events=log.events(level),
+        teilnahme=log.teilnahme(),
         counts=log.counts(),
         level=level,
         findings={k: v for k, v in findings.items() if v},

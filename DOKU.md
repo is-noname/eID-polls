@@ -176,10 +176,8 @@ Merkle-Root und Gegenzeichner (§12).
 
 ### Debug-Modul
 
-`/debug`, Auto-Refresh alle 3 Sekunden. Erreichbar **nur mit Admin-Anmeldung** — das Log stellt
-Phase-A- und Phase-B-Ereignisse mit Zeitstempel nebeneinander, offen abrufbar wäre es ein Weg zur
-Zuordnung Person → Stimme. Aus demselben Grund steht im Phase-A-Eintrag kein Hinweis mehr darauf,
-*wer* ein Token abgeholt hat (EIP-T-018). Vier Ereignisarten:
+`/debug`, Auto-Refresh alle 3 Sekunden. Erreichbar **nur mit Admin-Anmeldung**. Im Phase-A-Eintrag
+steht kein Hinweis darauf, *wer* ein Token abgeholt hat (EIP-T-018). Vier Ereignisarten:
 
 - `info` — normale Vorgänge
 - `reject` — regelkonforme Abweisungen (verbrauchtes Token, zweites Token, ungültige Signatur …)
@@ -191,6 +189,16 @@ Zuordnung Person → Stimme. Aus demselben Grund steht im Phase-A-Eintrag kein H
 
 Darüber läuft bei jedem Aufruf eine frisch gerechnete Konsistenzprüfung über alle Umfragen. Bei
 diesem Projekt ist das kein Komfort-Feature, sondern die Stelle, an der Manipulation auffällt.
+
+**Teilnahmevorgänge stehen nicht im Ereignisstrom.** Bis EIP-T-041 lagen „Token ausgegeben" und
+„Stimme gepuffert" sekundengenau und in Eingangsreihenfolge untereinander — bei dünnem Verkehr
+genügt das Nebeneinander zweier Uhrzeiten für die Zuordnung Berechtigung → Stimme, ganz ohne
+Pseudonym im Log. Was an einer einzelnen Teilnahmehandlung hängt (`auth`, `phase-a`, `phase-b` auf
+`info` und `reject`, inklusive der Abweisungen aus beiden Phasen), wird deshalb **je Stunde
+gezählt** und in einer eigenen Tabelle angezeigt: keine Sekunde, keine Reihenfolge. `error` und
+`inconsistency` bleiben im Strom — ein Fehler ist ein nicht zustande gekommener Vorgang, und eine
+gemeldete Verkettung muss genau auffindbar sein. Die Grenze steht auf der Seite selbst: Wer in
+seiner Stunde allein teilnimmt, bleibt über die Stunde zuzuordnen.
 
 **Vollprüfung und laufende Prüfung** — die Board-Seite, das Ergebnis, der Export, `/debug` und das
 mitgelieferte Prüfwerkzeug prüfen jedes Mal *alles*: jede Merkle-Wurzel, die Batch-Kette und jede

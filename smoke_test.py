@@ -153,10 +153,14 @@ def parallel_participation(n: int = 10) -> None:
 
     from debug import log as debug_log
 
-    phase_b = [e for e in debug_log.events("all")
-               if e.detail.get("poll") == poll and e.category == "phase-b"]
+    # Gezaehlt statt gestromt (EIP-T-041): Die Stimmen muessen vollstaendig
+    # erfasst sein, aber ohne Uhrzeit und Reihenfolge.
+    phase_b = [z for z in debug_log.teilnahme()
+               if z.detail.get("poll") == poll and z.category == "phase-b"]
     check("Parallel: Debug-Modul hat jede Stimme erfasst, nichts verloren",
-          len(phase_b) == n, f"{len(phase_b)} von {n}")
+          sum(z.anzahl for z in phase_b) == n, f"{sum(z.anzahl for z in phase_b)} von {n}")
+    check("Parallel: keine Stimme im Ereignisstrom (waere korrelierbar)",
+          not [e for e in debug_log.events("all") if e.category in ("phase-a", "phase-b")])
 
 
 def anspruch_atomar(n: int = 8) -> None:
@@ -244,9 +248,13 @@ def anspruch_atomar(n: int = 8) -> None:
     # der schiefgeht, im Betrieb niemandem auf (§9).
     from debug import log as debug_log
 
-    abweisungen = [e for e in debug_log.events("reject") if poll in str(e.detail.get("pfad", ""))]
+    # Abweisungen aus Phase A und B stehen in der Zaehlung, nicht im Strom
+    # (EIP-T-041) - sichtbar bleiben sie trotzdem, sonst waere der Umbau ein
+    # Verlust an Aufsicht statt ein Gewinn an Unverkettbarkeit.
+    abweisungen = sum(z.anzahl for z in debug_log.teilnahme()
+                      if z.level == "reject" and poll in str(z.detail.get("pfad", "")))
     check("Wettlauf: jede Abweisung im Debug-Modul sichtbar",
-          len(abweisungen) == 2 * (n - 1), f"{len(abweisungen)} statt {2 * (n - 1)}")
+          abweisungen == 2 * (n - 1), f"{abweisungen} statt {2 * (n - 1)}")
 
 
 def umfrage_schluessel() -> None:
@@ -1008,6 +1016,126 @@ def sitzungstrennung() -> None:
           str(befunde[0].detail if befunde else {}))
 
 
+def datenabzug_nach_schluss() -> None:
+    """Abzug aus Datenbank und Log gibt nach Umfrage-Schluss keine Zuordnung her
+    (EIP-T-041, Akzeptanzkriterium 5).
+
+    Nicht als Zusicherung, sondern als Abzug: eine Umfrage vollstaendig
+    durchlaufen, schliessen, und dann alles auslesen, was ein Datenleck oder
+    eine Beschlagnahme in die Hand bekaeme - die SQLite-Datei als SQL-Abzug
+    *und* als rohe Bytes (ein DELETE gibt Seiten nur frei), das WAL daneben, und
+    den vollstaendigen Inhalt des Debug-Moduls. Darin wird nach genau dem
+    gesucht, was Person -> Stimme herstellen wuerde.
+
+    Der Test prueft Abwesenheit. Das ist so viel wert wie die Liste dessen,
+    wonach er sucht - deshalb steht jede Suche mit ihrer Begruendung hier und
+    nicht als stille Zeichenkette.
+    """
+    import sqlite3
+
+    from auth import STUB_PREFIX
+    from debug import TEILNAHME
+    from debug import log as debug_log
+    from poll_service import POLL_KEY, POLL_SECRET
+
+    pfad = Path(tempfile.mkdtemp()) / "abzug.sqlite3"
+    eigen = create_app(
+        store_path=pfad,
+        settings=Settings(admin_token="admin", batch_k=1, antwort_floor_s=0),
+    )
+    svc = eigen.state.deps.service
+    poll = "abzug"
+    admin = TestClient(eigen)
+    admin.post("/api/admin/login", json={"token": "admin"})
+    admin.post("/api/admin/create",
+               json={"poll_id": poll, "question": "Abziehbar?", "options": ["Ja", "Nein"]})
+
+    codes = ["testperson50", "testperson51", "testperson52"]
+    pseudonyme = [eigen.state.deps.authenticator.authenticate(c) for c in codes]
+    voter_keys = [svc.voter_key(p, poll) for p in pseudonyme]
+    geheim = svc.store.get_config(POLL_SECRET + poll) or ""
+    signierschluessel = svc.store.get_config(POLL_KEY + poll) or ""
+
+    for i, code in enumerate(codes):
+        client = TestClient(eigen)
+        client.post("/api/auth", json={"credential": code})
+        token = __import__("secrets").token_bytes(32)
+        blinded, inv = blind.blind(token, *svc.poll_params(poll))
+        resp = client.post(f"/api/token/{poll}", json={"blinded": blinded.hex()})
+        sig = blind.finalize(bytes.fromhex(resp.json()["blind_sig"]), inv, svc.poll_params(poll)[0])
+        anonym = TestClient(eigen)
+        anonym.post(f"/api/vote/{poll}",
+                    json={"token": token.hex(), "sig": sig.hex(),
+                          "choices": ["Ja" if i else "Nein"]})
+
+    admin.post(f"/api/admin/close/{poll}")
+
+    # -- Der Abzug ---------------------------------------------------------
+    zweite = sqlite3.connect(pfad)
+    sql_abzug = "\n".join(zweite.iterdump())
+    zweite.close()
+    roh = b"".join(
+        p.read_bytes() for p in (pfad, Path(str(pfad) + "-wal"), Path(str(pfad) + "-shm"))
+        if p.exists()
+    )
+    debug_abzug = "\n".join(
+        f"{e.ts} {e.level} {e.category} {e.message} {e.detail}" for e in debug_log.events("all")
+    ) + "\n" + "\n".join(
+        f"{z.stunde} {z.level} {z.category} {z.message} {z.detail} {z.anzahl}"
+        for z in debug_log.teilnahme()
+    )
+
+    # -- Identitaet: darf nirgends stehen ----------------------------------
+    check("Abzug: kein Pseudonym in der Datenbank",
+          STUB_PREFIX not in sql_abzug and STUB_PREFIX.encode() not in roh)
+    check("Abzug: kein Pseudonym im Debug-Modul", STUB_PREFIX not in debug_abzug)
+    check("Abzug: kein Zugangscode irgendwo im Abzug",
+          not any(c in sql_abzug or c.encode() in roh or c in debug_abzug for c in codes))
+
+    # -- Rueckrechenbarkeit: der Schluessel ist wirklich weg, nicht nur
+    #    aus der Tabelle geloescht (Store.vernichte_config, EIP-T-033 D) ----
+    check("Abzug: Umfrage-Schluessel nicht mehr in der Datei",
+          bool(geheim) and geheim not in sql_abzug and geheim.encode() not in roh)
+    check("Abzug: Signaturschluessel nicht mehr in der Datei",
+          bool(signierschluessel) and signierschluessel not in sql_abzug)
+
+    # -- Verkettung: Voter-Key und Stimme duerfen sich nicht beruehren -----
+    # Die Voter-Keys *stehen* im Abzug - der Eligibility-Ledger traegt sie, und
+    # ohne ihn gaebe es keine Abrechnung nach §9. Der Punkt ist, dass keine
+    # Zeile sie mit einem Board-Eintrag oder einem verbrauchten Token
+    # zusammenbringt.
+    leaf_hashes = [e.leaf_hash for e in svc.board(poll)]
+    spent = [r[0] for r in sqlite3.connect(pfad).execute(
+        "SELECT token_hex FROM spent WHERE poll_id = ?", (poll,)).fetchall()]
+    check("Abzug: Voter-Keys stehen im Ledger (sonst pruefte der Test nichts)",
+          all(k in sql_abzug for k in voter_keys))
+    gemeinsam = [
+        zeile for zeile in sql_abzug.splitlines()
+        if any(k in zeile for k in voter_keys)
+        and any(w in zeile for w in leaf_hashes + spent)
+    ]
+    check("Abzug: keine Zeile nennt Voter-Key und Stimme zusammen",
+          not gemeinsam, gemeinsam[0][:120] if gemeinsam else "")
+
+    # -- Zeit: kein Teilnahmevorgang mit Sekundenstempel -------------------
+    # Der eigentliche Fund von EIP-T-041. Vorher lagen Token-Ausgabe und
+    # Stimmabgabe sekundengenau untereinander im Debug-Modul; wer die Seite
+    # offen hatte, konnte beides ueber die Zeit zusammenbringen.
+    im_strom = [e for e in debug_log.events("all") if e.category in TEILNAHME]
+    check("Abzug: kein Teilnahmevorgang im Ereignisstrom",
+          not im_strom, im_strom[0].message[:80] if im_strom else "")
+    check("Abzug: Teilnahmezaehler nur stundengenau",
+          all(z.stunde.endswith(":00") for z in debug_log.teilnahme()))
+    check("Abzug: Teilnahmezaehler haben die Vorgaenge trotzdem erfasst",
+          sum(z.anzahl for z in debug_log.teilnahme()
+              if z.category == "phase-b" and z.detail.get("poll") == poll) == len(codes))
+
+    # -- Zeit in der Datenbank: nur der Batch, nicht der Eintrag ------------
+    check("Abzug: kein Zeitstempel je Board-Eintrag",
+          "published" in sql_abzug and all(
+              "pending_since" not in zeile for zeile in sql_abzug.splitlines()))
+
+
 def offenlegungsseiten() -> None:
     """Kodex, Verstossprotokoll und Transparenzbericht sind von aussen erreichbar.
 
@@ -1170,6 +1298,7 @@ def main() -> int:
     laufende_pruefung()
     batch_veroeffentlichung()
     sitzungstrennung()
+    datenabzug_nach_schluss()
     offenlegungsseiten()
     demo_schalter()
 

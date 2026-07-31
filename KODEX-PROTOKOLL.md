@@ -467,3 +467,48 @@ in diesem Log-Stream gar nicht, weil er nur stdout des Containers zeigt. Der Abs
 unverändert: § 1 bleibt `Disziplin`, die Fälligkeit an der Betriebsstufe `öffentlich erreichbar`
 bleibt gerissen, und die Schuldenzahl ändert sich nicht (11 von 20). V-002 ist geschlossen, § 1 ist
 es nicht.
+
+### V-003 — Vernichteter Umfrage-Schlüssel überlebte im WAL der Datenbank
+**Datum des Eintrags:** 2026-07-31 · **Paragraphen:** § 1, § 4, § 18 ·
+**Ticket:** EIP-T-041 · **Status:** behoben am 2026-07-31, mit reproduzierbarem Nachweis
+(`smoke_test.datenabzug_nach_schluss`)
+
+**Was geschah.** `Store.vernichte_config` überschreibt den Wert, löscht die Zeile und schreibt die
+Datei mit `VACUUM` neu. Der Docstring behauptete dazu, VACUUM räume das Write-Ahead-Log gleich mit
+ab. Das tut es nicht. Nach dem Schließen einer Umfrage stand der Umfrage-Schlüssel — der Schlüssel,
+mit dem sich die Teilnahmeliste auf Ausweis-Pseudonyme zurückrechnen lässt — vollständig in
+`<datenbank>-wal`, während die Datenbankdatei selbst sauber war.
+
+Damit war die Zusage aus Baustein D von EIP-T-033 für jeden nicht erfüllt, der die Dateien
+neben der Datenbank mitnimmt — also für jede Beschlagnahme, jedes Datenleck und jede Sicherung, die
+das Verzeichnis kopiert statt die Datenbank. Das WAL ist keine Sicherungskopie, sondern Teil der
+laufenden Datenbank; die im Text genannte Grenze „gilt für Sicherungskopien nicht" deckt es nicht ab.
+
+**Warum es ein Verstoß und nicht nur ein Fehler ist.** Die Vernichtung stand nicht nur im Code. Sie
+steht öffentlich:
+
+| Ort | Wortlaut |
+|---|---|
+| `/transparenz` | „Der Umfrage-Schlüssel, mit dem sich die Teilnahmeliste auf Ausweise zurückrechnen ließe, wird beim Schließen einer Umfrage vernichtet." |
+| Board-Seite jeder Umfrage | „Sobald die Umfrage endet, wird der *private* Teil dieses Schlüssels vernichtet." |
+
+Beide Sätze waren nicht haltbar, solange das WAL den Schlüssel trug. § 4 verlangt, dass keine
+Oberfläche mehr behauptet, als der Code hält; § 18 macht die Abweichung zum Eintrag hier.
+
+**Wie es dazu kam.** Die Löschung war sorgfältig gebaut — Überschreiben, Löschen, VACUUM — und der
+Docstring benannte sogar die Grenzen der Zusage (Snapshots, SSD-Blockverwaltung). Geprüft wurde nur
+nie der Abzug selbst: Ob nach dem Schließen tatsächlich nichts mehr dasteht, war eine Annahme über
+das Verhalten von VACUUM, kein Test. Genau diesen Test verlangt Akzeptanzkriterium 5 von EIP-T-041,
+und beim ersten Lauf ist er sofort fehlgeschlagen.
+
+**Behebung.** `PRAGMA wal_checkpoint(TRUNCATE)` nach dem VACUUM: Das WAL wird in die frisch
+geschriebene Datei zurückgeführt und auf Länge 0 gesetzt. Nachgewiesen wird das nicht mehr durch
+eine Zusage, sondern durch `smoke_test.datenabzug_nach_schluss` — der Test zieht nach dem Schließen
+den SQL-Abzug, die rohen Bytes von Datenbank, `-wal` und `-shm` sowie den vollständigen Inhalt des
+Debug-Moduls und sucht darin nach Pseudonym, Zugangscode und beiden Schlüsseln.
+
+**Was das nicht bedeutet.** Ein `truncate` gibt Blöcke frei, es löscht sie nicht physisch.
+Sicherungskopien, Dateisystem-Snapshots und die Blockverwaltung einer SSD bleiben außerhalb dessen,
+was ein Programm überschreiben kann — das steht unverändert im Docstring und ist keine Formalie: Die
+Backup-Regel dazu ist offen und gehört zu EIP-T-041 (Akzeptanzkriterium 3). Bis sie steht, ist die
+öffentliche Zusage für *diese eine Datei samt WAL* eingelöst und für alles daneben nicht.

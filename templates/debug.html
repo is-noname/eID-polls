@@ -35,6 +35,37 @@
   </div></div>
 {% endif %}
 
+<h2>Teilnahmevorgänge (stundenweise gezählt)</h2>
+<p class="sub">
+  Ausweis-Anmeldung, Token-Ausgabe und Stimmabgabe stehen hier als Zahl je Stunde, nicht als
+  Ereignis mit Uhrzeit. Ein Strom mit Sekundenstempel würde „Token ausgegeben“ und „Stimme
+  abgegeben“ nebeneinanderstellen und wäre damit die Zuordnung Berechtigung → Stimme, die das
+  Verfahren verhindern soll. <strong>Grenze:</strong> Wer in seiner Stunde allein teilnimmt, bleibt
+  über die Stunde zuzuordnen — dieselbe Grenze wie bei der Anonymitätsmenge eines Batches.
+</p>
+
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>Stunde</th><th>Level</th><th>Kategorie</th><th>Meldung</th><th>Detail</th><th>Anzahl</th></tr></thead>
+    <tbody>
+      {% for z in teilnahme %}
+        <tr>
+          <td class="mono faint">{{ z.stunde }}</td>
+          <td>
+            <span class="tag {{ {'reject': 'warn', 'info': 'info'}[z.level] }}">{{ z.level }}</span>
+          </td>
+          <td class="mono">{{ z.category }}</td>
+          <td>{{ z.message }}</td>
+          <td class="mono faint">{% for k, v in z.detail.items() %}{{ k }}={{ v }} {% endfor %}</td>
+          <td class="mono">{{ z.anzahl }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="muted">Noch keine Teilnahmevorgänge.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
 <h2>Ereignisse</h2>
 <p>
   {% for lvl in ['all', 'inconsistency', 'error', 'reject', 'info'] %}
