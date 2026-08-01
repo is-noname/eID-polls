@@ -50,7 +50,7 @@ with sync_playwright() as p:
     page.wait_for_load_state("networkidle")
     page.fill("#poll-id", POLL)
     page.fill("#question", "Funktioniert der Durchlauf?")
-    page.fill("#options", "Ja\nNein\nTeilweise")
+    page.fill("#options", "Ja\nNein\nEnthaltung")
     page.click("#create-button")
     page.wait_for_timeout(1500)
 

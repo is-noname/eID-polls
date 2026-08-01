@@ -15,6 +15,64 @@
 
 ## Änderungsprotokoll
 
+### Version 21 — 2026-08-01
+
+**Die erste der drei Zusagen aus der Zwischenregel des § 12 ist erzwungen statt versprochen**
+(EIP-T-085). Die Umfrageanlage weist eine Antwortliste ab, in der
+keine Option genau `Enthaltung`, `Weiß nicht` oder `Weiss nicht` heißt. Die Fehlermeldung nennt den
+Paragraphen, nicht nur die Forderung, und die Abweisung steht im Debug-Modul — eine Regel, die im
+Betrieb unsichtbar greift, ist von einer nicht vorhandenen Regel nicht zu unterscheiden.
+
+**Warum feste Texte und keine Kennzeichnung.** Ein Vergleich darauf, ob das Wort „Enthaltung"
+irgendwo *vorkommt*, wäre mit jeder Umbenennung ausgehebelt („Weiß nicht so recht"). Eine
+Kennzeichnung einzelner Optionen im Datenmodell wäre von außen nicht prüfbar: Der `POLL_OPEN`-Eintrag
+des Boards trägt nur die Optionstexte. Der feste Text ist damit die einzige Form, die ein Dritter am
+Board nachrechnen kann, ohne uns zu glauben (§ 7). Die Liste bleibt bei dem, was § 12 wörtlich nennt
+— „Keine Angabe" oder „Unentschieden" aufzunehmen wäre eine Weitung der Regel, und eine geweitete
+Regel gehört in den Kodex, nicht in eine Konstante im Code.
+
+**Was sich an der Zahl nicht ändert.** § 12 bleibt belastet, die Schuldenzahl bleibt bei 13: Die
+beiden anderen Zusagen der Zwischenregel — neutrale Formulierung, Veröffentlichung abgelehnter
+Vorschläge — sind nicht erzwingbar bzw. brauchen einen Eingangsweg für Vorschläge, den es nicht gibt.
+Sie wandern zu EIP-T-022, wo sie hingehören. Ein Paragraph, der zu
+einem Drittel eingelöst ist, ist nicht eingelöst.
+
+### Version 20 — 2026-08-01
+
+**Der erste vollständige Durchgang durch die bindenden Sätze findet in vier von ihnen einen Bruch.
+Die Schuldenzahl springt von 10 auf 13, ohne dass sich am Zustand des Projekts irgendetwas geändert
+hätte** (EIP-AUD-20260801-004,
+EIP-T-084).
+
+**Woher der Durchgang kam.** Aus V-004 Punkt 3: Ein Satz auf `bindend` steht in keiner Prüfung und
+gilt deshalb als eingelöst, weil ihn nie jemand als offen markiert hat. Die Frage an jeden
+Paragraphen lautete: *Woran sähe jemand von außen, dass dieser Satz eingelöst ist — und ist er es?*
+
+**Was gefunden wurde.**
+
+- **§ 3** — die Blindsignatur ist in ihren Kernschritten selbst geschrieben. Der Paragraph verbietet
+  genau das und nimmt die Ausrede vorweg („nur für den Prototyp"). Der Code sagt es im eigenen
+  Docstring, der Kodex sagte nichts (V-005).
+- **§ 7, § 8, § 11** — die Ergebnisdarstellung kennt weder Nenner noch Schwelle noch
+  Zugangsvoraussetzung. Von den sechs Größen, die vor dem Start feststehen müssen, kennt die App
+  zwei (V-006).
+- **§ 12** — die Zwischenregel („immer mit Enthaltungsoption") ist nirgends erzwungen und war nicht
+  als Disziplin gekennzeichnet. Kein Verstoß, weil außerhalb von Vorführungen noch keine Frage
+  gestellt wurde → EIP-T-085.
+
+**Was das über die Zahl sagt.** 10 war kein Maß für den Rückstand, sondern für die Aufmerksamkeit.
+Drei der vier Brüche bestehen seit dem ersten Tag des öffentlichen Betriebs. Kein einziger der neuen
+Vermerke beschreibt eine Verschlechterung — sie beschreiben, was schon da war.
+
+**Was daraus nicht folgt.** Dass der Kodex zu streng sei. Drei der vier Sätze haben ein offenes
+Ticket, das älter ist als der Verstoß, den sie decken sollten.
+Was fehlte, war die Verbindung zwischen Ticket und Paragraph — und die stellt kein Text her, sondern
+ein Verfahren.
+
+**Was offen bleibt.** Wie bindende Sätze künftig geprüft werden: ein Feld je Paragraph („woran sähe
+man es?"), ein wiederkehrender Durchgang, oder beides. Die Wahl ist eine Kodex-Änderung nach § 17 und
+gehört dem Betreiber; die Optionen samt Kosten stehen im Durchgang.
+
 ### Version 19 — 2026-08-01
 
 **§ 20 bekommt seine Lizenz: AGPL-3.0-or-later. V-004 ist behoben, und die Schuldenzahl sinkt zum
@@ -960,3 +1018,92 @@ Eintrags: Eine Lizenz zu schreiben schließt eine Lücke, das Verfahren, das sie
 sehen konnte, bleibt unverändert. Solange nur `offen`- und `Disziplin`-Vermerke geprüft werden, ist
 jeder Satz auf `bindend` ein blinder Fleck → EIP-T-084. Der
 nächste Fund dieser Art wird wieder ein Zufallsfund sein.
+
+### V-005 — Selbst geschriebene Blindsignatur-Primitive, entgegen § 3
+**Datum des Eintrags:** 2026-08-01 · **Paragraphen:** § 3, § 4, § 18 ·
+**Ticket:** EIP-T-008 · **Status:** offen. Die Behebung
+hängt an einer geprüften Bibliothek, die es für Python nicht gibt — der Verstoß liegt nicht darin,
+sondern im fehlenden Vermerk
+
+**Was geschah.** § 3 lautet: *„Wir implementieren keine eID-Kryptografie und keine Wahlprimitive
+selbst."* Konkret verboten sind *„eigene RSA-Blindsignatur-Routinen"*, und der Paragraph nimmt die
+naheliegende Ausrede vorweg: *„»Nur für den Prototyp« gilt als Begründung nicht, weil Prototypcode
+weiterlebt."* Status: `bindend`, ohne Vorbehalt.
+
+`app/blind.py` und `app/static/blind.js` implementieren EMSA-PSS-ENCODE, MGF1, die modulare
+Arithmetik des Blindings und die rohe RSA-Signaturoperation selbst. Zugekauft aus `cryptography`
+sind SHA-384 und die PSS-Verifikation. Der Code läuft seit dem 2026-07-27 auf der öffentlichen
+Instanz.
+
+**Wie es dazu kam.** Nicht durch Verschweigen: Der Docstring von `blind.py` nennt es
+„DOKUMENTIERTE ABWEICHUNG", benennt Zeile für Zeile, was selbst geschrieben ist, und
+EIP-T-008 hält den Grund fest — die PyPI-Suche vom
+2026-08-01 fand für elf Paketnamen keine RFC-9474-Umsetzung. Der Testvektor aus RFC 9474 A.4 läuft
+in `smoke_test.py` und `blind_vektor.mjs` und ist der stärkste Korrektheitsnachweis ohne Audit.
+
+Gefehlt hat allein die Verbindung zum Kodex. § 3 trug keinen Vermerk, stand in keiner
+Schuldenübersicht und war deshalb in `check_kodex.py` unsichtbar — derselbe Mechanismus wie bei
+V-004. Das Ticket lief unter Priorität `low`.
+
+**Was daraus folgt.**
+
+1. § 3 bekommt einen `Disziplin`-Vermerk mit Ticket und Ereignis (Betriebsstufe `produktiv`). Die
+   Schuldenzahl steigt dadurch, ohne dass sich am Code etwas ändert — die Zahl war vorher falsch,
+   nicht der Zustand besser.
+2. EIP-T-008 wird auf `high` gehoben. Ein Kodex-Verstoß ist keine Aufgabe niedriger Priorität, auch
+   wenn seine Behebung von außen abhängt.
+3. Nach außen ist ab sofort zu sagen: Die Blindsignatur folgt RFC 9474 und ist gegen dessen
+   Testvektoren geprüft, **aber nicht auditiert und in ihren Kernschritten selbst geschrieben**. Der
+   Testvektor belegt Korrektheit, nicht Seitenkanalfreiheit.
+4. Für einen echten Durchlauf ist das ein Blocker, kein Rückstand: § 3 begründet sich mit
+   Seitenkanälen und Implementierungsfehlern, und beide treffen genau die Operation, an der das
+   Wahlgeheimnis hängt.
+
+### V-006 — Ergebnisdarstellung ohne Nenner, Schwelle und Zugangshinweis
+**Datum des Eintrags:** 2026-08-01 · **Paragraphen:** § 7, § 8, § 11, § 18 ·
+**Ticket:** EIP-T-025 · **Status:** offen
+
+**Was geschah.** Drei bindende Sätze hängen an derselben Lücke im Datenmodell:
+
+- § 7 verlangt, dass vor dem Start jeder Umfrage *„Frage, Antwortoptionen, Laufzeit, gewählter
+  Nenner, Veröffentlichungsschwelle und Auswertungsplan"* öffentlich feststehen.
+- § 8 verlangt, dass *„Beteiligungsquote und benannter Nenner gleichrangig mit jedem Ergebnis"*
+  veröffentlicht werden, und dass unterhalb der Schwelle **kein** Ergebnis erscheint.
+- § 11 verlangt den Hinweis auf die eID-Verfügbarkeit als Zugangsvoraussetzung *„bei jedem
+  Ergebnis, nicht nur im Manifest"*.
+
+`PollService.create_poll(poll_id, question, options)` kennt drei Größen. Laufzeit, Nenner, Schwelle
+und Auswertungsplan existieren im App-Code nicht — die Begriffe kommen dort nirgends vor. Die
+Board-Seite zeigt unter der Überschrift *Ergebnis* Balken mit absoluter Zahl und Prozentwert; dessen
+Bezugsgröße ist die Zahl der Abstimmenden. Eine Beteiligungsquote gibt es nicht. Eine Schwelle, die
+nicht existiert, kann nicht verfehlt werden — § 8 Satz 2 läuft leer. Ein Zugangshinweis steht am
+Ergebnis nicht.
+
+Betroffen ist der Zeitraum seit dem Deploy der öffentlichen Instanz am 2026-07-27.
+
+**Wie es dazu kam.** Dieselbe Ursache wie bei V-004 und V-005: Alle drei Paragraphen standen auf
+`bindend` ohne Vermerk und kamen in keiner Prüfung vor. Der Nenner selbst ist seit dem 2026-07-26
+durchdacht und in EIP-T-025 mit Begründung entschieden
+(Nenner 1, Ausweisinhaber aus dem Melderegister — als einziger registerexakt). Das Ticket lag offen,
+der Kodex sagte trotzdem, die Sache sei bindend geregelt.
+
+**Was ausdrücklich nicht der Befund ist.** Prozentwerte stehen nie ohne absolute Zahl, die
+Bezugsgröße wird benannt, und eine nachträgliche Änderung von Frage oder Optionen ist mangels
+Bearbeitungspfad nicht möglich — § 7 Satz 2 ist technisch erzwungen. Der Verstoß liegt im Fehlen der
+Größe, die dieses Projekt von jeder anderen Onlineumfrage unterscheidet, nicht in einer Verzerrung
+der vorhandenen.
+
+**Mildernd, aber nicht entlastend.** Auf jeder Seite der öffentlichen Instanz steht „Öffentliche
+Demo — keine echte Abstimmung", und die Zahlen stammen aus Demo-Umfragen ohne Identitätsprüfung. Das
+nimmt der Darstellung ihre Außenwirkung. Es macht sie nicht zu einer, die § 8 genügt — und § 18
+Frage 2 ist eindeutig: Was auf der öffentlichen Instanz stand, war wirksam.
+
+**Was daraus folgt.**
+
+1. § 7, § 8 und § 11 bekommen Vermerke mit Ticket und Ereignis. Fällig sind sie vor Betriebsstufe
+   `produktiv`, also vor dem ersten Ergebnis, das jemand ernst nehmen soll.
+2. Der Ergebnisblock der Board-Seite sagt bis dahin selbst, was ihm fehlt. Ein „Ergebnis" ohne
+   Nenner, das sich nicht als solches zu erkennen gibt, ist genau die Zahl, gegen die dieses Projekt
+   angetreten ist (§ 8 Warum) — auch in einer Demo.
+3. Der Auswertungsplan aus § 7 ist bisher nirgends bedacht worden, auch nicht in EIP-T-025. Er
+   gehört dort ergänzt.

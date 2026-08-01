@@ -208,6 +208,24 @@
     Anteil der {{ voters }} Abstimmenden. Da mehrere Antworten möglich sind, kann die Summe über
     100 % liegen.
   </p>
+  {# KODEX §8/§11, Verstoss V-006: Der Prozentwert oben bezieht das Ergebnis auf
+     sich selbst. Beteiligungsquote, benannter Nenner und Veroeffentlichungs-
+     schwelle gibt es im Datenmodell nicht (EIP-T-025). Solange das so ist,
+     sagt die Seite es hier - eine Zahl ohne Nenner ist nach dem "Warum" von §8
+     genau die Sorte Zahl, gegen die dieses Projekt angetreten ist. #}
+  <div class="banner warn" style="margin-top:12px">
+    Diesem Ergebnis fehlt sein Nenner
+    <small>
+      Der Prozentwert bezieht sich auf die {{ voters }} Abstimmenden — also auf sich selbst. Was
+      dieses Verfahren von einer gewöhnlichen Onlineumfrage unterscheiden soll, ist die
+      <strong>Beteiligungsquote</strong>: wie viele der Berechtigten das sind. Diese Zahl gibt es
+      hier noch nicht, ebenso wenig eine vorab festgelegte Schwelle, unterhalb derer gar kein
+      Ergebnis erschiene. Hinzu kommt die Zugangshürde selbst — mit dem Online-Ausweis abstimmen
+      kann nur, wer eine nutzbare eID hat, und wer teilnimmt, unterscheidet sich systematisch von
+      wer nicht teilnimmt. Bis beides steht, ist diese Darstellung eine Vorführung des Verfahrens,
+      keine Aussage über irgendeine Gruppe von Menschen.
+    </small>
+  </div>
 {% else %}
   <div class="card"><div class="card-body muted">{{ result_error }}</div></div>
 {% endif %}

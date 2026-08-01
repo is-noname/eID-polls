@@ -654,6 +654,41 @@ async def api_token(request: Request, poll_id: str, payload: dict) -> JSONRespon
     return JSONResponse({"blind_sig": blind_sig.hex()})
 
 
+@router.post("/api/melde/signatur/{poll_id}")
+async def api_melde_signatur(request: Request, poll_id: str) -> JSONResponse:
+    """Der Client meldet, dass die entblindete Signatur nicht aufgeht (EIP-T-080).
+
+    Der Fehler faellt dort auf, wo er nicht behoben werden kann: Die Pruefung
+    nach RFC 9474 §4.4 laeuft im Browser, die Ursache liegt beim Server
+    (falscher Umfrage-Schluessel, verrechnet, unterwegs verstuemmelt). Ohne
+    diese Route wuesste der Betreiber davon nichts - und genau die
+    Verwechslung, die das Ticket beschreibt, bliebe im Debug-Modul stehen:
+    ein Serverfehler, der wie eine abgewiesene Stimme aussieht.
+
+    Bewusst ohne Nutzlast. Es gibt nur eine Sache zu melden; ein Freitextfeld
+    waere ein Kanal in das Log des Betreibers und kein Befund (§1). Die
+    Anmeldung wird verlangt, damit die Meldung nicht von aussen erzeugbar ist -
+    sie tritt ohnehin nur zwischen Phase A und der Ausgabe des Tokens auf.
+    Protokolliert wird das Pseudonym dabei nicht.
+
+    Kategorie ``signatur`` und nicht ``phase-a``: Gemeldet wird ein Defekt der
+    Signaturausgabe, kein Teilnahmevorgang. Die Unterscheidung ist die aus
+    EIP-T-041 - Teilnahmehandlungen werden je Stunde gezaehlt, damit ihre
+    Reihenfolge nicht zur Verkettung wird; ein Defekt muss dagegen sofort und
+    genau auffindbar sein. Denselben Weg geht die Unverkettbarkeits-Meldung in
+    api_vote, die unter ``unverkettbarkeit`` statt unter ``phase-b`` steht.
+    """
+    if current_pseudonym(request) is None:
+        raise Rejected("Nicht authentifiziert - diese Meldung entsteht nur in Phase A.")
+    log_berechtigung.error(
+        "signatur",
+        "Client meldet: entblindete Signatur haelt der Pruefung nicht stand "
+        "(RFC 9474 §4.4). Serverfehler, keine abgewiesene Stimme.",
+        poll=poll_id,
+    )
+    return JSONResponse({"ok": True})
+
+
 @router.post("/api/vote/{poll_id}")
 async def api_vote(request: Request, poll_id: str, payload: dict) -> JSONResponse:
     # Phase B kommt ohne Identitaet aus - das Token ist die ganze Berechtigung.

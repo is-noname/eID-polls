@@ -187,12 +187,86 @@ export async function blindToken(token, nHex, eHex) {
   throw new Error("Kein brauchbarer Blinding-Faktor gefunden.");
 }
 
-/** Entblindet die Serversignatur. Ergebnis ist eine gewoehnliche RSASSA-PSS-Signatur. */
+/** Entblindet die Serversignatur. Ergebnis ist eine gewoehnliche RSASSA-PSS-Signatur.
+ *
+ * Rohe Arithmetik, ohne Pruefung - der vollstaendige Finalize-Schritt des RFC
+ * steht in finalizeGeprueft. Getrennt bleibt beides, weil blind_vektor.mjs den
+ * Rechenweg gegen RFC 9474 A.4 haelt und der Vektor keinen Schluessel im
+ * WebCrypto-Format mitbringt.
+ */
 export function finalizeSignature(blindSigHex, invHex, nHex) {
   const n = BigInt(`0x${nHex}`);
   const k = Math.ceil(bitLength(n) / 8);
   const s = (os2ip(hexToBytes(blindSigHex)) * BigInt(`0x${invHex}`)) % n;
   return bytesToHex(i2osp(s, k));
+}
+
+function base64url(bytes) {
+  let s = "";
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// JWK nimmt die Zahl ohne fuehrende Nullbytes; hexToBytes liefert sie, wenn der
+// Modulus im Hex mit "00" beginnt.
+function ohneFuehrendeNullen(bytes) {
+  let i = 0;
+  while (i < bytes.length - 1 && bytes[i] === 0) i += 1;
+  return bytes.slice(i);
+}
+
+/** Prueft eine RSASSA-PSS-Signatur (Salt-Laenge 0) mit WebCrypto.
+ *
+ * Bewusst nicht selbst gerechnet: Der Rest dieser Datei ist handgeschriebene
+ * Krypto, und eine handgeschriebene Pruefung davon wuerde denselben Denkfehler
+ * zweimal machen und sich bestaetigen. Die Verifikation ist der eine Schritt,
+ * fuer den der Browser eine gepruefte Implementierung mitbringt - RSA-PSS mit
+ * saltLength 0 (KODEX §3).
+ */
+export async function verifySignature(sigHex, msg, nHex, eHex) {
+  const jwk = {
+    kty: "RSA",
+    n: base64url(ohneFuehrendeNullen(hexToBytes(nHex))),
+    e: base64url(ohneFuehrendeNullen(hexToBytes(eHex))),
+    alg: "PS384",
+    ext: true,
+  };
+  const key = await crypto.subtle.importKey(
+    "jwk", jwk, { name: "RSA-PSS", hash: HASH }, false, ["verify"],
+  );
+  return crypto.subtle.verify({ name: "RSA-PSS", saltLength: SALT_LEN }, key, hexToBytes(sigHex), msg);
+}
+
+/** Eine Serverantwort, die keine gueltige Signatur ergibt.
+ *
+ * Eigener Typ, weil der Unterschied nach aussen sichtbar bleiben muss: Das ist
+ * ein Fehler des Servers, keine abgewiesene Stimme. Wer beides gleich meldet,
+ * laesst Teilnehmende einen Rechenfehler fuer eine Ablehnung halten - und im
+ * Debug-Modul steht dasselbe verkehrt herum (EIP-T-080).
+ */
+export class ServersignaturUngueltig extends Error {
+  constructor() {
+    super(
+      "Der Server hat eine Signatur geliefert, die nicht zu dieser Umfrage passt. "
+      + "Das ist ein Serverfehler, keine abgelehnte Stimme - die Berechtigung bleibt erhalten.",
+    );
+    this.name = "ServersignaturUngueltig";
+    this.serverfehler = true;
+  }
+}
+
+/** Finalize nach RFC 9474 §4.4: entblinden, pruefen, erst dann herausgeben.
+ *
+ * Schritt 5 des RFC ruft RSASSA-PSS-VERIFY auf und Schritt 6 gibt bei einem
+ * ungueltigen Ergebnis einen Fehler aus statt der Signatur. Bis 2026-08-01
+ * reichte diese Datei das Ergebnis ungeprueft weiter; auffallen konnte eine
+ * unbrauchbare Serverantwort dann erst bei der Stimmabgabe, und dort sah sie
+ * aus wie ein abgelehnter Stimmzettel (EIP-T-080).
+ */
+export async function finalizeGeprueft(blindSigHex, invHex, nHex, eHex, msg) {
+  const sigHex = finalizeSignature(blindSigHex, invHex, nHex);
+  if (!(await verifySignature(sigHex, msg, nHex, eHex))) throw new ServersignaturUngueltig();
+  return sigHex;
 }
 
 // emsaPssEncode wird im Browser nicht gebraucht - blind_vektor.mjs prueft damit

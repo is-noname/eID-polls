@@ -174,7 +174,7 @@ denkt (`config.py`):
 | `EIDPOLL_ACCESS_CODES_FILE` | leer | Codes stattdessen aus einer Datei, eine Zeile je Code |
 | `EIDPOLL_DEMOS` | an, außer bei `PUBLIC` | Angriffsdemos (`demo.py`) einhängen: Board umschreiben, Stimme einschleusen, Testzugang zurücksetzen |
 | `EIDPOLL_SEED_DEMO` | an, wenn `PUBLIC` | Demo-Umfrage beim Start anlegen |
-| `EIDPOLL_SEED_POLL_ID` / `_QUESTION` / `_OPTIONS` | `demo` / eID-Frage / `Ja,Nein,Unentschieden` | Inhalt der Demo-Umfrage |
+| `EIDPOLL_SEED_POLL_ID` / `_QUESTION` / `_OPTIONS` | `demo` / eID-Frage / `Ja,Nein,Enthaltung` | Inhalt der Demo-Umfrage |
 | `EIDPOLL_ANKER` | an | Externe Zeitstempel auf jede Batch-Wurzel (RFC 3161 + OpenTimestamps). `0` schaltet ab — die Board-Seite sagt dann sichtbar, dass keine Wurzel von außen datiert ist |
 | `EIDPOLL_ANKER_FRIST_H` | 1 | Ab wann ein Batch ohne Beleg ein Befund im Debug-Modul ist |
 | `EIDPOLL_ANKER_UPGRADE_H` | 24 | Ab wann ein OpenTimestamps-Beleg, der noch auf die Bitcoin-Attestierung wartet, ein Befund ist |

@@ -102,7 +102,11 @@ voteButton.addEventListener("click", async () => {
     toast("Stimme abgegeben.", "ok");
     stepVote.classList.add("done");
   } catch (err) {
-    toast(err.message, "err");
+    // Ein Serverfehler ist keine abgelehnte Stimme und darf auch nicht so
+    // aussehen (EIP-T-080). Laenger stehen bleibt die Meldung, weil sie im
+    // Gegensatz zu "Token verbraucht" nichts erklaert, was die abstimmende
+    // Person selbst getan hat.
+    toast(err.message, "err", err.serverfehler ? 12000 : 4500);
   } finally {
     voteButton.disabled = false; // zweiter Versuch muss moeglich sein und abgewiesen werden
   }

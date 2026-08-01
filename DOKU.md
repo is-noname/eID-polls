@@ -99,9 +99,18 @@ Beenden über den Knopf **oben rechts** in der App — er stoppt den Server, nic
 
 - **Umfrage-ID** — kurz, nur Buchstaben/Ziffern/`-`/`_`; steht später in jeder Board-Zeile
 - **Frage** — eine Frage pro Umfrage
-- **Optionen** — eine pro Zeile, mindestens zwei, fest vorgegeben; kein Freitext (§8)
+- **Optionen** — eine pro Zeile, mindestens zwei, fest vorgegeben; kein Freitext (§8). Eine Zeile
+  muss genau `Enthaltung`, `Weiß nicht` oder `Weiss nicht` lauten (Groß-/Kleinschreibung egal)
 
 Freitext ist ausgeschlossen, weil er die maschinelle Auszählung bricht und deanonymisieren kann.
+
+Die Enthaltungspflicht kommt aus § 12 des Kodex: Eine Antwortliste ohne Enthaltung zwingt zu einer
+Meinung, und die Verschiebung, die daraus entsteht, kann am Board niemand nachrechnen. Geprüft wird
+auf **genau** diese Texte, nicht darauf, ob das Wort irgendwo vorkommt — sonst hätte jede
+Umbenennung („Weiß nicht so recht") die Regel ausgehebelt. Der feste Text ist zugleich die einzige
+Form, die ein Dritter am veröffentlichten `POLL_OPEN`-Eintrag selbst nachprüfen kann; eine
+Kennzeichnung im Datenmodell stünde dort nicht. Was § 12 sonst noch zusagt — neutrale Formulierung,
+Veröffentlichung abgelehnter Fragevorschläge — ist nicht erzwungen und auch nicht erzwingbar.
 
 ### Als Teilnehmer: abstimmen
 
@@ -458,7 +467,7 @@ static/ballot.js (+ blind.js)            web.py          HTTP, Cookies
 | `auth.py` | `authenticate() -> pseudonym`. `CodeAuthenticator` aktiv (Zugangscode statt geprüftem Ausweis); `SamlEidAuthenticator` ist die Hülle für den echten eID-Flow. |
 | `blind.py` | Blindsignatur, Serverseite (RFC 9474, `RSABSSA-SHA384-PSSZERO-Deterministic`, 3072 Bit). `testvektor()` rechnet Anhang A.4 des RFC nach. |
 | `rfc9474_a4.json` | Der Testvektor aus RFC 9474 Anhang A.4, wörtlich übernommen. Python und JavaScript prüfen gegen dieselbe Datei — zwei getrennte Kopien könnten getrennt falsch werden. |
-| `static/blind.js` | Dieselbe Krypto im Browser. Beide Seiten müssen bitgenau gleich rechnen. |
+| `static/blind.js` | Dieselbe Krypto im Browser. Beide Seiten müssen bitgenau gleich rechnen. `finalizeGeprueft()` verifiziert die entblindete Signatur vor der Weitergabe (RFC 9474 §4.4) — mit WebCrypto, nicht mit der eigenen PSS-Implementierung. |
 | `static/ballot.js` | Der Weg einer Stimme im Browser: Token erzeugen, verblinden, signieren lassen, entblinden, abgeben — plus der Zwischenstand, wenn die Abgabe danach abbricht (EIP-ADR-20260725-002). `blind.js` rechnet, `ballot.js` führt. `templates/poll.html` enthält nur noch die DOM-Verdrahtung. |
 | `static/beleg.js` | Der Beleg: Kassenbon, QR-Code, Textdatei. Reine Darstellung — kein Krypto, kein Netz, kein Speicher. |
 | `store.py` | SQLite der **Board-Seite**: `polls`, `spent`, `board`, `batches`, `anker` — ohne Eingangsreihenfolge (`WITHOUT ROWID`, EIP-T-033 E). Puffert Einträge und veröffentlicht sie als Batch. Enthält auch die gemeinsame Basis beider Speicher (`SqliteStore`: config, `vernichte_config`, `kopiere_ohne_geheimnisse`). Alle Zugriffe — auch lesende — laufen über ein `RLock`, weil sich alle Threads eine Verbindung teilen (EIP-T-019). |
@@ -630,14 +639,24 @@ ES-Modul ausliefert und jede Client-Datei einzeln hashbar hält (§ 20, EIP-T-00
 Architekturentscheidung und keine Abhängigkeitspflege → EIP-T-079. Für Python gibt es weiterhin
 nichts.
 
-**Der Browser prüft die entblindete Signatur nicht selbst.** RFC 9474 §4.4 Schritt 5 sieht vor,
-dass der Client sein Ergebnis vor der Weitergabe verifiziert; `static/blind.js` reicht es
-ungeprüft an `ballot.js` weiter, die Prüfung passiert erst serverseitig bei der Stimmabgabe.
-Sicherheitslücke ist das nicht — der Server nimmt eine ungültige Signatur ohnehin nicht an, und der
-§7.3-Angriff, gegen den die Prüfung mit schützt, greift hier nicht (siehe unten). Es kostet
-Diagnosefähigkeit: eine kaputte Serverantwort sieht für Teilnehmende aus wie ein abgewiesener
-Stimmzettel. `blind.py:finalize()` kann seit EIP-T-008 auf Wunsch prüfen, die Browser-Seite
-noch nicht → EIP-T-080.
+**Der Browser prüft die entblindete Signatur selbst** (seit 2026-08-01, EIP-T-080). RFC 9474 §4.4
+Schritt 5 verlangt, dass der Client sein Ergebnis vor der Weitergabe verifiziert und bei einem
+ungültigen einen Fehler ausgibt statt der Signatur. `static/blind.js:finalizeGeprueft()` tut das
+mit **WebCrypto** und nicht mit eigener PSS-Verifikation — der Rest der Datei ist handgeschriebene
+Krypto, und eine handgeschriebene Prüfung davon würde denselben Denkfehler zweimal machen und sich
+bestätigen.
+
+Sicherheitslücke war das Fehlen nicht: Der Server nimmt eine ungültige Signatur ohnehin nicht an,
+und der §7.3-Angriff, gegen den die Prüfung mit schützt, greift hier nicht (siehe unten). Es kostete
+Diagnosefähigkeit — eine kaputte Serverantwort (falscher Umfrage-Schlüssel, verrechnet, unterwegs
+verstümmelt) sah für Teilnehmende aus wie ein abgewiesener Stimmzettel und stand im Debug-Modul als
+abgewiesene Stimme statt als Serverfehler. Jetzt endet der Weg in Phase A, mit eigener Meldung, und
+der Client sagt es dem Betreiber (`POST /api/melde/signatur/{poll}` → `error` im Debug-Modul,
+Kategorie `signatur`). Die Berechtigung bleibt dabei wiederholbar: Der Zustand aus EIP-T-070 steht
+noch, dieselbe verblindete Anfrage lässt sich unverändert erneut stellen.
+
+Was die Meldung überträgt, ist die Tatsache und die Umfrage — kein Token, keine verblindete Form,
+kein Freitext. Ein Freitextfeld wäre ein Kanal in das Log des Betreibers und kein Befund (Kodex §1).
 
 **Warum PSSZERO-Deterministic vertretbar ist.** RFC 9474 §5 empfiehlt die *Randomized*-Varianten
 und knüpft die deterministische an eine Bedingung, die §7.3 nennt: Ein Signierender mit bösartig

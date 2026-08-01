@@ -11,7 +11,7 @@
 > Historie: [Kodex-Protokoll](/kodex/protokoll) · Begriffe: Glossar (projektintern) ·
 > These: EIP-RFC-20260726-001
 
-**Version 19 — 2026-08-01**
+**Version 21 — 2026-08-01**
 
 ---
 
@@ -229,7 +229,17 @@ klassischste Fehler in genau diesem Feld.
 Selbstgebaute Zufallsquellen. „Nur für den Prototyp" gilt als Begründung nicht, weil Prototypcode
 weiterlebt.
 
-**Status.** `bindend`.
+**Status.** `bindend` — und **gerissen** (V-005, seit dem 2026-08-01 bekannt, im Betrieb seit
+2026-07-27). Die Blindsignatur ist in ihren Kernschritten selbst geschrieben: EMSA-PSS-ENCODE, MGF1,
+die Blinding-Arithmetik und die rohe RSA-Operation in `app/blind.py` und `static/blind.js`.
+Zugekauft und geprüft sind SHA-384 und die PSS-Verifikation aus `cryptography`. Der Grund ist echt —
+für Python existiert keine geprüfte RFC-9474-Umsetzung — und ändert am Status nichts: Bis eine
+Bibliothek eintauschbar ist, gilt hier `Disziplin`, gedeckt durch die Testvektoren aus RFC 9474 A.4,
+die Korrektheit belegen und Seitenkanalfreiheit nicht →
+EIP-T-008, fällig vor Betriebsstufe `produktiv`.
+
+Dass dieser Paragraph bis zum 2026-08-01 ohne Vermerk dastand, während der Code seine Abweichung im
+eigenen Docstring benannte, ist der Befund — nicht die Abweichung selbst.
 
 ### § 4 Selbstbindung statt Versprechen
 
@@ -337,7 +347,13 @@ Maßstabs. Präregistrierung ist der einzige Schutz dagegen, der ohne Vertrauen 
 knapp verfehlt wurde. Verlängerung einer laufenden Umfrage wegen des Zwischenstands. Nachträglich
 hinzugefügte Untergruppen-Auswertungen, die vorher nicht geplant waren.
 
-**Status.** `bindend`.
+**Status.** `bindend`, und der zweite Satz ist technisch erzwungen: Es gibt keinen Weg, Frage oder
+Optionen einer laufenden Umfrage zu ändern. Der **erste** ist `offen` — von den sechs Größen, die
+vor dem Start feststehen müssen, kennt die App nur zwei (Frage, Antwortoptionen). Laufzeit, Nenner,
+Veröffentlichungsschwelle und Auswertungsplan existieren im Datenmodell nicht (V-006) →
+EIP-T-025, fällig vor Betriebsstufe `produktiv`. Ohne sie
+gibt es nichts, woran eine nachträgliche Änderung sich messen ließe — die Präregistrierung schützt
+dann eine Zusage, die nie gemacht wurde.
 
 ### § 8 Zahlen-Ehrlichkeit
 
@@ -352,7 +368,15 @@ die wir angetreten sind.
 das Ergebnis. Veröffentlichung „nur intern" oder „nur für den Partner" unterhalb der Schwelle.
 Zwischenstände während der Laufzeit über den reinen Teilnahmezähler hinaus.
 
-**Status.** `bindend`.
+**Status.** `bindend`. Eingelöst ist, was ohne Nenner einlösbar ist: Kein Prozentwert steht ohne
+seine absolute Zahl, die Bezugsgröße wird an Ort und Stelle benannt, und einen Zwischenstand über
+den Teilnahmezähler hinaus gibt es nicht (EIP-T-083). `offen` ist die Zusage selbst — es gibt weder
+eine Beteiligungsquote noch einen benannten Nenner noch eine Schwelle, unterhalb derer kein Ergebnis
+erscheint; der Prozentwert auf der Board-Seite bezieht das Ergebnis auf sich selbst (V-006) →
+EIP-T-025, fällig vor Betriebsstufe `produktiv`. Bis
+dahin sagt der Ergebnisblock selbst, dass ihm der Nenner fehlt: Eine Zahl ohne ihn ist nach dem
+*Warum* dieses Paragraphen genau die Sorte Zahl, gegen die das Projekt angetreten ist — auch in
+einer Vorführung.
 
 ### § 9 Sprachregeln
 
@@ -434,6 +458,13 @@ Sehvermögen oder Maus nicht bedienbar sind.
 EIP-T-064, fällig vor dem ersten echten Durchlauf
 (Betriebsstufe `produktiv`).
 
+Ebenfalls `offen` und bis zum 2026-08-01 unbemerkt: die **Hinweispflicht am Ergebnis**. Der
+Ergebnisblock der Board-Seite nennt die eID-Verfügbarkeit als Zugangsvoraussetzung nicht — der
+Paragraph verlangt sie ausdrücklich „bei jedem Ergebnis, nicht nur im Manifest" (V-006, derselbe
+Sachverhalt wie bei § 7 und § 8) → EIP-T-025, fällig vor
+Betriebsstufe `produktiv`. Die Ausschlusswirkung gehört an die Zahl, weil sie sonst genau dort
+fehlt, wo jemand die Zahl weiterträgt.
+
 ---
 
 ## III. Wer über uns bestimmt
@@ -457,6 +488,20 @@ EIP-T-022. Die Übergabe erfolgt, **bevor** die Instanz groß genug ist,
 um politisch zu zählen, nicht danach; das ist zugleich das Fälligkeitsereignis. Weil dieser Zeitpunkt
 sich nicht von außen ankündigt, gilt ersatzweise die Betriebsstufe `produktiv` als späteste
 Fälligkeit.
+
+Die **Zwischenregel** dieses Paragraphen — neutrale Formulierung, immer eine Enthaltungsoption,
+Veröffentlichung abgelehnter Vorschläge — gilt schon jetzt. Von ihren drei Zusagen ist eine seit dem
+2026-08-01 **erzwungen**: Die Umfrageanlage weist eine Antwortliste ab, in der keine Option genau
+`Enthaltung`, `Weiß nicht` oder `Weiss nicht` heißt; die Abweisung nennt diesen Paragraphen und steht
+im Debug-Modul (EIP-T-085). Geprüft wird auf feste Texte statt auf
+ein enthaltenes Wort — sonst hätte jede Umbenennung die Regel ausgehebelt —, und der feste Text ist
+zugleich die einzige Form, die ein Dritter am veröffentlichten `POLL_OPEN`-Eintrag nachrechnen kann.
+
+Die beiden anderen Zusagen bleiben `Disziplin`: Neutralität einer Formulierung ist maschinell nicht
+prüfbar, und die Veröffentlichung abgelehnter Vorschläge setzt einen Eingangsweg für Vorschläge
+voraus, den es nicht gibt — beides gehört zur Übergabe an das Gremium →
+EIP-T-022, fällig vor der ersten Frage außerhalb einer Vorführung.
+Bis dahin gelten sie, werden aber durch nichts als unser Verhalten gedeckt (§ 4).
 
 ### § 13 Unabhängigkeit und Geld
 
@@ -665,8 +710,17 @@ abgeleitet, nicht eigenständig: Maßgeblich ist der Status beim jeweiligen Para
 `scripts/check_kodex.py` prüft, dass beide übereinstimmen und dass kein Vermerk ohne Ticket und
 Ereignis dasteht.
 
-**Stand 2026-08-01: 10 von 20 Paragraphen. Die Grenze aus § 4 b liegt bei 8 — sie ist überschritten,
+**Stand 2026-08-01: 13 von 20 Paragraphen. Die Grenze aus § 4 b liegt bei 8 — sie ist überschritten,
 der Baustopp gilt.**
+
+Version 20 ist der größte Sprung, den diese Zahl je gemacht hat, und **kein einziger Vermerk
+beschreibt einen neuen Zustand**: § 3, § 7 und § 8 kommen hinzu, § 11 und § 12 bekommen einen
+zweiten Halbsatz — gefunden im ersten vollständigen Durchgang durch die bindenden Sätze
+(EIP-AUD-20260801-004, Anlass war V-004). Vier bindende Sätze waren
+nicht eingelöst, drei davon seit dem ersten Tag des öffentlichen Betriebs (V-005, V-006). Die Zahl
+war vorher falsch, nicht die Lage besser. Wer 10 gelesen hat, hat ein Maß für Aufmerksamkeit
+gelesen, nicht für Rückstand — und genau das ist der Grund, warum der Durchgang selbst ein
+Verfahren braucht → EIP-T-084.
 
 Version 19 nimmt § 20 aus dieser Liste: Der Code steht seit dem 2026-08-01 unter AGPL-3.0-or-later,
 Prüfung **und** Weiterbetrieb sind eingeräumt (EIP-T-078,
@@ -712,11 +766,16 @@ ein Dokument schreibt.
 | 1 | Protokollierung beim Hoster (Loadbalancer, TLS-Endpunkt, Cloudflare) — belegt, dass sie stattfindet; Umfang und Frist offen. Die eigene Seite ist erledigt | EIP-T-075 | `öffentlich erreichbar` | 2026-07-26 |
 | 2 | Split-View: zwei parallel geführte Boards. Der Zeitanker steht seit 2026-08-01 (EIP-T-006) und schließt das rückwirkende Umschreiben; Equivocation deckt er prinzipiell nicht auf, dazu braucht es Gegenzeichner | EIP-T-036 | `produktiv` | 2026-07-26 |
 | 2 | Netzwerkebene: anonymer Zustellkanal als Option. Entschieden und zur Hälfte gebaut (Verbindungstrennung, Kanalblindheit, EIP-T-034); der Kanal selbst ist eine Betriebsentscheidung und hängt an der Hosterfrage | EIP-T-082 | `produktiv` | 2026-08-01 |
+| 3 | Blindsignatur in ihren Kernschritten selbst geschrieben (EMSA-PSS-ENCODE, MGF1, Blinding-Arithmetik, rohe RSA-Operation), weil es für Python keine geprüfte RFC-9474-Bibliothek gibt. Gedeckt durch die RFC-Testvektoren — Korrektheit, nicht Seitenkanäle. Verstoß V-005 | EIP-T-008 | `produktiv` | 2026-08-01 |
 | 4 | Ballot Stuffing bleibt Disziplin **während der Laufzeit** (Schlüssel liegt allein bei uns; nach Schließung vernichtet, EIP-T-069) | EIP-T-040 | `produktiv` | 2026-07-26 |
 | 5 | Eigener Eingangskanal für Behördenanfragen — Bauform entschieden (Postfach ohne Domain), Einrichtung offen | EIP-T-073 | `produktiv` | 2026-07-31 |
 | 6 | DSGVO-Kollision entschieden und begründet | EIP-T-061 | `produktiv` | 2026-07-26 |
+| 7 | Von den sechs Größen, die vor dem Start feststehen müssen, kennt die App zwei. Laufzeit, Nenner, Veröffentlichungsschwelle und Auswertungsplan gibt es im Datenmodell nicht. Verstoß V-006 | EIP-T-025 | `produktiv` | 2026-08-01 |
+| 8 | Keine Beteiligungsquote, kein benannter Nenner, keine Schwelle — der Prozentwert auf der Board-Seite bezieht das Ergebnis auf sich selbst. Verstoß V-006 | EIP-T-025 | `produktiv` | 2026-08-01 |
 | 11 | eAT-Unterstützung, Barrierefreiheit | EIP-T-064 | `produktiv` | 2026-07-26 |
+| 11 | Hinweispflicht am Ergebnis: Die Ergebnisdarstellung nennt die eID-Verfügbarkeit als Zugangsvoraussetzung nicht. Verstoß V-006 | EIP-T-025 | `produktiv` | 2026-08-01 |
 | 12 | Übergabe der Fragehoheit an ein unabhängiges Gremium | EIP-T-022 | politische Relevanz, spät. `produktiv` | 2026-07-26 |
+| 12 | Zwischenregel bis zur Übergabe: die Enthaltungsoption ist seit dem 2026-08-01 erzwungen (EIP-T-085); neutrale Formulierung und Veröffentlichung abgelehnter Vorschläge bleiben Disziplin — das eine ist maschinell nicht prüfbar, das andere braucht einen Eingangsweg für Vorschläge | EIP-T-022 | erste Frage außerhalb einer Vorführung | 2026-08-01 |
 | 13 | Finanzierungsmodell im Detail | EIP-T-026 | erste Annahme von Geld | 2026-07-26 |
 | 14 | Rechtsform und Nachfolgebindung | EIP-T-065 | `produktiv`, jed. vor Trägerwechsel | 2026-07-26 |
 | 16 | Vergabe und Entzug der Einbettungserlaubnis. Die Nutzungsbedingungen selbst stehen seit 2026-08-01 (EIP-T-062); ohne Einbettung gibt es keinen Zugang, den ein Verstoß kosten könnte | EIP-T-023 | erste Einbettung, spät. `produktiv` | 2026-07-26 |

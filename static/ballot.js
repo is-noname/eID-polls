@@ -15,7 +15,7 @@
 // verblindet (Phase A) und spaeter Token samt fertiger Signatur (Phase B). Wer
 // serverseitig "verblindet", hat kein Wahlgeheimnis, nur dessen Behauptung.
 
-import { newToken, blindToken, finalizeSignature, bytesToHex } from "./blind.js";
+import { newToken, blindToken, finalizeGeprueft, bytesToHex, hexToBytes } from "./blind.js";
 import { postJSON } from "./app.js";
 
 const storeKey = (pollId) => `eidpoll:${pollId}`;
@@ -88,6 +88,23 @@ function openRequest(pollId) {
   return null;
 }
 
+/** Meldet dem Server, dass seine Signatur nicht aufgeht (EIP-T-080).
+ *
+ * Ohne diese Zeile bliebe der Fall nur im Browser des Betroffenen sichtbar,
+ * und im Debug-Modul stuende gar nichts - ein Serverfehler, den der Betreiber
+ * erst erfaehrt, wenn ihn jemand meldet. Uebertragen wird nur die Tatsache und
+ * die Umfrage, kein Token, keine verblindete Form, kein Freitext: Was der
+ * Client hier schicken darf, ist eine Meldung und kein Kanal (KODEX §1).
+ */
+async function meldeServerfehler(pollId) {
+  try {
+    await postJSON(`/api/melde/signatur/${pollId}`);
+  } catch (_) {
+    /* Die Meldung ist Diagnose, kein Teil des Verfahrens - ihr Scheitern darf
+       den eigentlichen Fehler nicht ueberdecken. */
+  }
+}
+
 /** Holt die Stimmberechtigung: Token erzeugen, verblinden, signieren lassen, entblinden.
  *
  * Gespeichert wird **zweimal**, und beide Male aus demselben Grund - der Weg
@@ -119,7 +136,20 @@ export async function obtainBallot(pollId, nHex, eHex) {
     saveState(pollId, request);
   }
   const { blind_sig } = await postJSON(`/api/token/${pollId}`, { blinded: request.blinded });
-  const record = { token: request.token, sig: finalizeSignature(blind_sig, request.inv, nHex) };
+
+  // RFC 9474 §4.4 Schritt 5-6: geprueft, bevor die Signatur diese Funktion
+  // verlaesst. Faellt sie durch, bleibt der Zustand aus Schritt 1 stehen - die
+  // verblindete Anfrage laesst sich unveraendert wiederholen (EIP-T-070), das
+  // Pseudonym ist also nicht umsonst verbraucht.
+  let sig;
+  try {
+    sig = await finalizeGeprueft(blind_sig, request.inv, nHex, eHex, hexToBytes(request.token));
+  } catch (err) {
+    if (err.serverfehler) await meldeServerfehler(pollId);
+    throw err;
+  }
+
+  const record = { token: request.token, sig };
   saveState(pollId, record);
   held = record;
   return record;

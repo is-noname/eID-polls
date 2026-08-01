@@ -86,6 +86,33 @@ __all__ = ["Accounting", "Beleg", "ChainStatus", "PollService", "Pruefbericht", 
 POLL_SECRET = "poll_secret:"
 POLL_KEY = "poll_key:"
 
+# Zwischenregel aus KODEX §12 (EIP-T-085): Eine Antwortliste ohne Enthaltung
+# zwingt zu einer Meinung. Der Kodex verbietet sie ausdruecklich und nennt beide
+# zulaessigen Formen ("Enthaltung" oder "weiss nicht").
+#
+# Entschieden gegen einen Freitextvergleich: Geprueft wird nicht, ob irgendwo
+# das Wort "Enthaltung" vorkommt, sondern ob eine Option *genau* einen der hier
+# festgelegten Texte traegt. Ein Vergleich auf enthaltenes Wort liesse sich mit
+# jeder Umbenennung aushebeln ("Weiss nicht so recht"), und eine Kennzeichnung
+# einzelner Optionen im Datenmodell waere von aussen nicht pruefbar: Das Board
+# traegt im POLL_OPEN-Eintrag nur die Optionstexte. Ein fester Text ist damit
+# die einzige Form, die ein Dritter am Board nachrechnen kann, ohne uns zu
+# glauben (§7).
+# Die Liste bleibt bewusst bei dem, was §12 woertlich nennt. Jeder weitere Text
+# ("Keine Angabe", "Unentschieden") waere eine Auslegung, die die Regel weitet -
+# und eine geweitete Regel gehoert in den Kodex, nicht in eine Konstante.
+ENTHALTUNG_TEXTE = ("Enthaltung", "Weiss nicht", "Weiß nicht")
+
+
+def ist_enthaltung(option: str) -> bool:
+    """Traegt diese Option einen der festgelegten Enthaltungstexte (KODEX §12)?
+
+    Gross-/Kleinschreibung ist egal, alles andere nicht. ``casefold`` bildet
+    dabei "ß" auf "ss" ab - "Weiß nicht" und "Weiss nicht" fallen zusammen.
+    """
+    normal = option.strip().casefold()
+    return any(t.casefold() == normal for t in ENTHALTUNG_TEXTE)
+
 
 def _iso(text: str) -> datetime:
     """ISO-Zeit aus der Datenbank als *naive lokale* Zeit.
@@ -499,6 +526,15 @@ class PollService:
             raise Rejected("Mindestens zwei Optionen noetig.")
         if len(set(options)) != len(options):
             raise Rejected("Optionen muessen verschieden sein.")
+        if not any(ist_enthaltung(o) for o in options):
+            # Kein eigenes log.reject: Die Abweisung geht als Rejected nach oben
+            # und wird dort einmal gezaehlt (web._rejected_handler).
+            raise Rejected(
+                "KODEX §12 verbietet Antwortlisten ohne Enthaltung: Eine Liste, die nur "
+                "Zustimmung und Ablehnung kennt, zwingt zu einer Meinung, und die Verschiebung "
+                "ist am Board nicht nachrechenbar. Eine Option muss genau einen dieser Texte "
+                "tragen: " + ", ".join(f"'{t}'" for t in ENTHALTUNG_TEXTE) + "."
+            )
         if self.board_store.poll(poll_id) is not None:
             raise Rejected(f"Umfrage '{poll_id}' existiert bereits.")
 

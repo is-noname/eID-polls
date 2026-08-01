@@ -96,7 +96,7 @@ class Settings:
     seed_demo: bool = False
     seed_poll_id: str = "demo"
     seed_question: str = DEFAULT_QUESTION
-    seed_options: list[str] = field(default_factory=lambda: ["Ja", "Nein", "Unentschieden"])
+    seed_options: list[str] = field(default_factory=lambda: ["Ja", "Nein", "Enthaltung"])
 
     def __post_init__(self) -> None:
         if self.demos is None:
@@ -140,7 +140,7 @@ class Settings:
             seed_question=os.environ.get("EIDPOLL_SEED_QUESTION", DEFAULT_QUESTION),
             seed_options=[
                 o.strip()
-                for o in os.environ.get("EIDPOLL_SEED_OPTIONS", "Ja,Nein,Unentschieden").split(",")
+                for o in os.environ.get("EIDPOLL_SEED_OPTIONS", "Ja,Nein,Enthaltung").split(",")
                 if o.strip()
             ],
         )

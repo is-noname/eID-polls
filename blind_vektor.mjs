@@ -17,8 +17,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { blindTokenMitFaktor, finalizeSignature, emsaPssEncode, hexToBytes, bytesToHex }
-  from "./static/blind.js";
+import { blindTokenMitFaktor, finalizeSignature, finalizeGeprueft, verifySignature,
+  emsaPssEncode, hexToBytes, bytesToHex } from "./static/blind.js";
 
 const hier = dirname(fileURLToPath(import.meta.url));
 const v = JSON.parse(readFileSync(join(hier, "rfc9474_a4.json"), "utf8"));
@@ -48,6 +48,31 @@ pruefe("blinded_msg (Blind)", geblendet.blindedHex, v.blinded_msg);
 pruefe("inv (Blind)", BigInt(`0x${geblendet.inv}`).toString(16), inv.toString(16));
 
 pruefe("sig (Finalize)", finalizeSignature(v.blind_sig, v.inv, v.n), v.sig);
+
+// RFC 9474 §4.4 Schritt 5: Finalize prueft das eigene Ergebnis, statt es
+// ungesehen weiterzureichen (EIP-T-080). Der Vektor liefert dafuer beides -
+// eine Signatur, die aufgeht, und mit jedem verdrehten Bit eine, die es nicht
+// tut.
+pruefe(
+  "verify (WebCrypto gegen die Signatur des RFC)",
+  await verifySignature(v.sig, msg, v.n, v.e),
+  true,
+);
+
+const verdreht = hexToBytes(v.blind_sig);
+verdreht[verdreht.length - 1] ^= 0x01;
+let abgewiesen = false;
+try {
+  await finalizeGeprueft(bytesToHex(verdreht), v.inv, v.n, v.e, msg);
+} catch (err) {
+  abgewiesen = err.serverfehler === true;
+}
+pruefe("Finalize weist eine verfaelschte Serversignatur ab (§4.4 Schritt 6)", abgewiesen, true);
+pruefe(
+  "Finalize gibt die gueltige Signatur heraus",
+  await finalizeGeprueft(v.blind_sig, v.inv, v.n, v.e, msg),
+  v.sig,
+);
 
 // Kleiner eigener Kehrwert, damit der Test nicht von blind.js abhaengt, um
 // blind.js zu pruefen.

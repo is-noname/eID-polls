@@ -115,7 +115,9 @@ dafür (PyPI-Suche **2026-08-01** unter `blind-rsa-signatures`, `blind_signature
 `rsa-blind-signatures`, `pyblindsig`, `rsabssa`, `blind-signature`, `pyblind-rsa`, `blindrsa`,
 `py-blind-rsa`, `rfc9474`: jeweils keine Distribution). Geprüft zugekauft sind SHA-384 und die
 PSS-Verifikation aus `cryptography`; selbst geschrieben sind EMSA-PSS-ENCODE, MGF1 und die
-Blinding-Arithmetik — auf beiden Seiten, Python und JavaScript.
+Blinding-Arithmetik — auf beiden Seiten, Python und JavaScript. Im Browser prüft seit EIP-T-080
+**WebCrypto** die entblindete Signatur (RFC 9474 §4.4 Schritt 5) — bewusst nicht die eigene
+PSS-Implementierung, sonst bestätigte handgeschriebener Code handgeschriebenen Code.
 
 Seit EIP-T-008 rechnen **beide** Seiten gegen den Testvektor aus RFC 9474 Anhang A.4 nach
 (`app/rfc9474_a4.json`, wörtlich aus dem RFC): Python in `blind.testvektor()`, JavaScript in

@@ -9,23 +9,44 @@
 // gibt keine zweite aus und kann das auch nicht.
 //
 // Was hier NICHT geprueft wird: ob blind.js bitgleich zu blind.py rechnet. Der
-// Server ist gestellt, die Signatur ist eine Attrappe. Das zeigt erst
-// browser_test.py gegen den echten Server.
+// Server ist gestellt. Das zeigt erst browser_test.py gegen den echten Server.
 
 import assert from "node:assert/strict";
 
-// 2048-Bit-Modulus, einmal erzeugt und fest eingetragen. Das Blinding rechnet
-// modular - fuer den Zustandsverlauf muss der Modulus die richtige Groesse
-// haben, nicht zu einem echten Schluessel gehoeren.
-const N_HEX =
-  "be98c18a548855ee0a59394c998bcd3cfffee3c91ae219bdd4e8e96eff053bb2f59b5ee4e3d7a9abec3f502c0f7343cf"
-  + "84ed7addd7b2db64c0d6385eaa4fd0512dedbe72640030fb00c0ac2a13fb2e7ae2de79bbb3ec1b5caf386d9b9abebf6"
-  + "1ede86456e33d84b500870c9f34edc38756450f682a428e6979dbf5d5aef7aa5ed9dc16602d0d35eb61f3ab4be3f320"
-  + "b0811225af0e689c4b24d5cfa703d830a08ff4f11c166758569f03659cef72332fdb1a9faf731a25b5d0d665903c671"
-  + "2f9b5a325ded49d5db39db24d8c0d514a599390d08bbd1f61c443b68326bb0baf09e664078a20c71e09f64de442cb7f"
-  + "040866ea034459891e2d1848970c019c4095";
+// Ein echtes Schluesselpaar, je Lauf frisch. Bis EIP-T-080 stand hier ein
+// blosser Modulus und der gestellte Server antwortete mit "42" - eine
+// Attrappe, die genuegte, solange der Client die Signatur ungeprueft
+// weiterreichte. Seit Finalize sie prueft, muss der gestellte Server auch
+// wirklich signieren, sonst prueft dieser Test nur noch den Fehlerfall.
+const paar = await crypto.subtle.generateKey(
+  { name: "RSA-PSS", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-384" },
+  true,
+  ["sign", "verify"],
+);
+const jwk = await crypto.subtle.exportKey("jwk", paar.privateKey);
+const alsZahl = (b64u) => BigInt(`0x${Buffer.from(b64u, "base64url").toString("hex")}`);
+const N = alsZahl(jwk.n);
+const D = alsZahl(jwk.d);
+const N_HEX = N.toString(16);
 const E_HEX = "10001";
 const POLL = "nodetest";
+
+function modPow(base, exponent, modulus) {
+  let result = 1n;
+  let b = base % modulus;
+  let e = exponent;
+  while (e > 0n) {
+    if (e & 1n) result = (result * b) % modulus;
+    b = (b * b) % modulus;
+    e >>= 1n;
+  }
+  return result;
+}
+
+/** Die Serverseite von Phase A: rohe RSA-Operation auf der verblindeten Form. */
+function blindSign(blindedHex) {
+  return modPow(BigInt(`0x${blindedHex}`), D, N).toString(16);
+}
 
 // --- gestellte Browser-Umgebung
 const store = new Map();
@@ -42,6 +63,7 @@ let voteCalls = 0;
 let voteHandler = null; // (body) -> Antwort, oder wirft fuer "Netz weg"
 let tokenHandler = null; // dasselbe fuer Phase A; null = Standardantwort
 const tokenBodies = []; // was der Client jeweils verblindet geschickt hat
+let meldungen = 0; // Meldungen an /api/melde/signatur (EIP-T-080)
 
 globalThis.fetch = async (url, options) => {
   const body = JSON.parse(options.body || "{}");
@@ -55,12 +77,15 @@ globalThis.fetch = async (url, options) => {
     tokenCalls += 1;
     tokenBodies.push(body);
     if (tokenHandler) return tokenHandler(body, reply);
-    // Attrappe: irgendeine Zahl < n. Der Client entblindet sie unbesehen.
-    return reply(200, { blind_sig: "42" });
+    return reply(200, { blind_sig: blindSign(body.blinded) });
   }
   if (url.startsWith("/api/vote/")) {
     voteCalls += 1;
     return voteHandler(body, reply);
+  }
+  if (url.startsWith("/api/melde/signatur/")) {
+    meldungen += 1;
+    return reply(200, { ok: true });
   }
   throw new Error(`unerwarteter Aufruf: ${url}`);
 };
@@ -212,6 +237,57 @@ check("EIP-T-070: der zweite Anlauf schickt dieselbe verblindete Anfrage", () =>
 });
 check("EIP-T-070: dasselbe Token wie vor dem Abbruch", () => {
   assert.equal(nachAbbruch.token, angefragt.token);
+});
+
+// --- Fall 7: der Server liefert eine unbrauchbare Signatur (EIP-T-080)
+//
+// Frueher fiel das erst bei der Stimmabgabe auf und sah dort aus wie ein
+// abgelehnter Stimmzettel. Jetzt endet der Weg in Phase A - mit einem eigenen
+// Fehlerbild, einer Meldung an den Betreiber und einer Berechtigung, die
+// wiederholbar bleibt.
+store.clear();
+ballot.resetSession();
+tokenCalls = 0;
+voteCalls = 0;
+meldungen = 0;
+tokenBodies.length = 0;
+tokenHandler = (body, reply) => {
+  // Gueltig gerechnet, aber mit einem verdrehten Bit unterwegs verstuemmelt.
+  const echt = BigInt(`0x${blindSign(body.blinded)}`);
+  return reply(200, { blind_sig: (echt ^ 1n).toString(16) });
+};
+let sigError = null;
+try {
+  await ballot.castBallot(POLL, N_HEX, E_HEX, ["Ja"]);
+} catch (err) {
+  sigError = err;
+}
+const nachSigFehler = state();
+
+check("ungueltige Serversignatur wird als solche erkannt", () => {
+  assert.ok(sigError, "kein Fehler gemeldet");
+  assert.equal(sigError.name, "ServersignaturUngueltig");
+  assert.equal(sigError.serverfehler, true, "nicht als Serverfehler gekennzeichnet");
+});
+check("die Stimme wird gar nicht erst abgeschickt", () => assert.equal(voteCalls, 0));
+check("der Betreiber erfaehrt davon (/api/melde/signatur)", () => assert.equal(meldungen, 1));
+check("die Berechtigung bleibt wiederholbar (EIP-T-070)", () => {
+  assert.ok(nachSigFehler, "kein Zustand gespeichert");
+  assert.ok(nachSigFehler.blinded, "verblindete Form nicht gesichert");
+  assert.ok(!nachSigFehler.sig, "unbrauchbare Signatur gespeichert");
+  assert.ok(!nachSigFehler.voted);
+});
+
+// Derselbe Anlauf gegen einen wieder rechnenden Server geht durch.
+ballot.resetSession();
+tokenHandler = null;
+voteHandler = (_body, reply) =>
+  reply(200, { leaf_hash: "cafe", batch: 3, beleg_sig: "01", participation: 5 });
+const nachReparatur = await ballot.castBallot(POLL, N_HEX, E_HEX, ["Ja"]);
+check("nach dem Serverfehler geht derselbe Versuch durch", () => {
+  assert.equal(nachReparatur.token, nachSigFehler.token);
+  assert.equal(tokenBodies[1].blinded, tokenBodies[0].blinded);
+  assert.equal(nachReparatur.leaf, "cafe");
 });
 
 const failed = results.filter(([ok]) => !ok);

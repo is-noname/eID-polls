@@ -205,9 +205,12 @@ def finalize(
     prueft, statt es ungesehen weiterzureichen. Werden public_key und msg
     uebergeben, geschieht das hier und eine unbrauchbare Serverantwort faellt
     beim Client auf statt erst bei der Stimmabgabe. Ohne die beiden Argumente
-    bleibt es bei der reinen Entblindung; die Gegenstelle im Browser
-    (static/blind.js) prueft heute ebenfalls nicht selbst, das ist in DOKU.md
-    als offener Punkt vermerkt.
+    bleibt es bei der reinen Entblindung.
+
+    Die Gegenstelle im Browser prueft seit EIP-T-080 ebenfalls
+    (static/blind.js:finalizeGeprueft) - dort mit WebCrypto statt mit dieser
+    Implementierung, damit nicht handgeschriebener Code handgeschriebenen Code
+    bestaetigt.
     """
     k = (n.bit_length() + 7) // 8
     s = (os2ip(blind_sig) * blind_inv) % n

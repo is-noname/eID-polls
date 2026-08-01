@@ -95,7 +95,7 @@ def parallel_participation(n: int = 10) -> None:
     admin = TestClient(app)
     admin.post("/api/admin/login", json={"token": "admin"})
     admin.post("/api/admin/create",
-               json={"poll_id": poll, "question": "Gleichzeitig?", "options": ["Ja", "Nein"]})
+               json={"poll_id": poll, "question": "Gleichzeitig?", "options": ["Ja", "Nein", "Enthaltung"]})
 
     start = threading.Barrier(n)
     results: list[tuple[bool, str]] = []
@@ -188,7 +188,7 @@ def anspruch_atomar(n: int = 8) -> None:
     admin = TestClient(app)
     admin.post("/api/admin/login", json={"token": "admin"})
     admin.post("/api/admin/create",
-               json={"poll_id": poll, "question": "Zweimal?", "options": ["Ja", "Nein"]})
+               json={"poll_id": poll, "question": "Zweimal?", "options": ["Ja", "Nein", "Enthaltung"]})
 
     def gleichzeitig(anfrage, n: int) -> list[int]:
         start = threading.Barrier(n)
@@ -293,7 +293,7 @@ def abbruch_nach_signatur() -> None:
     poll = "abbruch"
     client.post("/api/admin/login", json={"token": "admin"})
     client.post("/api/admin/create",
-                json={"poll_id": poll, "question": "Nochmal?", "options": ["Ja", "Nein"]})
+                json={"poll_id": poll, "question": "Nochmal?", "options": ["Ja", "Nein", "Enthaltung"]})
     client.post("/api/auth", json={"credential": "testperson70"})
 
     n, e = svc.poll_params(poll)
@@ -383,7 +383,7 @@ def puffer_abschaltbar() -> None:
     poll = "ohnepuffer"
     client.post("/api/admin/login", json={"token": "admin"})
     client.post("/api/admin/create",
-                json={"poll_id": poll, "question": "Ohne?", "options": ["Ja", "Nein"]})
+                json={"poll_id": poll, "question": "Ohne?", "options": ["Ja", "Nein", "Enthaltung"]})
     client.post("/api/auth", json={"credential": "testperson73"})
     blinded, _ = blind.blind(sec.token_bytes(32), *svc.poll_params(poll))
     client.post(f"/api/token/{poll}", json={"blinded": blinded.hex()})
@@ -407,7 +407,7 @@ def umfrage_schluessel() -> None:
     admin.post("/api/admin/login", json={"token": "admin"})
     for poll in ("schluessel-a", "schluessel-b"):
         admin.post("/api/admin/create",
-                   json={"poll_id": poll, "question": "Und?", "options": ["Ja", "Nein"]})
+                   json={"poll_id": poll, "question": "Und?", "options": ["Ja", "Nein", "Enthaltung"]})
 
     check("Umfrage-Schluessel: beim Anlegen erzeugt",
           service.berechtigung.get_config(POLL_SECRET + "schluessel-a") is not None)
@@ -494,7 +494,7 @@ def signaturschluessel() -> None:
     for poll in ("sig-a", "sig-b"):
         admin.post("/api/admin/create",
                    json={"poll_id": poll, "question": "Wessen Schluessel?",
-                         "options": ["Ja", "Nein"]})
+                         "options": ["Ja", "Nein", "Enthaltung"]})
 
     check("Signaturschluessel: beim Anlegen erzeugt",
           service.berechtigung.get_config(POLL_KEY + "sig-a") is not None)
@@ -550,7 +550,7 @@ def signaturschluessel() -> None:
           bericht.chain.sound and bericht.schluessel_fehler is None,
           str(bericht.schluessel_fehler))
     check("Signaturschluessel: Ergebnis wird nach der Vernichtung noch ausgezaehlt",
-          service.tally("sig-a") == {"Ja": 1, "Nein": 0}, str(service.tally("sig-a")))
+          service.tally("sig-a") == {"Ja": 1, "Nein": 0, "Enthaltung": 0}, str(service.tally("sig-a")))
     check("Signaturschluessel: eigenes Token bleibt auffindbar",
           service.lookup("sig-a", token.hex()) == ["Ja"])
 
@@ -952,7 +952,7 @@ def laufende_pruefung() -> None:
     admin = TestClient(app)
     admin.post("/api/admin/login", json={"token": "admin"})
     admin.post("/api/admin/create",
-               json={"poll_id": poll, "question": "Fortlaufend?", "options": ["Ja", "Nein"]})
+               json={"poll_id": poll, "question": "Fortlaufend?", "options": ["Ja", "Nein", "Enthaltung"]})
 
     for i in range(5):
         client = TestClient(app)
@@ -1103,7 +1103,7 @@ def batch_veroeffentlichung() -> None:
     poll = "gebatcht"
     client.post("/api/admin/login", json={"token": "admin"})
     client.post("/api/admin/create",
-                json={"poll_id": poll, "question": "Gebuendelt?", "options": ["Ja", "Nein"]})
+                json={"poll_id": poll, "question": "Gebuendelt?", "options": ["Ja", "Nein", "Enthaltung"]})
     check("Batch: POLL_OPEN sofort veroeffentlicht (Betreiberhandlung)",
           len(svc.board_store.veroeffentlichte_batches(poll)) == 1)
 
@@ -1184,7 +1184,7 @@ def batch_veroeffentlichung() -> None:
     check("Batch: Schliessen veroeffentlicht den Puffer vollstaendig",
           svc.board_store.pending_stand(poll)[0] == 0)
     check("Batch: Ergebnis nach Schliessen vollstaendig",
-          svc.tally(poll) == {"Ja": 2, "Nein": 1}, str(svc.tally(poll)))
+          svc.tally(poll) == {"Ja": 2, "Nein": 1, "Enthaltung": 0}, str(svc.tally(poll)))
     bericht = svc.pruefbericht(poll)
     check("Batch: Batch-Kette nach allem intakt",
           bericht.chain.sound and bericht.accounting.ok)
@@ -1291,7 +1291,7 @@ def externer_anker() -> None:
     poll = "verankert"
     client.post("/api/admin/login", json={"token": "admin"})
     client.post("/api/admin/create",
-                json={"poll_id": poll, "question": "Verankert?", "options": ["Ja", "Nein"]})
+                json={"poll_id": poll, "question": "Verankert?", "options": ["Ja", "Nein", "Enthaltung"]})
 
     # 1 - POLL_OPEN ist veroeffentlicht, also beauftragt, aber noch ohne Beleg.
     zeilen = svc.anker_je_batch(poll).get(0, [])
@@ -1363,7 +1363,7 @@ def externer_anker() -> None:
     svc.zeugen = {"ausfall": ausfall}
     svc.anker_max_versuche = 2
     client.post("/api/admin/create",
-                json={"poll_id": poll2, "question": "Und ohne Dienst?", "options": ["Ja", "Nein"]})
+                json={"poll_id": poll2, "question": "Und ohne Dienst?", "options": ["Ja", "Nein", "Enthaltung"]})
     client.post("/api/auth", json={"credential": "testperson71"})
     tok = sec.token_bytes(32)
     blinded, inv = blind.blind(tok, *svc.poll_params(poll2))
@@ -1418,7 +1418,7 @@ def sitzungstrennung() -> None:
     admin = TestClient(eigen)
     admin.post("/api/admin/login", json={"token": "admin"})
     admin.post("/api/admin/create",
-               json={"poll_id": poll, "question": "Getrennt?", "options": ["Ja", "Nein"]})
+               json={"poll_id": poll, "question": "Getrennt?", "options": ["Ja", "Nein", "Enthaltung"]})
 
     def hole_token(credential: str) -> tuple[TestClient, bytes, bytes, float]:
         client = TestClient(eigen)
@@ -1560,7 +1560,7 @@ def datenabzug_nach_schluss() -> None:
     admin = TestClient(eigen)
     admin.post("/api/admin/login", json={"token": "admin"})
     admin.post("/api/admin/create",
-               json={"poll_id": poll, "question": "Abziehbar?", "options": ["Ja", "Nein"]})
+               json={"poll_id": poll, "question": "Abziehbar?", "options": ["Ja", "Nein", "Enthaltung"]})
 
     codes = ["testperson50", "testperson51", "testperson52"]
     pseudonyme = [eigen.state.deps.authenticator.authenticate(c) for c in codes]
@@ -1710,7 +1710,7 @@ def sicherungskopie_ohne_geheimnisse() -> None:
     admin = TestClient(eigen)
     admin.post("/api/admin/login", json={"token": "admin"})
     admin.post("/api/admin/create",
-               json={"poll_id": poll, "question": "Kopierbar?", "options": ["Ja", "Nein"]})
+               json={"poll_id": poll, "question": "Kopierbar?", "options": ["Ja", "Nein", "Enthaltung"]})
 
     client = TestClient(eigen)
     client.post("/api/auth", json={"credential": "testperson60"})
@@ -2016,6 +2016,50 @@ def demo_schalter() -> None:
           f"status={ohne_anmeldung.status_code}")
 
 
+def enthaltungspflicht() -> None:
+    """Antwortlisten ohne Enthaltung werden abgewiesen (KODEX §12, EIP-T-085).
+
+    Geprueft wird beides: dass die Abweisung kommt *und* dass sie im
+    Debug-Modul steht. Eine Regel, die im Betrieb unsichtbar greift, laesst
+    sich von einer nicht vorhandenen Regel nicht unterscheiden.
+    """
+    import debug as debug_modul
+
+    eigene = create_app(
+        store_path=Path(tempfile.mkdtemp()) / "enthaltung.sqlite3",
+        settings=Settings(admin_token="admin", batch_k=1, antwort_floor_s=0),
+    )
+    c = TestClient(eigene)
+    c.post("/api/admin/login", json={"token": "admin"})
+
+    ohne = c.post("/api/admin/create",
+                  json={"poll_id": "ohne", "question": "Erzwungen?", "options": ["Ja", "Nein"]})
+    check("Enthaltung: Liste ohne Enthaltungsoption abgewiesen",
+          ohne.status_code == 400, f"status={ohne.status_code}")
+    check("Enthaltung: Abweisung nennt den Paragraphen, nicht nur die Forderung",
+          "§12" in ohne.text and "Enthaltung" in ohne.text, ohne.text[:120])
+    check("Enthaltung: abgewiesene Umfrage existiert nicht",
+          eigene.state.deps.service.board_store.poll("ohne") is None)
+
+    treffer = [e for e in debug_modul.events_gesamt("reject") if "§12" in e.message]
+    check("Enthaltung: Abweisung im Debug-Modul sichtbar", len(treffer) >= 1, str(len(treffer)))
+
+    # Kein Freitextvergleich: Ein Text, der das Wort nur enthaelt, zaehlt nicht -
+    # sonst haette jede Umbenennung die Regel ausgehebelt.
+    fast = c.post("/api/admin/create",
+                  json={"poll_id": "fast", "question": "Fast?",
+                        "options": ["Ja", "Nein", "Weiss nicht so recht"]})
+    check("Enthaltung: Umbenennung hebelt die Pruefung nicht aus", fast.status_code == 400,
+          f"status={fast.status_code}")
+
+    for i, text in enumerate(("Enthaltung", "Weiss nicht", "weiß NICHT", "  Enthaltung  ")):
+        angelegt = c.post("/api/admin/create",
+                          json={"poll_id": f"mit-{i}", "question": "Mit?",
+                                "options": ["Ja", "Nein", text]})
+        check(f"Enthaltung: '{text.strip()}' wird als Enthaltung erkannt",
+              angelegt.status_code == 200, f"status={angelegt.status_code}")
+
+
 def main() -> int:
     client = TestClient(app)
 
@@ -2046,6 +2090,22 @@ def main() -> int:
 
     # Phase A ein zweites Mal mit derselben Identitaet
     check("Punkt 2c: zweites Token fuer dieselbe Identitaet wird abgewiesen", get_token(client) is None)
+
+    # Punkt 2d - Der Client kann melden, dass die Signatur nicht aufgeht
+    # (EIP-T-080). Erkannt wird das im Browser, verursacht hat es der Server -
+    # ohne diese Meldung wuesste der Betreiber nichts davon.
+    import debug as debug_modul
+
+    fremd = TestClient(app)  # nicht angemeldet
+    check("Punkt 2d: Signaturmeldung von aussen abgewiesen",
+          fremd.post(f"/api/melde/signatur/{POLL}").status_code == 400)
+    gemeldet = client.post(f"/api/melde/signatur/{POLL}")
+    treffer = [e for e in debug_modul.events_gesamt("error") if "RFC 9474" in e.message]
+    check("Punkt 2d: Meldung angenommen und als Fehler im Debug-Modul sichtbar",
+          gemeldet.status_code == 200 and len(treffer) == 1, str(gemeldet.status_code))
+    check("Punkt 2d: als Serverfehler benannt, nicht als abgewiesene Stimme",
+          bool(treffer) and "keine abgewiesene Stimme" in treffer[0].message
+          and treffer[0].detail.get("poll") == POLL)
 
     # Punkt 3 - Abstimmen, waehrenddessen nur Teilnahmezaehler
     voted = client.post(f"/api/vote/{POLL}", json={"token": token.hex(), "sig": sig.hex(), "choices": ["Ja"]})
@@ -2114,11 +2174,12 @@ def main() -> int:
     ausgelieferter_stand()
     nachrechenbarer_client()
     demo_schalter()
+    enthaltungspflicht()
 
     # Angriff 1 - Ballot-Stuffing wird von der Abrechnung entlarvt
     open_poll = "stuffdemo"
     client.post("/api/admin/create",
-                json={"poll_id": open_poll, "question": "Demo?", "options": ["Ja", "Nein"]})
+                json={"poll_id": open_poll, "question": "Demo?", "options": ["Ja", "Nein", "Enthaltung"]})
     demo.stuff_ballot(service, open_poll, "Ja")
     acc = service.accounting(open_poll)
     check("Angriff Ballot-Stuffing: Abrechnung schlaegt aus",
