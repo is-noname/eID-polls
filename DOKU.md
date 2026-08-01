@@ -305,10 +305,33 @@ Vier Seiten, alle ohne Anmeldung erreichbar:
 | `/kodex` | Was es sich selbst verbietet — inklusive **Schuldenübersicht**: welche Zusagen heute nur durch Verhalten gedeckt sind und nicht durch Technik |
 | `/kodex/protokoll` | Änderungen am Kodex und das **Verstoßprotokoll**: was schiefgegangen ist, seit wann bis wann, was daraus folgte |
 | `/transparenz` | Behördenanfragen, beginnend beim Nullfall |
+| `/version` | Welcher Stand hier läuft: Commit, Dateihash, und wie man ihn nachrechnet |
 
 Dass diese Seiten existieren, ist keine Zugabe: § 10 des Kodex verlangt, dass Selbstbindung und
 Verstöße von außen erreichbar sind (EIP-T-063). Ein Verstoßprotokoll, das nur der Betreiber lesen
 kann, dokumentiert nichts, es beruhigt nur.
+
+### Welcher Stand läuft hier: `/version`
+
+Ohne Anmeldung, absichtlich — prüfen will die Instanz gerade, wer uns nicht vertraut. Die Antwort
+nennt zwei Dinge mit sehr verschiedenem Gewicht: `commit` ist eine **Angabe** über die Herkunft,
+`treehash` eine **Messung** über die Dateien, die tatsächlich ausgeliefert werden. Ein unverändertes
+Commit-Feld neben abweichenden Dateien ist der Fall, den ein reiner Commit-Vergleich verdeckt.
+Nachrechnen im Klon des Repositorys:
+
+```bash
+LC_ALL=C sh -c 'git ls-files -z | sort -z | xargs -0 sha256sum | sha256sum'
+```
+
+Abweichungen erscheinen im Debug-Modul unter *Auslieferung gegen Veröffentlichung* — als
+`inconsistency`, nicht als Nebenbemerkung: Eine Instanz, die anderen Code ausliefert als den
+veröffentlichten, ist eine Dateninkonsistenz wie eine gebrochene Board-Kette, nur eine, die das Board
+selbst nicht sehen kann. Genau so entstand Verstoß V-001 (EIP-T-074).
+
+**Was das nicht leistet.** Es ist die Selbstauskunft des Servers, den man gerade prüft. Gegen ein
+Versehen hilft sie, gegen einen Betreiber, der lügt, nicht: Wer den Code ändert, kann diese Antwort
+mit ändern. Dagegen hilft erst ein reproduzierbarer, von Dritten nachgerechneter Build — der steht
+aus (Kodex § 20, EIP-T-007).
 
 Der Inhalt kommt aus Markdown-Dateien im App-Ordner, die außerhalb erzeugt werden
 (`scripts/sync_public_docs.py`). Eine handgepflegte Zweitfassung im Template wäre nach § 20 selbst
@@ -344,6 +367,7 @@ static/ballot.js (+ blind.js)            web.py          HTTP, Cookies
 | `poll_service.py` | Phasenlogik, Regeln, Konsistenzprüfung. Die Auszählung selbst delegiert es an `verifikation.py` und übersetzt Befunde in Abweisungen. Hält den Lebenszyklus beider Umfrage-Schlüssel: erzeugen beim Anlegen, `vernichte_poll_secret()` und `vernichte_poll_key()` beim Schließen. Den privaten Signaturschlüssel liest es bewusst **ohne Zwischenspeicher** aus der Datenbank — ein Cache im Prozess hielte ihn über seine Vernichtung hinaus am Leben. |
 | `demo.py` | Die Angriffsdemos aus §9 — außerhalb des Kerns (EIP-T-050). Sie benutzen `PollService` von außen und schreiben an der Anwendung vorbei direkt in die Datenbank, weil genau das das Angreifermodell ist: Wer die Platte hat, braucht keine API. Verdrahtet nur bei `Settings.demos` (`EIDPOLL_DEMOS`, lokal an, öffentlich aus). |
 | `debug.py` | Ringpuffer im Prozessspeicher (500 Ereignisse), bewusst keine zweite Wahrheit. |
+| `stand.py` | Welcher Stand hier läuft (`/version`) und ob er vom veröffentlichten abweicht (EIP-T-074, Kodex § 20). Der Dateihash ist so definiert, dass ihn ein Dritter mit `git ls-files` und `sha256sum` nachrechnen kann — eine Definition für Instanz, Prüfskript und Außenstehende. Bildet die `.gitignore` in Python nach, weil der Container kein git hat. |
 | `web.py` | Seiten und JSON-API. Gebaut wird eine Instanz von `create_app(store_path, authenticator, settings)`: Datenbankpfad, Authentifizierung und Betriebsmodus stehen in der Signatur, nicht im Modul. Den echten eID-Flow einzusetzen heißt deshalb, `SamlEidAuthenticator` zu übergeben — ohne Änderung an `web.py`. Für uvicorn bleibt `web:app` der Einstieg (aus der Umgebung, erst beim Zugriff gebaut). |
 
 **Warum das Blinding im Browser liegt und nicht auf dem Server:** Verblindet der Server selbst,

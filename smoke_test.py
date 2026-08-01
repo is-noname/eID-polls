@@ -9,6 +9,7 @@ der echte Durchlauf im Browser (die PSS-Pruefung schlaegt sonst zu).
 
 from __future__ import annotations
 
+import json
 import shutil
 import sys
 import tempfile
@@ -19,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import blind  # noqa: E402
 import demo  # noqa: E402
+from debug import DebugLog  # noqa: E402
 from config import Settings  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from web import create_app  # noqa: E402
@@ -1523,6 +1525,88 @@ def offenlegungsseiten() -> None:
           "V-001" in protokoll and "V-002" in protokoll)
 
 
+def ausgelieferter_stand() -> None:
+    """/version weist den Stand aus, und Abweichungen landen im Debug-Modul.
+
+    KODEX Paragraf 20, EIP-T-074. Geprueft wird beides, was die Auskunft
+    tragen muss: Sie ist ohne Anmeldung erreichbar - wer die Instanz prueft,
+    hat kein Admin-Token -, und sie nennt ihre eigene Grenze, statt
+    Uebereinstimmung zu behaupten (Paragraf 4).
+    """
+    import stand as stand_modul
+
+    besucher = TestClient(app)  # bewusst ohne Login
+    antwort = besucher.get("/version")
+    check("Stand: /version ist ohne Anmeldung erreichbar",
+          antwort.status_code == 200, f"status={antwort.status_code}")
+    daten = antwort.json()
+    check("Stand: /version nennt Commit und Dateihash",
+          daten.get("commit") and daten.get("treehash", "").startswith("sha256:"),
+          str(daten)[:80])
+    check("Stand: /version bringt die Nachrechenvorschrift mit (Paragraf 20)",
+          "git ls-files" in daten.get("nachrechnen", ""))
+    check("Stand: /version nennt seine Grenze statt Uebereinstimmung zu behaupten",
+          "Selbstauskunft" in daten.get("grenze", ""))
+
+    # Der Dateihash ist eine Messung, keine Angabe: Eine geaenderte
+    # ausgelieferte Datei muss ihn bewegen, sonst misst er nichts.
+    verzeichnis = Path(tempfile.mkdtemp())
+    (verzeichnis / "static").mkdir()
+    (verzeichnis / "static" / "blind.js").write_text("// Blinding\n")
+    vorher, anzahl = stand_modul.treehash(verzeichnis)
+    check("Stand: Dateihash zaehlt die ausgelieferten Dateien", anzahl == 1, f"n={anzahl}")
+    (verzeichnis / "static" / "blind.js").write_text("// Blinding, aber anders\n")
+    nachher, _ = stand_modul.treehash(verzeichnis)
+    check("Stand: geaenderter Client-Code aendert den Dateihash", vorher != nachher)
+
+    # Was .gitignore ausnimmt, darf den Hash nicht bewegen - sonst meldete
+    # jede Datenbankschreibung eine Abweichung und niemand sieht mehr hin.
+    (verzeichnis / "data").mkdir()
+    (verzeichnis / "data" / "eidpoll.sqlite3").write_text("x")
+    (verzeichnis / "__pycache__").mkdir()
+    (verzeichnis / "__pycache__" / "web.cpython-312.pyc").write_text("x")
+    check("Stand: Laufzeitdaten und Bytecode bleiben ausserhalb des Hashs",
+          stand_modul.treehash(verzeichnis)[0] == nachher)
+
+    # Ein Bericht, der einen anderen Stand geprueft hat, sagt ueber den
+    # laufenden nichts - das war der Kern von V-001: eine Pruefung, die
+    # stattgefunden hat, aber nicht am ausgelieferten Stand.
+    bericht = verzeichnis / "auslieferung.json"
+    bericht.write_text(json.dumps({
+        "zeit": "2026-01-01 00:00",
+        "ergebnis": "gleich",
+        "arbeitsbaum": {"treehash": "sha256:einanderer"},
+        "befunde": [],
+    }), encoding="utf-8")
+    ergebnis = stand_modul.abgleich(Path(__file__).parent, bericht_pfad=bericht)
+    check("Stand: Abgleich eines fremden Standes gilt nicht fuer den laufenden",
+          any("anderen Stand" in h for h in ergebnis.hinweise), str(ergebnis.hinweise)[:90])
+
+    gemeldet = json.dumps({
+        "zeit": "2026-01-01 00:00",
+        "ergebnis": "Abweichung",
+        "arbeitsbaum": {"treehash": "sha256:egal"},
+        "befunde": ["Die Instanz liefert nicht origin/prototype aus"],
+    })
+    bericht.write_text(gemeldet, encoding="utf-8")
+    mit_befund = stand_modul.abgleich(Path(__file__).parent, bericht_pfad=bericht)
+    check("Stand: gemeldete Abweichung erscheint als Befund, nicht als Hinweis",
+          any("liefert nicht" in b for b in mit_befund.befunde), str(mit_befund.befunde)[:90])
+
+    # Und zwar dort, wo bei diesem Projekt hingesehen wird: als Inkonsistenz
+    # im Debug-Modul, nicht nur im Terminal des Betreibers.
+    protokoll = DebugLog()
+    stand_modul._zuletzt_gemeldet = None
+    stand_modul.melde(protokoll, Path(__file__).parent, bericht_pfad=bericht)
+    inkonsistenzen = [e for e in protokoll.events() if e.level == "inconsistency"]
+    check("Stand: Abweichung steht im Debug-Modul als Inkonsistenz",
+          any("liefert nicht" in e.message for e in inkonsistenzen),
+          f"{len(inkonsistenzen)} Inkonsistenz(en)")
+    check("Stand: Abweichung liegt unter einer eigenen Kategorie",
+          all(e.category == "auslieferung" for e in inkonsistenzen))
+    stand_modul._zuletzt_gemeldet = None
+
+
 def demo_schalter() -> None:
     """Angriffsdemos haengen an EIDPOLL_DEMOS, nicht an der Anwendung (EIP-T-050).
 
@@ -1652,6 +1736,7 @@ def main() -> int:
     datenabzug_nach_schluss()
     sicherungskopie_ohne_geheimnisse()
     offenlegungsseiten()
+    ausgelieferter_stand()
     demo_schalter()
 
     # Angriff 1 - Ballot-Stuffing wird von der Abrechnung entlarvt

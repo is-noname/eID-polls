@@ -31,6 +31,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import stand as stand_modul
 from auth import AuthError, Authenticator, CodeAuthenticator
 from config import Settings
 from debug import kategorie_fuer_pfad, log
@@ -80,6 +81,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     for line in d.settings.startup_banner():
         log.info("system", line)
         print(f"[eidpoll] {line}", flush=True)
+
+    # Welcher Stand hier laeuft, und ob er vom veroeffentlichten abweicht
+    # (EIP-T-074, KODEX §20). Beim Start und nicht erst beim ersten Aufruf von
+    # /debug: Der Fall aus V-001 war eine Instanz, die tagelang lief - wer sie
+    # gestartet hat, soll die Abweichung im Startprotokoll sehen, auch wenn
+    # niemand die Debug-Seite oeffnet.
+    ergebnis = stand_modul.melde(log)
+    kennung = f"{ergebnis.stand['commit'][:12]} ({ergebnis.stand['commit_quelle']})"
+    for line in (
+        f"Ausgelieferter Stand: {kennung}, {ergebnis.stand['treehash'][:19]}...",
+        *(f"ABWEICHUNG: {b}" for b in ergebnis.befunde),
+    ):
+        print(f"[eidpoll] {line}", flush=True)
+    log.info("auslieferung", f"Ausgelieferter Stand: {kennung}")
     # Ohne persistente Platte (Gratis-Hosting) ist die Datenbank nach jedem
     # Neustart leer. Eine leere Startseite waere fuer einen Besucher nicht von
     # einer kaputten Instanz zu unterscheiden.
@@ -365,6 +380,20 @@ async def verify_page(request: Request, poll: str = "", token: str = "") -> HTML
     )
 
 
+@router.get("/version")
+async def version() -> JSONResponse:
+    """Welcher Stand hier laeuft - ohne Anmeldung, absichtlich.
+
+    KODEX Paragraf 20 verlangt, dass die Uebereinstimmung von Repository und
+    Auslieferung von aussen nachpruefbar ist und der Pruefweg ohne Rueckfrage
+    bei uns begehbar (EIP-T-074). Eine Auskunft, fuer die man das Admin-Token
+    braucht, waere keine: Pruefen will die Instanz gerade, wer uns nicht
+    vertraut. Die Antwort traegt ihre Nachrechenvorschrift und ihre Grenze
+    selbst mit - was sie nicht leistet, steht in ``grenze``.
+    """
+    return JSONResponse(stand_modul.stand())
+
+
 @router.get("/debug", response_class=HTMLResponse)
 async def debug_page(request: Request, level: str = "all") -> HTMLResponse:
     # Phase-A- und Phase-B-Vorgaenge stehen nicht mehr im Ereignisstrom, sondern
@@ -384,6 +413,12 @@ async def debug_page(request: Request, level: str = "all") -> HTMLResponse:
         level=level,
         findings={k: v for k, v in findings.items() if v},
         polls=service.polls(),
+        # Ausgelieferter Stand gegen veroeffentlichten (EIP-T-074, KODEX §20).
+        # Gehoert hierher und nicht auf eine eigene Seite: Eine Instanz, die
+        # anderen Code ausliefert als den veroeffentlichten, ist eine
+        # Dateninkonsistenz wie eine gebrochene Board-Kette - nur eine, die
+        # das Board selbst nicht sehen kann.
+        auslieferung=stand_modul.melde(log),
     )
 
 

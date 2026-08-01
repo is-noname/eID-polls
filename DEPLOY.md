@@ -44,6 +44,58 @@ Platten-Pfad zeigen.
 abgeholt (siehe Schritt 4 unten) — bis dahin ist `/admin` und `/debug` für den Betreiber selbst
 gesperrt.
 
+## Läuft dort der veröffentlichte Stand? (§ 20)
+
+Kodex § 20 verlangt, dass der ausgelieferte Stand dem veröffentlichten entspricht — und dass sich das
+**von außen** nachprüfen lässt, ohne Rückfrage bei uns. Der Prüfweg besteht aus zwei Befehlen und
+braucht nichts aus diesem Projekt außer dem Repository:
+
+```bash
+# 1. Was liefert die Instanz aus? Sie sagt es selbst:
+curl -s https://eid-poll.onrender.com/version
+
+# 2. Was ist veröffentlicht? Im Klon des Repositorys, auf dem Branch prototype:
+git clone -b prototype https://github.com/is-noname/eID-polls && cd eID-polls
+LC_ALL=C sh -c 'git ls-files -z | sort -z | xargs -0 sha256sum | sha256sum'
+```
+
+Stimmt der zweite Wert mit `treehash` aus der ersten Antwort überein, läuft dort der veröffentlichte
+Stand. `LC_ALL=C` ist kein Zierat: unter deutscher Locale sortiert `sort` anders, und der Hash weicht
+ab, ohne dass eine Datei abweicht.
+
+**Zwei Dinge dazu, die nicht verschwiegen werden dürfen.**
+
+Der `commit` in der Antwort ist eine *Angabe* — der `treehash` ist eine *Messung*. Ein unverändertes
+Commit-Feld neben abweichenden Dateien ist genau der Fall, den ein reiner Commit-Vergleich verdeckt;
+verglichen wird deshalb der Hash.
+
+Und: Das ist die Selbstauskunft des Servers, den man gerade prüft. Sie deckt ein Versehen auf — den
+Fall aus Verstoß V-001, wo Korrekturen uncommittet liegen blieben, während die öffentliche Instanz
+die falschen Aussagen weiter anzeigte. Sie deckt **keinen Betreiber auf, der lügt**: Wer den Code
+ändert, kann diese Antwort mit ändern. Dagegen hilft erst ein reproduzierbarer, von Dritten
+nachgerechneter Build — der steht aus (§ 20, `EIP-T-007`).
+
+**Während eines Deploys ist die Frage nicht eindeutig beantwortbar.** Render lässt alten und neuen
+Container kurz parallel laufen; zwei aufeinanderfolgende Abrufe lieferten am 2026-07-31 nachweislich
+verschiedene Stände. Wer prüft, ruft `/version` mehrfach ab und sieht auf die Verteilung, statt einen
+Einzeltreffer für die Wahrheit zu nehmen.
+
+### Für das Projekt selbst: Pflichtschritt, nicht Zuruf
+
+Der Abgleich hängt nicht daran, dass jemand daran denkt (die Entscheidung dazu steht in
+`EIP-T-074`). Er läuft an drei Stellen:
+
+- **Nach jedem Deploy**, als Schritt 5 unten: `python3 scripts/check_auslieferung.py`. Das Skript
+  vergleicht Arbeitsbaum, `origin/prototype` und Instanz, fragt `/version` mehrfach ab und meldet bei
+  laufendem Deploy „uneindeutig" statt eines Zufallsergebnisses. Exit 1 bei Abweichung, 3 bei
+  uneindeutig. Es liegt im Elternordner, nicht in diesem Repo — wer nur das Repo hat, geht den
+  Prüfweg oben von Hand, er prüft dasselbe.
+- **Beim Start jeder Instanz**: Abweichungen stehen im Startprotokoll und im Debug-Modul unter
+  *Auslieferung gegen Veröffentlichung*.
+- **Auf `/debug`**, laufend, samt Datum des letzten Abgleichs von außen. Fehlt er oder galt er einem
+  anderen Stand, sagt die Seite das — eine Prüfung, die stattgefunden hat, aber nicht am
+  ausgelieferten Stand, war der Kern von V-001.
+
 ## Zugriffslogs
 
 Der Startbefehl trägt `--no-access-log`, und das ist keine Geschmacksfrage: Uvicorn schreibt seinen
@@ -63,6 +115,9 @@ außerhalb der App und ist damit nicht erledigt. Offen in `EIP-T-041`.
    `https://eid-poll.onrender.com`.
 4. **Admin-Token abholen:** Dashboard → Dienst → *Environment* → `EIDPOLL_ADMIN_TOKEN`.
    Render hat dort beim ersten Deploy einen Zufallswert erzeugt.
+5. **Stand abgleichen** — `python3 scripts/check_auslieferung.py`. Nicht optional: § 20 gilt ab
+   Betriebsstufe *öffentlich erreichbar*, also ab dem Moment, in dem Schritt 3 durchgelaufen ist.
+   Exit 3 heißt „Deploy läuft noch" — kurz warten und wiederholen, nicht als grün lesen.
 
 Ohne Blueprint geht es auch von Hand: *New → Web Service*, Repo verbinden, Runtime Python,
 Build `pip install -r requirements.txt`, Start

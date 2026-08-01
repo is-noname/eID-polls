@@ -61,6 +61,33 @@ zweite Lesart, wo sie zutrifft.
 bis die Adresse erreichbar und veröffentlicht ist. Zulässig unter § 4 b als Arbeit, die eine Schuld
 präzisiert und ihren Abtrag vorbereitet; keine Regeländerung, deshalb keine neue Version.
 
+**Nachtrag, gleiche Version (EIP-T-074, 2026-08-01).** § 20 führte die Übereinstimmung von
+Repository und Auslieferung als `Disziplin` — eine Zusage, die niemand prüfte und die deshalb reißen
+konnte, ohne aufzufallen. Genau das war V-001. Seit EIP-T-074 weist die Instanz ihren Stand unter
+`/version` aus: benannter Commit **und** ein Hash über die Dateien, die sie tatsächlich ausliefert.
+`app/DEPLOY.md` beschreibt den Prüfweg in zwei Befehlen, die ohne Rückfrage bei uns auskommen —
+das verlangt § 20 im letzten Satz. Abweichungen erscheinen im Debug-Modul als Inkonsistenz, und der
+Abgleich gehört als Pflichtschritt zu jeder Veröffentlichung.
+
+**Grund für den Eintrag.** Die Fälligkeit dieser Betriebsstufe war nicht „es entsteht keine
+Abweichung" — das wäre bei getrenntem Arbeitsbaum und Instanz nicht einlösbar —, sondern „eine
+entstandene fällt auf". Der Unterschied ist der zwischen einem Versprechen und einem Melder, und der
+Statusteil von § 20 sagt jetzt beides: was der Melder leistet, und dass er die Selbstauskunft des
+Servers bleibt, den man gerade prüft. Gegen einen Betreiber, der lügt, hilft er nicht — dafür steht
+weiterhin EIP-T-007, fällig `produktiv`. Wer den Vermerk verschwinden ließe, hätte aus „prüfbar"
+ein „bewiesen" gemacht, und das ist der Fehler, gegen den § 4 geschrieben ist.
+
+Mitgeschrieben, weil es eine Formkorrektur am Kodex ist: § 2 verlinkte für die Herkunft der
+Simulationszahlen EIP-T-072, ein erledigtes Ticket. Nach § 4 a liest sich das wie eine Schuld, die an
+einem abgeschlossenen Ticket hängt — `scripts/check_kodex.py` hat es zu Recht beanstandet. Die
+Herkunft steht im Report selbst; § 2 verweist jetzt dorthin.
+
+**Die Zahl ändert sich nicht: 11 von 20, Grenze 8, der Baustopp gilt weiter.** § 20 bleibt belastet,
+solange der reproduzierbare Build aussteht. Dass ein Ticket, das eine Fälligkeit vollständig
+einlöst, die Kennzahl nicht bewegt, ist dieselbe Schwäche der Zahl wie am 2026-07-31 — sie zählt
+Paragraphen, nicht Schulden. Zulässig unter § 4 b als Arbeit, die eine Schuld abträgt und einen
+Verstoßmechanismus schließt; keine Regeländerung, deshalb keine neue Version.
+
 ### Version 11 — 2026-07-31
 
 § 18 bekommt die Abgrenzung, die ihm gefehlt hat: **wann ein Befund ins Verstoßprotokoll gehört und

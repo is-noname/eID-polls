@@ -163,8 +163,8 @@ muss eine Mindest-Anonymitätsmenge erreicht sein" damit heute nicht gedeckt: k 
 im Ein-Klick-Flow sind das je Teilnahme zwei (Ausgabe + Stimme). Die gemessene Personen-Menge ist
 deshalb genau k/2, also **5 statt 10** — und weil die Mischung im Puffer schwankt, liegen unter
 Andrang bis zu 23,6 % der Stimmen sogar darunter
-(EIP-RPT-20260731-001 Anonymitaetsmenge-Batch-Simulation, Simulation zu
-EIP-T-072). `offen` →
+(EIP-RPT-20260731-001 Anonymitaetsmenge-Batch-Simulation; woher die Simulation stammt, steht
+dort). `offen` →
 EIP-T-076 (Fälligkeit an Stimmen binden, Menge auf 10 anheben),
 fällig vor dem ersten echten Durchlauf (Betriebsstufe `produktiv`). Ebenfalls gemessen und ehrlich
 zu nennen: Unterhalb von rund `k/(2 × Deckelfenster)` Teilnahmen je Stunde greift der Zeitdeckel
@@ -564,10 +564,20 @@ erlaubt und nach § 3 geboten; sie gehören in den veröffentlichten, gehashten 
 Hash-Veröffentlichung und Prüfanleitung sind `offen` → EIP-T-007, fällig vor
 dem ersten echten Durchlauf (Betriebsstufe `produktiv`).
 
-Bis dahin ist die Übereinstimmung von Repository und Auslieferung `Disziplin` und wird so gesagt
-(§ 4) → EIP-T-074, fällig ab Betriebsstufe `öffentlich
-erreichbar`. Nach V-001 wieder hergestellt (Stand `c63dd06`, 2026-07-28) — und weil nur Disziplin sie
-hält, reißt sie mit jedem lokalen Commit erneut, der nicht ausgeliefert wird.
+Die Übereinstimmung von Repository und Auslieferung ist seit
+EIP-T-074 **feststellbar statt behauptet**: Die Instanz weist
+ihren Stand unter `/version` aus — benannter Commit und ein Hash über die Dateien, die sie
+tatsächlich ausliefert —, und `app/DEPLOY.md` beschreibt den Prüfweg dorthin in zwei Befehlen, die
+ohne Rückfrage bei uns auskommen. Damit ist die Fälligkeit dieser Betriebsstufe erfüllt: Sie verlangt
+nicht, dass keine Abweichung entsteht, sondern dass eine entstandene auffällt. Ein Commit, der hier
+liegen bleibt, ist ab sofort ein Befund im Debug-Modul und im Abgleich vor jeder Veröffentlichung,
+kein stiller Zustand mehr wie bei V-001.
+
+Was daran `Disziplin` bleibt — und deshalb hier stehen bleibt, statt als erledigt zu gelten: Das ist
+die Selbstauskunft des Servers, den man gerade prüfen will. Wer den ausgelieferten Code ändert, kann
+diese Antwort mit ändern. Sie deckt ein Versehen auf, nicht einen Betreiber, der lügt. Dagegen hilft
+erst der reproduzierbare, von Dritten nachgerechnete Build → EIP-T-007,
+fällig ab Betriebsstufe `produktiv`.
 
 ---
 
@@ -606,18 +616,19 @@ die Mindestmenge aus der Regel von § 2 heute nicht existiert. Wer nur auf die 1
 | 13 | Finanzierungsmodell im Detail | EIP-T-026 | erste Annahme von Geld | 2026-07-26 |
 | 14 | Rechtsform und Nachfolgebindung | EIP-T-065 | `produktiv`, jed. vor Trägerwechsel | 2026-07-26 |
 | 16 | Durchsetzung über Nutzungsbedingungen | EIP-T-062 | erste Einbettung, spät. `produktiv` | 2026-07-26 |
-| 20 | Reproduzierbarer Build, Hash, Prüfanleitung | EIP-T-007 | `produktiv` | 2026-07-27 |
-| 20 | Übereinstimmung Repository und Auslieferung | EIP-T-074 | `öffentlich erreichbar` | 2026-07-27 |
+| 20 | Reproduzierbarer Build, Hash, Prüfanleitung. Die Übereinstimmung von Repository und Auslieferung ist seit EIP-T-074 feststellbar (`/version`); was bleibt, ist die Selbstauskunft — sie deckt ein Versehen auf, keinen Betreiber, der lügt | EIP-T-007 | `produktiv` | 2026-07-27 |
 
 Drei Fälligkeiten hängen an der Betriebsstufe `öffentlich erreichbar`, die seit dem 2026-07-27 läuft.
 Stand 2026-07-31:
 
-- **§ 20** — erfüllt **im Moment jeder Prüfung, nicht dauerhaft**: Zwischen einer Änderung hier und
-  ihrem Deploy zeigt die Instanz einen älteren Stand, und niemand außer uns bemerkt das. Kein
-  Verstoß nach § 18, solange die Instanz korrekt sagt, welche Version sie zeigt — aber auch kein
-  Zustand, den dieser Punkt dauerhaft behaupten kann. Deshalb steht hier keine Momentaufnahme:
-  Was der ausgelieferte Stand ist und wie man ihn prüft, ist die Aufgabe von
-  → EIP-T-074. Bis dahin trägt es Disziplin
+- **§ 20** — erfüllt, und seit dem 2026-08-01 nicht mehr nur im Moment einer Prüfung: Die Instanz
+  weist ihren Stand unter `/version` aus, und zwar mit einem Hash über die ausgelieferten Dateien,
+  nicht nur mit einer Commit-Angabe (EIP-T-074). Zwischen einer Änderung hier und ihrem Deploy zeigt
+  die Instanz weiterhin einen älteren Stand — das ist keine Abweichung, sondern der Weg dorthin.
+  Neu ist, dass es **sichtbar** ist, statt dass niemand außer uns es bemerkt: im Startprotokoll, im
+  Debug-Modul und im Abgleich, der zu jeder Veröffentlichung gehört. Was offen bleibt, ist nicht
+  diese Fälligkeit, sondern die nächste Stufe → EIP-T-007, fällig
+  `produktiv`
 - **§ 10** — erfüllt: Kodex, Verstoßprotokoll und Transparenzbericht sind auf der Instanz ohne
   Anmeldung erreichbar (Version 10, EIP-T-063)
 - **§ 1** — weiterhin nur teilweise, aber die Hälfte steht: Dass die App keine IPs mehr

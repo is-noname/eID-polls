@@ -35,6 +35,55 @@
   </div></div>
 {% endif %}
 
+<h2>Auslieferung gegen Veröffentlichung</h2>
+<p class="sub">
+  Läuft hier der Stand, der veröffentlicht ist? Kodex § 20 verlangt das, und bis EIP-T-074 stellte es
+  niemand fest — Verstoß V-001 entstand aus Korrekturen, die uncommittet im Arbeitsbaum lagen,
+  während die öffentliche Instanz die falschen Aussagen weiter anzeigte.
+  <strong>Grenze:</strong> Das ist die Selbstauskunft dieser Instanz. Sie deckt ein Versehen auf,
+  nicht einen Betreiber, der lügt.
+</p>
+
+{% if auslieferung.befunde %}
+  <div class="banner err">
+    Ausgelieferter Stand weicht ab
+    {% for item in auslieferung.befunde %}<small>{{ item }}</small>{% endfor %}
+  </div>
+{% else %}
+  <div class="card"><div class="card-body">
+    <span class="tag open">ÜBEREIN</span>
+    <span class="muted" style="margin-left:8px">Keine Abweichung feststellbar.</span>
+  </div></div>
+{% endif %}
+
+<div class="table-wrap">
+  <table>
+    <tbody>
+      <tr><td>Commit</td>
+          <td class="mono">{{ auslieferung.stand.commit }}</td>
+          <td class="mono faint">{{ auslieferung.stand.commit_quelle }}</td></tr>
+      <tr><td>Dateihash</td>
+          <td class="mono">{{ auslieferung.stand.treehash }}</td>
+          <td class="mono faint">{{ auslieferung.stand.dateien }} Datei(en)</td></tr>
+      <tr><td>Nachrechnen</td>
+          <td class="mono faint" colspan="2">{{ auslieferung.stand.nachrechnen }}</td></tr>
+      <tr><td>Letzter Abgleich<br><span class="muted">von außen</span></td>
+          <td colspan="2">
+            {% if auslieferung.bericht %}
+              <span class="mono faint">{{ auslieferung.bericht.zeit }}</span> —
+              {{ auslieferung.bericht.ergebnis }}
+            {% else %}
+              <span class="muted">noch keiner — <span class="mono">python3 scripts/check_auslieferung.py</span></span>
+            {% endif %}
+          </td></tr>
+    </tbody>
+  </table>
+</div>
+
+{% for item in auslieferung.hinweise %}
+  <p class="sub">{{ item }}</p>
+{% endfor %}
+
 <h2>Teilnahmevorgänge (stundenweise gezählt)</h2>
 <p class="sub">
   Ausweis-Anmeldung, Token-Ausgabe und Stimmabgabe stehen hier als Zahl je Stunde, nicht als
