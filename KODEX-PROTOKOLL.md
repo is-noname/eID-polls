@@ -15,6 +15,52 @@
 
 ## Änderungsprotokoll
 
+### Version 12 — 2026-07-31
+
+**§ 2 verliert seine Mindestmenge.** Die Regel verlangt, dass „vor der Veröffentlichung eines Boards
+eine Mindest-Anonymitätsmenge erreicht sein muss". Die Simulation aus
+EIP-T-072 hat gemessen, dass es diese Menge heute nicht gibt
+(`EIP-RPT-20260731-001`): k zählt Board-*Einträge*, und weil jede Teilnahme zwei erzeugt
+(Tokenausgabe + Stimme), liegt eine Stimme unter genau 5 anderen statt unter 10. Schlimmer ist der
+zweite Befund — weil die Mischung aus Ausgaben und Stimmen im Puffer schwankt, ist selbst diese 5
+keine Schranke: Unter Andrang liegen bis zu 23,6 % der Stimmen in einem Batch mit weniger als 5
+Stimmen. Der Statusteil von § 2 sagt das jetzt, und die Schuldenübersicht führt den Vermerk mit
+Fälligkeit vor `produktiv` → EIP-T-076.
+
+**Grund.** Die Zahl 10 stand seit Version 7 im Kodex und war nie gemessen — die ADR hatte sie
+begründet, nicht geprüft, und der Kodex hatte den Vorbehalt „etwa k/2" bereits notiert und auf
+EIP-T-072 gezeigt. Damit war der Punkt korrekt fällig gestellt; unzulässig wäre gewesen, ihn nach
+der Messung stehen zu lassen. Die Formulierung „etwa k/2" war zudem zu weich: Es ist im
+Sättigungsfall exakt k/2 und darunter, wenn der Zeitdeckel greift.
+
+Mitgeschrieben, weil es den Kodex selbst betrifft: Bei 25 Teilnehmenden über 7 Tage steht **jede
+fünfte Stimme allein in ihrem Batch** — bei jedem k. Das ist keine Schuld, die ein Ticket abträgt,
+sondern die Grenze des Mechanismus. Sie gehört in § 2 und in die Kommunikation
+(EIP-T-028), nicht in die Schuldenübersicht.
+
+**Die Zahl ändert sich nicht: 11 von 20, Grenze 8, der Baustopp gilt weiter** — § 2 war bereits
+belastet. Genau das ist hier bemerkenswert: Ein Befund dieser Größe bewegt die Kennzahl um null,
+weil sie Paragraphen zählt und nicht Schulden. Der Hinweis darauf steht jetzt in der
+Schuldenübersicht, damit ein späterer Leser den 2026-07-31 nicht für einen ruhigen Tag hält. Die
+Änderung ist unter § 4 b zulässig als Arbeit, die einen Mangel prüft und dokumentiert; die Behebung
+ist Aufgabe von EIP-T-076 und trägt die Schuld dann tatsächlich ab.
+
+**Nachtrag, gleiche Version (EIP-T-073, 2026-08-01).** Der Schuld-Vermerk unter § 5 begründete das
+Fehlen des Eingangskanals mit „das Projekt hat keine Domain". Diese Begründung ist überholt: Der
+Betreiber hat entschieden, den Kanal als eigenes Postfach bei einem Mailprovider zu führen — ohne
+eigene Domain und ohne die private Adresse an das Projekt zu binden. Damit ist offen nur noch die
+Einrichtung, nicht mehr die Frage. § 5, die Schuldenübersicht, [Transparenzbericht](/transparenz) und
+EIP-RFC-20260729-001 sagen das jetzt gleichlautend.
+
+**Grund für den Eintrag.** Eine stehengebliebene Begründung ist nicht harmlos: „keine Domain" liest
+sich als äußeres Hindernis, „noch nicht eingerichtet" als offene eigene Arbeit. Der Unterschied ist
+genau der zwischen einer Lücke, die man erklärt, und einer, die man schuldet — und § 4 verlangt die
+zweite Lesart, wo sie zutrifft.
+
+**Die Zahl ändert sich nicht: 11 von 20, Grenze 8, der Baustopp gilt weiter.** § 5 bleibt belastet,
+bis die Adresse erreichbar und veröffentlicht ist. Zulässig unter § 4 b als Arbeit, die eine Schuld
+präzisiert und ihren Abtrag vorbereitet; keine Regeländerung, deshalb keine neue Version.
+
 ### Version 11 — 2026-07-31
 
 § 18 bekommt die Abgrenzung, die ihm gefehlt hat: **wann ein Befund ins Verstoßprotokoll gehört und

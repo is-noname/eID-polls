@@ -36,7 +36,12 @@ Gericht überhaupt trägt, ist ungeklärt; er wird geführt, weil sein Fehlen si
 
 **Festgelegt, aber noch nicht erreichbar.** Anfragen sollen an eine eigene Adresse gehen, die
 ausschließlich diesem Zweck dient und von keiner anderen Funktion des Projekts benutzt wird. Diese
-Adresse existiert noch nicht, weil das Projekt keine eigene Domain hat.
+Adresse existiert noch nicht.
+
+Seit dem 2026-08-01 steht immerhin fest, wie sie aussehen wird: ein eigenes Postfach bei einem
+Mailprovider, ohne eigene Domain. Das war die offene Frage — eine Domain hat das Projekt nicht, und
+die private Adresse des Betreibers dauerhaft an das Projekt zu binden, ist bewusst ausgeschlossen.
+Was noch fehlt, ist die Einrichtung selbst, nicht die Entscheidung.
 
 Das ist eine offene Zusage und wird als solche geführt: [Kodex](/kodex) § 5 trägt dafür einen
 Schuld-Vermerk, aufzulösen durch EIP-T-073. Bis

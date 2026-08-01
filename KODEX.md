@@ -11,7 +11,7 @@
 > Historie: [Kodex-Protokoll](/kodex/protokoll) · Begriffe: Glossar (projektintern) ·
 > These: EIP-RFC-20260726-001
 
-**Version 11 — 2026-07-31**
+**Version 12 — 2026-07-31**
 
 ---
 
@@ -158,9 +158,19 @@ umgesetzt (EIP-ADR-20260728-001, 2026-07-31): Das Board wird als
 Merkle-Set pro Batch mit verketteten Roots veröffentlicht, sortiert nach Blatt-Hash; Mindestmenge
 **k = 10** Einträge, Zeitdeckel **6 Stunden**, bei Schließung sofort (der letzte Batch darf k
 unterschreiten — dokumentierte Grenze, kein Fehler). Keine Tabelle trägt mehr eine
-Eingangsreihenfolge. Ehrlich dazu: k zählt Einträge; im Ein-Klick-Flow sind das je Teilnahme zwei
-(Ausgabe + Stimme), die wirksame Personen-Anonymitätsmenge ist also etwa k/2 — zu prüfen in
-EIP-T-072. Die Sitzungstrennung der Abstimm-Route
+Eingangsreihenfolge. **Die Mindestmenge ist derzeit keine** und der Satz „Vor der Veröffentlichung
+muss eine Mindest-Anonymitätsmenge erreicht sein" damit heute nicht gedeckt: k zählt Einträge, und
+im Ein-Klick-Flow sind das je Teilnahme zwei (Ausgabe + Stimme). Die gemessene Personen-Menge ist
+deshalb genau k/2, also **5 statt 10** — und weil die Mischung im Puffer schwankt, liegen unter
+Andrang bis zu 23,6 % der Stimmen sogar darunter
+(EIP-RPT-20260731-001 Anonymitaetsmenge-Batch-Simulation, Simulation zu
+EIP-T-072). `offen` →
+EIP-T-076 (Fälligkeit an Stimmen binden, Menge auf 10 anheben),
+fällig vor dem ersten echten Durchlauf (Betriebsstufe `produktiv`). Ebenfalls gemessen und ehrlich
+zu nennen: Unterhalb von rund `k/(2 × Deckelfenster)` Teilnahmen je Stunde greift der Zeitdeckel
+statt k, und die Menge fällt gegen 1 — bei 25 Teilnehmenden über 7 Tage steht jede fünfte Stimme
+allein in ihrem Batch. Das ist die Grenze des Mechanismus und durch keine Parameterwahl zu
+beheben. Die Sitzungstrennung der Abstimm-Route
 (Baustein F) ist seit Version 8 umgesetzt: Die Stimme geht ohne Cookie, Auth-Header und Referrer
 an den Server, mitgesandter Sitzungskontext wird im Debug-Modul als Befund gemeldet, und beide
 Phasen-Routen antworten nie schneller als der Antwort-Floor. Noch `offen`: die Speichertrennung
@@ -245,9 +255,12 @@ der öffentlichen Instanz unter `/transparenz` — beginnend beim Nullfall, dami
 nicht selbst zur Auskunft wird.
 
 Der **Eingangskanal** ist dagegen `offen`: Anfragen sollen an eine eigene, ausschließlich dafür
-bestimmte Adresse gehen; die gibt es noch nicht, weil das Projekt keine Domain hat. Bis dahin
-erreicht eine Behörde das Projekt nur über den Betreiber persönlich, und der Transparenzbericht sagt
-das → EIP-T-073, fällig ab Betriebsstufe `produktiv`.
+bestimmte Adresse gehen; die gibt es noch nicht. Der Weg dorthin steht seit dem 2026-08-01 fest — ein
+eigenes Postfach bei einem Mailprovider, ohne eigene Domain und ohne die private Adresse des
+Betreibers (Betreiberentscheidung, → EIP-T-073). Offen
+ist damit nicht mehr die Frage, sondern nur die Einrichtung. Bis sie erfolgt ist, erreicht eine
+Behörde das Projekt nur über den Betreiber persönlich, und der Transparenzbericht sagt das. Fällig ab
+Betriebsstufe `produktiv`.
 
 ### § 6 DSGVO-Kollision
 
@@ -573,13 +586,20 @@ seine Stelle. Der Offenlegungsweg ist gebaut, der Eingangskanal für Behördenan
 das war die bewusste Entscheidung, keine private Adresse dauerhaft an das Projekt zu binden
 (EIP-T-063). Ein Tausch, kein Abtrag.
 
+Mit Version 12 kommt ein dritter Vermerk unter § 2 hinzu, ohne dass die Zahl steigt — § 2 war
+bereits belastet. **Das ist eine Schwäche dieser Kennzahl, keine Entwarnung:** Sie zählt
+Paragraphen, nicht Schulden. Der neue Vermerk ist keine kleine Ergänzung, sondern der Befund, dass
+die Mindestmenge aus der Regel von § 2 heute nicht existiert. Wer nur auf die 11 sieht, hält den
+2026-07-31 für einen Tag ohne Veränderung.
+
 | § | Was offen ist | Ticket | Fällig vor | Seit |
 |---|---|---|---|---|
 | 1 | Protokollierung beim Hoster (Loadbalancer, TLS-Endpunkt, Cloudflare) — belegt, dass sie stattfindet; Umfang und Frist offen. Die eigene Seite ist erledigt | EIP-T-075 | `öffentlich erreichbar` | 2026-07-26 |
 | 2 | Speichertrennung der Abstimm-Route (Baustein G) und Session-Cookie an /verify | EIP-T-033 | `produktiv` | 2026-07-26 |
 | 2 | Öffentlicher Anker gegen Split-View | EIP-T-006 | `produktiv` | 2026-07-26 |
+| 2 | Mindestmenge zählt Einträge statt Stimmen — wirksam 5 statt 10, unter Andrang bis 23,6 % der Stimmen darunter (gemessen, `EIP-RPT-20260731-001`) | EIP-T-076 | `produktiv` | 2026-07-31 |
 | 4 | Ballot Stuffing bleibt Disziplin **während der Laufzeit** (Schlüssel liegt allein bei uns; nach Schließung vernichtet, EIP-T-069) | EIP-T-040 | `produktiv` | 2026-07-26 |
-| 5 | Eigener Eingangskanal für Behördenanfragen (keine Domain) | EIP-T-073 | `produktiv` | 2026-07-31 |
+| 5 | Eigener Eingangskanal für Behördenanfragen — Bauform entschieden (Postfach ohne Domain), Einrichtung offen | EIP-T-073 | `produktiv` | 2026-07-31 |
 | 6 | DSGVO-Kollision entschieden und begründet | EIP-T-061 | `produktiv` | 2026-07-26 |
 | 11 | eAT-Unterstützung, Barrierefreiheit | EIP-T-064 | `produktiv` | 2026-07-26 |
 | 12 | Übergabe der Fragehoheit an ein unabhängiges Gremium | EIP-T-022 | politische Relevanz, spät. `produktiv` | 2026-07-26 |
