@@ -15,6 +15,46 @@
 
 ## Änderungsprotokoll
 
+### Version 19 — 2026-08-01
+
+**§ 20 bekommt seine Lizenz: AGPL-3.0-or-later. V-004 ist behoben, und die Schuldenzahl sinkt zum
+ersten Mal seit Version 9** (EIP-T-078).
+
+**Was entschieden wurde.** Der Quellcode unter <https://github.com/is-noname/eID-polls> steht ab
+sofort unter der **GNU Affero General Public License v3.0 or later**. Volltext als `LICENSE` im
+Repo, Begründung und Fremdcode-Lage im `README.md`.
+
+**Warum nicht permissiv.** § 20 sagt zwei Dinge zu, die zusammengehören: *Weiterbetrieb erlaubt* und
+*der ausgelieferte Client entspricht dem veröffentlichten Stand*. Eine permissive Lizenz (MIT,
+Apache-2.0) erfüllt den ersten Satz und hebelt den zweiten aus, sobald jemand anderes betreibt: Er
+dürfte eine still abgeänderte Fassung als „das Verfahren" ausliefern, und niemand hätte einen
+Anspruch, den Unterschied zu sehen. Die gewöhnliche GPL hilft hier nicht, weil Serverbetrieb keine
+Weitergabe ist — genau die Lücke, für die es die AGPL gibt. Die Netzwerk-Klausel (§ 13 der Lizenz)
+macht aus dem Kodex-Satz eine Pflicht, die auch für Fremde gilt.
+
+**Warum das eine Entscheidung des Betreibers war und nicht dieser Zeilen.** Eine Lizenz ist praktisch
+nicht rücknehmbar. Die Wahl fiel am 2026-08-01 zwischen AGPL-3.0-or-later, EUPL-1.2 (deutscher
+Rechtstext, in der Verwaltung geläufig, Copyleft ebenfalls netzwerkwirksam) und Apache-2.0.
+Ausschlaggebend war die Verbreitung: Was eine Prüferin ohne Rückfrage einordnen kann, ist bei der
+AGPL sicherer gegeben, und die EUPL erlaubt eine spätere Weiterlizenzierung in diese Richtung
+ohnehin, nicht umgekehrt.
+
+**Was die Lizenz nicht tut.** Sie bindet keinen fremden Betreiber an diesen Kodex. Wer eine eigene
+Instanz aufsetzt, schuldet seinen Nutzern den Quellcode, nicht diese Regeln. Die Bindung des
+Regelwerks an Nachfolger und Träger ist § 14, hängt an der Rechtsform und bleibt offen
+(EIP-T-065).
+
+**Fremdcode geprüft.** `static/vendor-qrcode.js` (qrcode-generator, Kazuhiko Arase) steht unter MIT,
+der Lizenzkopf bleibt in der Datei. MIT-Code darf in ein AGPL-Werk aufgenommen werden. Die
+Abhängigkeiten aus `requirements.txt` werden installiert statt mitausgeliefert und sind sämtlich
+permissiv oder AGPL-verträglich.
+
+**Was offen bleibt und wichtiger ist als die Lizenz.** Der Befund aus V-004 Punkt 3 — ein Satz auf
+`bindend` steht in keiner Prüfung und gilt deshalb als erledigt, weil ihn nie jemand als offen
+markiert hat — ist damit **nicht** behoben. Er gehört zu keinem einzelnen Paragraphen und taucht
+darum auch jetzt in keiner Zeile der Schuldenübersicht auf
+→ EIP-T-084.
+
 ### Version 18 — 2026-08-01
 
 **§ 2 bekommt seine Netzwerkebene — und der Grund, sie überhaupt aufzuschreiben, ist ein Korrelator,
@@ -873,8 +913,9 @@ Backup-Regel dazu ist offen und gehört zu EIP-T-041 (Akzeptanzkriterium 3). Bis
 
 ### V-004 — Öffentlicher Code ohne Lizenz: Weiterbetrieb rechtlich nicht erlaubt
 **Datum des Eintrags:** 2026-08-01 · **Paragraphen:** § 20, § 14, § 18 ·
-**Ticket:** EIP-T-078 · **Status:** offen. Die Behebung
-ist eine Lizenzwahl und damit eine Entscheidung des Betreibers, keine Umsetzungsaufgabe
+**Ticket:** EIP-T-078 · **Status:** **behoben am
+2026-08-01** — der Code steht unter AGPL-3.0-or-later (Version 19). Der Verstoßzeitraum bleibt
+stehen: 2026-07-27 bis 2026-08-01
 
 **Was geschah.** § 20 Satz 1 lautet seit Version 1: *„Der Quellcode ist öffentlich, unter einer
 Lizenz, die Prüfung und Weiterbetrieb erlaubt."* Status: `bindend`, ohne Vorbehalt und ohne
@@ -908,3 +949,14 @@ jemand denselben Paragraphen aus einem anderen Grund von vorn gelesen hat.
    Kodex-Änderung und gehört nicht in dieses Ticket — festgehalten ist sie hier.
 4. Bis zur Lizenz darf nach außen nicht behauptet werden, der Code lasse sich weiterbetreiben. Was
    heute stimmt: Er ist einsehbar und prüfbar.
+
+**Behoben am 2026-08-01.** `LICENSE` (AGPL-3.0-or-later) und ein begründender Abschnitt in
+`README.md` liegen im Repo, § 20 ist aus der Schuldenübersicht heraus, Punkt 4 oben gilt nicht mehr:
+Weiterbetrieb ist eingeräumt. Warum gerade diese Lizenz und was sie nicht leistet, steht in
+Version 19.
+
+**Was die Behebung nicht mit erledigt.** Punkt 3 bleibt offen, und er ist der schwerere Teil dieses
+Eintrags: Eine Lizenz zu schreiben schließt eine Lücke, das Verfahren, das sie fünf Tage lang nicht
+sehen konnte, bleibt unverändert. Solange nur `offen`- und `Disziplin`-Vermerke geprüft werden, ist
+jeder Satz auf `bindend` ein blinder Fleck → EIP-T-084. Der
+nächste Fund dieser Art wird wieder ein Zufallsfund sein.

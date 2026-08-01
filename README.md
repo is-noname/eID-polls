@@ -157,3 +157,33 @@ Plan: `EIP-RFC-20260725-002_eID-Flow-Umsetzungsplan.md`. Nachverfolgung in `tick
 
 Ein physischer NFC-Leser und Testkarten werden **nicht** gebraucht: die AusweisApp bringt seit
 V1.24 einen Karten-Simulator für die Test-PKI mit.
+
+## Lizenz
+
+**GNU Affero General Public License v3.0 or later** (AGPL-3.0-or-later) — voller Text in
+[LICENSE](LICENSE).
+
+Die Wahl folgt aus KODEX § 20: *„Der Quellcode ist öffentlich, unter einer Lizenz, die Prüfung und
+Weiterbetrieb erlaubt."* Beides ist damit eingeräumt — lesen, prüfen, ändern, selbst betreiben.
+
+Die Netzwerk-Klausel (§ 13 der Lizenz) ist der Grund für gerade diese Lizenz und keine permissive:
+Die Unverkettbarkeit dieses Verfahrens entsteht im Browser, im ausgelieferten Client. Wer eine
+**veränderte** Fassung öffentlich betreibt, muss deren Quellcode den Nutzern dieser Instanz
+anbieten. Unter MIT oder Apache dürfte jemand eine still abgeänderte Fassung als „das Verfahren"
+betreiben, ohne dass der Unterschied prüfbar wäre — das ist genau der Angriff, gegen den § 20
+geschrieben ist. Unter der gewöhnlichen GPL griffe die Pflicht nicht, weil Serverbetrieb keine
+Weitergabe ist.
+
+Was das **nicht** heißt: Die Lizenz gilt für den Code, nicht für dieses Projekt als Betreiber. Sie
+verpflichtet niemanden auf `KODEX.md`; wer eine eigene Instanz betreibt, betreibt sie unter eigenem
+Namen und eigener Verantwortung (siehe § 14 zur Nachfolge).
+
+### Fremdcode
+
+`static/vendor-qrcode.js` — qrcode-generator von Kazuhiko Arase, **MIT**, Lizenzkopf unverändert in
+der Datei. MIT-Code darf in ein AGPL-Werk aufgenommen werden; sein Lizenztext bleibt dabei stehen
+und gilt für diese Datei fort.
+
+Die Laufzeit-Abhängigkeiten aus `requirements.txt` (FastAPI, uvicorn, Jinja2, cryptography,
+markdown, rfc3161-client, opentimestamps-client) werden installiert, nicht mitausgeliefert; sie
+stehen sämtlich unter permissiven oder mit der AGPL verträglichen Lizenzen.

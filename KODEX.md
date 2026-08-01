@@ -11,7 +11,7 @@
 > Historie: [Kodex-Protokoll](/kodex/protokoll) · Begriffe: Glossar (projektintern) ·
 > These: EIP-RFC-20260726-001
 
-**Version 18 — 2026-08-01**
+**Version 19 — 2026-08-01**
 
 ---
 
@@ -277,7 +277,8 @@ Umfrage**, bis der Signaturschlüssel geteilt ist →
 EIP-T-040, fällig vor dem ersten echten Durchlauf.
 Dagegen helfen nur verteilte Dritte (§ 12); was bleibt, ist die Ledger-Abrechnung, die den
 Überschuss sichtbar macht. Die weiteren Schulden dieses Paragraphen sind bei ihren Paragraphen
-geführt: öffentlicher Anker gegen Split-View (§ 2), fehlende Lizenz (§ 20). Der Abgleich des
+geführt: öffentlicher Anker gegen Split-View (§ 2). Die Lizenzfrage aus § 20 ist seit dem 2026-08-01
+beantwortet (AGPL-3.0-or-later) und keine Schuld mehr. Der Abgleich des
 ausgelieferten Clients ist seit dem 2026-08-01 keine Disziplin mehr, sondern von außen messbar.
 
 ### § 5 Behörden, Herausgabe und Auskunft
@@ -608,13 +609,19 @@ Minifizierte oder gebündelte Auslieferung ohne reproduzierbaren Weg vom Quellte
 Schritten, die im Client laufen müssen — allen voran das Blinding. Fremde Bibliotheken sind dagegen
 erlaubt und nach § 3 geboten; sie gehören in den veröffentlichten, gehashten Stand.
 
-**Status.** `bindend`. Reproduzierbarer Build, Hash-Veröffentlichung und Prüfanleitung sind seit dem
-2026-08-01 **eingelöst** (Version 14 im [Kodex-Protokoll](/kodex/protokoll)) — die Lizenz aus dem ersten Satz dieser
-Regel ist es nicht: Sie fehlt, damit steht der Code unter dem gesetzlichen Normalfall *alle Rechte
-vorbehalten*, und Weiterbetrieb ist gerade nicht erlaubt. Als Verstoß V-004 protokolliert und `offen`
-→ EIP-T-078. Fällig ist das nicht künftig, sondern
-**überfällig**: Der Satz steht ohne Vorbehalt auf `bindend`, spätestens mit der Betriebsstufe
-`öffentlich erreichbar` war er einzulösen, und die läuft seit dem 2026-07-27.
+**Status.** `bindend` und seit dem 2026-08-01 in beiden Teilen eingelöst. Reproduzierbarer Build,
+Hash-Veröffentlichung und Prüfanleitung stehen (Version 14 im [Kodex-Protokoll](/kodex/protokoll)); die Lizenz aus
+dem ersten Satz steht seit Version 19: **AGPL-3.0-or-later**, Volltext als `LICENSE` im App-Repo,
+Begründung in dessen `README.md` (EIP-T-078, Verstoß V-004
+damit behoben). Gewählt wurde nicht permissiv, weil der Paragraph *Weiterbetrieb* zusagt und zugleich
+verbietet, einen abweichenden Client auszuliefern: Die Netzwerk-Klausel der AGPL bindet beides
+aneinander — wer eine veränderte Fassung öffentlich betreibt, schuldet deren Quellcode den Nutzern
+seiner Instanz. Unter MIT oder Apache dürfte er still abweichen, unter der gewöhnlichen GPL ebenso,
+weil Serverbetrieb keine Weitergabe ist.
+
+Was die Lizenz nicht leistet: Sie bindet niemanden an diesen Kodex. Ein fremder Betreiber schuldet
+seinen Nutzern den Code, nicht die Regeln — die Bindung des Regelwerks an einen Nachfolger ist § 14
+und offen.
 
 **Der Client ist nachrechenbar, und zwar ohne diesen Server zu fragen.** Aller Client-Code liegt
 unverändert unter `/static/` — nicht gebündelt, nicht minifiziert; ein Build-Schritt, der
@@ -658,8 +665,16 @@ abgeleitet, nicht eigenständig: Maßgeblich ist der Status beim jeweiligen Para
 `scripts/check_kodex.py` prüft, dass beide übereinstimmen und dass kein Vermerk ohne Ticket und
 Ereignis dasteht.
 
-**Stand 2026-08-01: 11 von 20 Paragraphen. Die Grenze aus § 4 b liegt bei 8 — sie ist überschritten,
+**Stand 2026-08-01: 10 von 20 Paragraphen. Die Grenze aus § 4 b liegt bei 8 — sie ist überschritten,
 der Baustopp gilt.**
+
+Version 19 nimmt § 20 aus dieser Liste: Der Code steht seit dem 2026-08-01 unter AGPL-3.0-or-later,
+Prüfung **und** Weiterbetrieb sind eingeräumt (EIP-T-078,
+V-004 behoben). Damit sinkt die Zahl zum ersten Mal seit Version 9 — und ausgerechnet an dem
+Paragraphen, der seinen Vermerk erst vier Versionen zuvor bekommen hatte, weil ein `bindend`er Satz
+nie geprüft worden war. Der Befund darüber (Ein Satz auf `bindend` steht in keiner Prüfung) ist mit
+der Lizenz **nicht** erledigt; er gehört zu keinem Paragraphen und taucht deshalb in dieser Tabelle
+auch jetzt nicht auf → EIP-T-084.
 
 Version 15 löst den dritten Vermerk unter § 2 auf: Die Mindestmenge zählt jetzt Stimmen und ist
 damit die Zahl, die sie zu sein behauptet (EIP-T-076). Die Zahl
@@ -705,7 +720,6 @@ ein Dokument schreibt.
 | 13 | Finanzierungsmodell im Detail | EIP-T-026 | erste Annahme von Geld | 2026-07-26 |
 | 14 | Rechtsform und Nachfolgebindung | EIP-T-065 | `produktiv`, jed. vor Trägerwechsel | 2026-07-26 |
 | 16 | Vergabe und Entzug der Einbettungserlaubnis. Die Nutzungsbedingungen selbst stehen seit 2026-08-01 (EIP-T-062); ohne Einbettung gibt es keinen Zugang, den ein Verstoß kosten könnte | EIP-T-023 | erste Einbettung, spät. `produktiv` | 2026-07-26 |
-| 20 | Keine Lizenz am veröffentlichten Code — damit gilt *alle Rechte vorbehalten*, und der Weiterbetrieb, den dieser Paragraph zusagt, ist nicht erlaubt. Verstoß V-004, nicht bloß Rückstand: Der Satz steht ohne Vorbehalt auf `bindend` | EIP-T-078 | `öffentlich erreichbar` — **überfällig** | 2026-08-01 |
 
 Drei Fälligkeiten hängen an der Betriebsstufe `öffentlich erreichbar`, die seit dem 2026-07-27 läuft.
 Stand 2026-08-01:
@@ -716,8 +730,12 @@ Stand 2026-08-01:
   benutzen** (EIP-T-007). Zwischen einer Änderung hier und ihrem Deploy zeigt die Instanz weiterhin
   einen älteren Stand — das ist keine Abweichung, sondern der Weg dorthin; neu ist, dass es
   **sichtbar** ist statt still.
-  **Gerissen ist der andere Teil desselben Paragraphen**: Der Code steht ohne Lizenz öffentlich,
-  Weiterbetrieb ist damit nicht erlaubt (V-004) → EIP-T-078
+  **Der andere Teil desselben Paragraphen ist seit dem 2026-08-01 nachgezogen**: Der Code steht unter
+  AGPL-3.0-or-later, Weiterbetrieb ist eingeräumt und an die Pflicht gebunden, eine veränderte
+  öffentlich betriebene Fassung offenzulegen (V-004 behoben,
+  EIP-T-078). Damit ist § 20 als einziger der drei
+  Fälligkeiten dieser Stufe vollständig erfüllt — und war es an dem Tag, an dem er zum ersten Mal
+  vollständig gelesen wurde
 - **§ 10** — erfüllt: Kodex, Verstoßprotokoll und Transparenzbericht sind auf der Instanz ohne
   Anmeldung erreichbar (Version 10, EIP-T-063)
 - **§ 1** — weiterhin nur teilweise, aber die Hälfte steht: Dass die App keine IPs mehr
@@ -729,9 +747,9 @@ Stand 2026-08-01:
   mehr bloß unbekannt: Render sagt vertraglich zentrale Infrastruktur-Protokollierung zu, ohne
   Umfang und Frist zu nennen. Offen ist die Auskunft darüber, nicht mehr die Existenz →
   EIP-T-075.
-  **Gerissen, seit die Stufe läuft** — und bis zum 2026-08-01 die einzige. Seither steht die
-  fehlende Lizenz aus § 20 daneben: zwei von drei Fälligkeiten dieser Betriebsstufe sind offen,
-  eine davon (V-004) war es die ganze Zeit, ohne dass es jemandem auffiel
+  **Gerissen, seit die Stufe läuft** — und nach der Behebung von V-004 wieder die einzige. Dass die
+  fehlende Lizenz keinen vollen Tag in dieser Liste stand, ändert nichts daran, dass sie seit dem
+  2026-07-27 fällig war: Der Verstoß zählt ab dem Deploy, nicht ab dem Bemerken
 
 Die Spalte *Seit* nennt das Datum der Kodex-Version, in der der Vermerk zuerst stand, nicht das
 Datum dieser Übersicht. Ein Vermerk wird durch die Aufnahme hier nicht jünger.
