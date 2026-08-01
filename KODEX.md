@@ -11,7 +11,7 @@
 > Historie: [Kodex-Protokoll](/kodex/protokoll) · Begriffe: Glossar (projektintern) ·
 > These: EIP-RFC-20260726-001
 
-**Version 16 — 2026-08-01**
+**Version 18 — 2026-08-01**
 
 ---
 
@@ -182,10 +182,40 @@ liegen in zwei Datenbankdateien mit getrennten Zugriffspfaden und getrennten Deb
 Token-Suche läuft im Browser über den Board-Export — das Token steht im URL-Fragment und erreicht
 den Server nicht mehr. Ehrlich dazu: Beide Seiten laufen weiter in einem Prozess bei einem
 Betreiber; gegen Laufzeit-Beobachtung durch uns selbst hilft die Trennung der Dateien nicht
-(→ EIP-T-034 für die Netzwerkebene,
-EIP-T-037 für die Betreibergrenze). Der öffentliche Anker
-gegen Split-View ist `offen` → EIP-T-006, fällig vor dem ersten echten
-Durchlauf (Betriebsstufe `produktiv`).
+(EIP-T-037 für die Betreibergrenze).
+
+Die **Netzwerkebene** ist seit Version 18 entschieden und zur Hälfte gebaut
+(EIP-ADR-20260801-003, EIP-T-034). Sie trug zwei Korrelatoren,
+nicht einen: die Absender-Adresse — und, seit beide Phasen in *einem* Klick laufen
+(EIP-ADR-20260725-002), dieselbe **TCP-Verbindung**. Wer den
+Socket sieht, verkettet Pseudonym und Stimme, ohne ein Feld zu lesen. Der zweite Korrelator ist
+geschlossen: Eine Verbindung, die eine Identität getragen hat, endet mit ihrer Antwort; eine, die
+nie eine trug, darf eine Stimme tragen. Dazu bleibt der Server kanalblind — über welchen Weg ein
+Request kam, hält er nirgends fest, und ein Test hält das so. Nicht *gemessen*, ob zwei Requests
+denselben Socket hatten: Das ginge nur, indem der Server Absender-Adresse und -Port vorhält, und
+das verbietet § 1.
+
+Was `offen` bleibt: der anonyme Kanal selbst — als **Option** neben dem normalen Weg, nicht als
+einziger Weg → EIP-T-082, fällig vor Betriebsstufe `produktiv`.
+Bis dahin gilt und wird so gesagt: Die Verbindungstrennung wirkt auf *unsere* Verbindung. Auf der
+laufenden Instanz steht Renders Loadbalancer davor, sieht beide Phasen als eine Verbindung und die
+IP ohnehin — dort ist die Maßnahme Voraussetzung, nicht Lösung. Und wenn der Kanal kommt, deckt er
+nicht k = 10: Die wirksame Menge eines Kanalnutzers ist die Zahl der Stimmen aus demselben Kanal im
+selben Batch. Bei einem einzelnen ist sie 1.
+
+Der öffentliche Anker steht seit Version 17 (EIP-ADR-20260801-002,
+EIP-T-006): Jede `batch_root(n)` wird bei zwei unabhängigen Diensten datiert — RFC 3161 und
+OpenTimestamps/Bitcoin —, die Belege stehen öffentlich zum Download, und laufen lokale und bezeugte
+Wurzel auseinander, ist das ein Befund im Debug-Modul und ein Banner auf der Board-Seite. Damit ist
+das **rückwirkende Umschreiben** erledigt: Ein Betreiber, der ein altes Board ändert und die Kette
+neu rechnet, bekommt für die neue Wurzel nur einen Zeitstempel von heute.
+
+Was dieser Anker **nicht** leistet und was deshalb `offen` bleibt: **Split-View**. Wer von Anfang an
+zwei Boards führt, lässt beide Wurzeln ehrlich datieren — ein Zeitstempel kann das prinzipiell nicht
+aufdecken, dazu gehört Aufzählbarkeit durch unabhängige Gegenzeichner
+→ EIP-T-036, fällig vor dem ersten echten Durchlauf (Betriebsstufe
+`produktiv`). Die beiden Angriffe wurden hier bis Version 17 zusammen genannt; dass der Anker gegen
+den zweiten hilft, war eine Ungenauigkeit dieses Paragraphen, keine Zusage der Umsetzung.
 
 ### § 3 Keine eigene Ausweis-Kryptografie
 
@@ -226,7 +256,11 @@ ohne etwas gebaut zu haben (Herleitung: [Kodex-Protokoll](/kodex/protokoll), Ver
 **Konkret verboten.** Formulierungen der Art „wir können nicht", wo tatsächlich „wir tun es nicht" gilt.
 Aktuell betrifft das vor allem Ballot Stuffing: Solange eine Umfrage **läuft**, liegt ihr
 Token-Signaturschlüssel bei uns allein, und wir könnten Phantom-Tokens signieren. Das ist Disziplin,
-bis die Schwellensignatur steht — und wird so gesagt. Ebenfalls verboten: einen Vermerk auf `offen`
+bis die Schwellensignatur steht — und wird so gesagt. Seit Version 17 gilt dasselbe für die externen
+Zeitstempel (§ 2): Sie schließen das rückwirkende Umschreiben, nicht Split-View. Wo ein Anker
+angezeigt wird, ist diese Grenze mitzunennen — ein Zeitstempel, der als Schutz gegen zwei parallel
+geführte Boards dargestellt wird, ist eine Zusage, die der Mechanismus nicht hergibt. Ebenfalls
+verboten: einen Vermerk auf `offen`
 stehen lassen, ohne Ticket und Ereignis zu
 nennen; die Grenze aus b) durch Umdeklarieren eines Features zu „Wartung" umgehen; die Grenze
 anheben, statt eine Schuld abzutragen (das wäre eine Änderung nach § 17 und braucht deren Begründung).
@@ -661,7 +695,8 @@ ein Dokument schreibt.
 | § | Was offen ist | Ticket | Fällig vor | Seit |
 |---|---|---|---|---|
 | 1 | Protokollierung beim Hoster (Loadbalancer, TLS-Endpunkt, Cloudflare) — belegt, dass sie stattfindet; Umfang und Frist offen. Die eigene Seite ist erledigt | EIP-T-075 | `öffentlich erreichbar` | 2026-07-26 |
-| 2 | Öffentlicher Anker gegen Split-View | EIP-T-006 | `produktiv` | 2026-07-26 |
+| 2 | Split-View: zwei parallel geführte Boards. Der Zeitanker steht seit 2026-08-01 (EIP-T-006) und schließt das rückwirkende Umschreiben; Equivocation deckt er prinzipiell nicht auf, dazu braucht es Gegenzeichner | EIP-T-036 | `produktiv` | 2026-07-26 |
+| 2 | Netzwerkebene: anonymer Zustellkanal als Option. Entschieden und zur Hälfte gebaut (Verbindungstrennung, Kanalblindheit, EIP-T-034); der Kanal selbst ist eine Betriebsentscheidung und hängt an der Hosterfrage | EIP-T-082 | `produktiv` | 2026-08-01 |
 | 4 | Ballot Stuffing bleibt Disziplin **während der Laufzeit** (Schlüssel liegt allein bei uns; nach Schließung vernichtet, EIP-T-069) | EIP-T-040 | `produktiv` | 2026-07-26 |
 | 5 | Eigener Eingangskanal für Behördenanfragen — Bauform entschieden (Postfach ohne Domain), Einrichtung offen | EIP-T-073 | `produktiv` | 2026-07-31 |
 | 6 | DSGVO-Kollision entschieden und begründet | EIP-T-061 | `produktiv` | 2026-07-26 |

@@ -27,11 +27,12 @@ from typing import Any, AsyncIterator
 
 import markdown
 from fastapi import APIRouter, FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import stand as stand_modul
+from anker import standard_zeugen
 from auth import AuthError, Authenticator, CodeAuthenticator
 from config import Settings
 import debug
@@ -121,6 +122,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 d.service.verwirf_abgelaufene_wiederholungen()
             except Exception as exc:
                 log.exception("phase-a", exc)
+            # Und derselbe Takt fuer die externen Anker
+            # (EIP-ADR-20260801-002, E4): Beauftragen und Aufwerten sind
+            # Netzaufrufe und gehoeren deshalb hierher und nicht in den
+            # Veroeffentlichungspfad - sonst haenge die Sichtbarkeit einer
+            # Stimme an der Erreichbarkeit einer fremden TSA.
+            try:
+                d.service.arbeite_anker_ab()
+            except Exception as exc:
+                log.exception("anker", exc)
 
     deckel_task = asyncio.create_task(_batch_deckel())
     try:
@@ -150,6 +160,10 @@ def create_app(
             batch_k=effective.batch_k,
             batch_deckel_s=int(effective.batch_deckel_h * 3600),
             retry_cache_s=int(effective.retry_cache_h * 3600),
+            zeugen=standard_zeugen() if effective.anker else (),
+            anker_frist_s=int(effective.anker_frist_h * 3600),
+            anker_upgrade_s=int(effective.anker_upgrade_h * 3600),
+            anker_toleranz_s=int(effective.anker_toleranz_min * 60),
         ),
         authenticator=authenticator if authenticator is not None else CodeAuthenticator(),
         settings=effective,
@@ -166,15 +180,17 @@ def create_app(
     floor_s = effective.antwort_floor_s
 
     @app.middleware("http")
-    async def _antwort_floor(request: Request, call_next):  # type: ignore[no-untyped-def]
+    async def _phasentrennung(request: Request, call_next):  # type: ignore[no-untyped-def]
         pfad = request.url.path
-        if floor_s <= 0 or not (pfad.startswith("/api/token/") or pfad.startswith("/api/vote/")):
-            return await call_next(request)
+        phasenroute = pfad.startswith("/api/token/") or pfad.startswith("/api/vote/")
         start = time.monotonic()
         response = await call_next(request)
-        rest = floor_s - (time.monotonic() - start)
-        if rest > 0:
-            await asyncio.sleep(rest)
+        if phasenroute and floor_s > 0:
+            rest = floor_s - (time.monotonic() - start)
+            if rest > 0:
+                await asyncio.sleep(rest)
+        if phasenroute or _traegt_identitaet(request, response):
+            response.headers["connection"] = "close"
         return response
 
     app.mount("/static", RevalidatingStatics(directory=str(BASE_DIR / "static")), name="static")
@@ -196,6 +212,44 @@ def create_app(
 # ---------------------------------------------------------------------------
 # Signierte Cookies (Pseudonym verlaesst den Server nur signiert)
 # ---------------------------------------------------------------------------
+
+
+def _traegt_identitaet(request: Request, response: Response) -> bool:
+    """Hat diese Verbindung eine Identitaet gesehen (EIP-T-034, Verbindungsebene)?
+
+    Hintergrund. Baustein F aus EIP-T-033 nimmt dem Abstimm-Request Cookie,
+    Auth-Header und Referrer. Was er nicht anfasst, ist die Schicht darunter:
+    Seit EIP-ADR-20260725-002 laufen Phase A und Phase B in einem Klick, gegen
+    dieselbe Origin, etwa eine Sekunde auseinander - also typischerweise ueber
+    **dieselbe TCP-Verbindung**. Wer den Socket sieht, verkettet Pseudonym und
+    Stimme, ohne ein einziges Feld zu lesen. Heute verdeckt Renders Loadbalancer
+    das (bei uns endet nur der Proxy-Socket); ein Onion-Service oder ein eigener
+    Server nimmt genau diesen Proxy weg und reicht uns den Client-Socket. Ohne
+    diese Funktion tauschte der anonyme Kanal den Korrelator aus, statt ihn zu
+    entfernen.
+
+    Regel. Eine Verbindung, die eine Identitaet getragen hat, endet mit ihrer
+    Antwort. Eine Verbindung, die nie eine getragen hat, darf eine Stimme
+    tragen - deshalb genuegt es, hier auf das Sitzungs- und das Admin-Cookie zu
+    sehen, in beiden Richtungen: mitgesandt (die Verbindung hat es schon) und
+    gesetzt (sie bekommt es mit dieser Antwort). Die Phasen-Routen schliessen
+    zusaetzlich immer, auch anonym - sonst haenge die Trennung daran, dass der
+    Client die Reihenfolge einhaelt.
+
+    Nicht gemessen, sondern verhindert. Feststellen, *ob* zwei Requests
+    denselben Socket hatten, hiesse Absender-Port und -Adresse vorhalten - ein
+    neues Datum ueber Teilnehmende und damit ein Verstoss gegen § 1. Es gibt
+    hier deshalb keinen Befund im Debug-Modul, nur die Anweisung.
+
+    Grenze. Sie wirkt auf unsere Verbindung. Steht ein fremder Proxy davor
+    (heute Render und Cloudflare), sieht der die Browser-Verbindung weiter als
+    eine - dagegen hilft nur, diesen Proxy loszuwerden
+    (EIP-T-075). Voraussetzung also, keine Loesung.
+    """
+    if SESSION_COOKIE in request.cookies or ADMIN_COOKIE in request.cookies:
+        return True
+    gesetzt = response.headers.getlist("set-cookie")
+    return any(c.startswith((SESSION_COOKIE, ADMIN_COOKIE)) for c in gesetzt)
 
 
 def _sign(request: Request, value: str) -> str:
@@ -341,6 +395,10 @@ async def board_page(request: Request, poll_id: str) -> HTMLResponse:
     status, accounting = bericht.chain, bericht.accounting
     if not status.sound or not accounting.ok:
         service.check_consistency(poll_id, bericht)
+    # Die Ankerpruefung laeuft bei *jedem* Aufruf, nicht nur bei gebrochener
+    # Kette: Ein umgeschriebenes Board hat eine intakte Kette - das ist der
+    # ganze Grund fuer den Anker (EIP-ADR-20260801-002, E6.1).
+    anker_befunde = service.pruefe_anker(poll_id, bericht)
     try:
         result: dict[str, int] | None = service.tally(poll_id, bericht)
         result_error = None
@@ -365,6 +423,15 @@ async def board_page(request: Request, poll_id: str) -> HTMLResponse:
         beleg_public_key=service.beleg_public_key_pem,
         batch_k=service.batch_k,
         batch_deckel_h=service.batch_deckel_s // 3600,
+        anker_je_batch=service.anker_je_batch(poll_id),
+        anker_befunde=anker_befunde,
+        # Die Pruefbefehle kommen von den Zeugen selbst, nicht aus der Vorlage:
+        # Wer den Dienst austauscht, tauscht die Anleitung mit - eine Anleitung,
+        # die auf einen frueheren Dienst zeigt, ist schlimmer als keine.
+        anker_zeugen=[
+            {"name": z.name, "titel": z.titel, "befehle": z.pruefanleitung(f"{poll_id}-batch-N")}
+            for z in service.zeugen.values()
+        ],
         # Der ausgelieferte Client, Datei fuer Datei: Die Nachweis-Seite ist die
         # Stelle, an der geprueft wird - und der Code im Browser gehoert zu dem,
         # was zu pruefen ist (Paragraf 20, EIP-T-007).
@@ -644,6 +711,43 @@ async def api_board(request: Request, poll_id: str) -> JSONResponse:
         python3 verifikation.py board.json
     """
     return JSONResponse(deps(request).service.board_export(poll_id))
+
+
+@router.get("/anker/{poll_id}/{batch}/root")
+async def anker_root(request: Request, poll_id: str, batch: int) -> Response:
+    """Die Batch-Root als 32 Rohbytes - die Datei, gegen die geprueft wird.
+
+    Bewusst binaer und nicht als Hex-Text: Beide Zeugen bezeugen
+    ``SHA256(rohbytes)``. Wer die Hex-Zeile prueft, prueft den Hash einer
+    Zeichenkette und bekommt eine Abweichung, die nach Betrug aussieht und
+    keiner ist.
+    """
+    service = deps(request).service
+    for b in service.pruefbericht(poll_id).batches:
+        if b.n == batch:
+            return Response(
+                content=bytes.fromhex(b.batch_root),
+                media_type="application/octet-stream",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{poll_id}-batch-{batch}.root"'
+                },
+            )
+    raise Rejected(f"Batch {batch} gibt es in '{poll_id}' nicht.", 404)
+
+
+@router.get("/anker/{poll_id}/{batch}/{dienst}")
+async def anker_download(request: Request, poll_id: str, batch: int, dienst: str) -> Response:
+    """Der Ankerbeleg eines Batches - pruefbar mit fremden Standardwerkzeugen.
+
+    Oeffentlich und nicht im Admin-Bereich: Ein Anker, den nur der Betreiber
+    herunterladen kann, bezeugt nichts (KODEX §7, §20).
+    """
+    beleg, name = deps(request).service.anker_beleg(poll_id, batch, dienst)
+    return Response(
+        content=beleg,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
 
 
 @router.get("/api/status/{poll_id}")

@@ -42,12 +42,14 @@ from typing import Sequence
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 
+import anker as anker_modul
 import blind
 import board_eintrag
+from anker import AnkerNichtVerfuegbar, Zeitzeuge
 from berechtigung_store import BerechtigungsStore
 from board_eintrag import BoardEntry, TokenIssued, Vote, canonical, parse
 from debug import log, log_berechtigung, log_board
-from store import PollRow, Store
+from store import AnkerZeile, PollRow, Store
 from verifikation import (
     Accounting,
     Batch,
@@ -85,6 +87,27 @@ POLL_SECRET = "poll_secret:"
 POLL_KEY = "poll_key:"
 
 
+def _iso(text: str) -> datetime:
+    """ISO-Zeit aus der Datenbank als *naive lokale* Zeit.
+
+    Die eigenen Zeitstempel sind naiv-lokal, die aus einem Ankerbeleg tragen
+    eine Zone (RFC 3161 datiert in UTC). Beides voneinander abzuziehen wirft
+    sonst mitten in der Aufsichtspruefung eine TypeError - und die Pruefung
+    faellt genau dann aus, wenn sie gebraucht wird.
+    """
+    zeit = datetime.fromisoformat(text)
+    return zeit.astimezone().replace(tzinfo=None) if zeit.tzinfo else zeit
+
+
+def _dauer(spanne: timedelta) -> str:
+    """Zeitspanne als kurzer deutscher Text, gerundet."""
+    minuten = int(abs(spanne).total_seconds() // 60)
+    if minuten < 60:
+        return f"{minuten} min"
+    stunden = minuten // 60
+    return f"{stunden} h" if stunden < 48 else f"{stunden // 24} Tagen"
+
+
 def berechtigungs_pfad(board_pfad: Path) -> Path:
     """Der Pfad der Berechtigungs-Datenbank neben der Board-Datenbank.
 
@@ -120,6 +143,11 @@ class PollService:
         batch_k: int = 10,
         batch_deckel_s: int = 6 * 3600,
         retry_cache_s: int = 24 * 3600,
+        zeugen: Sequence[Zeitzeuge] | None = None,
+        anker_max_versuche: int = 5,
+        anker_frist_s: int = 3600,
+        anker_upgrade_s: int = 24 * 3600,
+        anker_toleranz_s: int = 900,
     ) -> None:
         """``batch_k`` und ``batch_deckel_s`` sind die Parameter aus ADR E3:
         Mindest-Anonymitaetsmenge je Batch und Zeitdeckel, beide nach aussen zu
@@ -131,12 +159,32 @@ class PollService:
         Datenbank liegt daneben (berechtigungs_pfad, Baustein G).
 
         ``retry_cache_s`` ist die Lebensdauer des Wiederhol-Puffers der
-        Token-Ausgabe (EIP-T-070); 0 schaltet ihn ab."""
+        Token-Ausgabe (EIP-T-070); 0 schaltet ihn ab.
+
+        ``zeugen`` sind die externen Zeitzeugen aus EIP-ADR-20260801-002; eine
+        leere Folge schaltet die Verankerung ab. Injiziert statt hier
+        zusammengebaut, damit ein Test sie ohne Netz durchspielen kann - das
+        Muster aus EIP-T-048."""
         self.board_store = Store(db_path)
         self.berechtigung = BerechtigungsStore(berechtigungs_pfad(db_path))
         self.batch_k = max(1, int(batch_k))
         self.batch_deckel_s = max(60, int(batch_deckel_s))
         self.retry_cache_s = max(0, int(retry_cache_s))
+        self.zeugen: dict[str, Zeitzeuge] = {z.name: z for z in (zeugen or ())}
+        self.anker_max_versuche = max(1, int(anker_max_versuche))
+        # Die drei Fristen der Ankeraufsicht (ADR E6.2-E6.4). Bewusst grosszuegig:
+        # Ein Befund, der bei jedem kurzen Netzaussetzer aufleuchtet, wird
+        # weggeklickt, und dann faellt der echte auch nicht mehr auf.
+        self.anker_frist_s = max(60, int(anker_frist_s))
+        self.anker_upgrade_s = max(60, int(anker_upgrade_s))
+        self.anker_toleranz_s = max(1, int(anker_toleranz_s))
+        # Wartezeiten gegen fremde Gratis-Dienste: 5 Minuten bis zum naechsten
+        # Anlauf, 30 Minuten bis zur naechsten Frage nach der Bitcoin-
+        # Bestaetigung. Die Hintergrundaufgabe laeuft im Minutentakt - ohne
+        # diese Abstaende fragte jede Instanz vier fremde Kalender sechzigmal
+        # pro Stunde nach einer Antwort, die es noch nicht geben kann.
+        self.anker_wiederholung_s = 300
+        self.anker_aufwertung_s = 1800
         if self.retry_cache_s == 0:
             # Abgeschaltet heisst auch: kein Rest von vorher. Sonst liefe die
             # Wiederholung nach einem Neustart mit anderer Einstellung weiter,
@@ -469,7 +517,7 @@ class PollService:
         # Betreiberhandlung, ihr Zeitpunkt ist ohnehin oeffentlich (die Umfrage
         # erscheint auf der Startseite). Die Mindestmenge k schuetzt
         # Teilnahme-Eintraege, nicht Verwaltungsakte.
-        self.board_store.publiziere(poll_id)
+        self.beauftrage_anker(self.board_store.publiziere(poll_id))
         log.info("poll", f"Umfrage '{poll_id}' angelegt.", options=options)
         return self.poll(poll_id)
 
@@ -484,6 +532,7 @@ class PollService:
         # darf dabei k unterschreiten - das ist die dokumentierte Grenze des
         # Mechanismus, keine Luecke.
         batch = self.board_store.publiziere(poll_id)
+        self.beauftrage_anker(batch)
         if batch is not None:
             stimmen = self._stimmen(batch.entries)
             if stimmen < self.batch_k:
@@ -549,6 +598,7 @@ class PollService:
         if not (faellig_menge or faellig_zeit):
             return None
         batch = self.board_store.publiziere(poll_id)
+        self.beauftrage_anker(batch)
         if batch is not None:
             log_board.info(
                 "batch",
@@ -586,6 +636,225 @@ class PollService:
             stimmen=stimmen,
             k=self.batch_k,
         )
+
+    # -- Externe Anker (EIP-ADR-20260801-002) ------------------------------
+    #
+    # Drei Methoden, drei verschiedene Zeitpunkte, und das ist der Punkt:
+    #
+    #   beauftrage_anker    im Veroeffentlichungspfad, ohne Netz
+    #   arbeite_anker_ab    Hintergrundaufgabe, mit Netz
+    #   pruefe_anker        bei jedem Aufruf der Board-Seite, ohne Netz
+    #
+    # Nur die mittlere darf haengen. Die erste haengt am Wahlvorgang und die
+    # dritte an der Aufsicht - waere in einer von beiden ein Netzaufruf,
+    # entschiede die Erreichbarkeit eines fremden Dienstes darueber, ob eine
+    # Stimme sichtbar wird oder ob ein Betrug auffaellt.
+
+    def beauftrage_anker(self, batch: Batch | None) -> None:
+        """Notiert je Zeuge einen offenen Auftrag auf ``batch_root(n)``.
+
+        Kein Netzaufruf (ADR, Fund 3). Ohne konfigurierte Zeugen passiert
+        nichts - eine Instanz ohne Anker ist ein zulaessiger Betriebszustand,
+        sie darf ihn nur nicht verschweigen (siehe Board-Seite).
+        """
+        if batch is None or not self.zeugen or not batch.entries:
+            return
+        # ``Batch`` traegt die poll_id nicht mit - sie steht in jedem Eintrag,
+        # und ein Batch ohne Eintraege entsteht nicht (publiziere gibt dann
+        # None zurueck).
+        poll_id = parse(batch.entries[0]).poll
+        self.board_store.anker_beauftrage(
+            poll_id, batch.n, batch.batch_root, list(self.zeugen)
+        )
+
+    def arbeite_anker_ab(self) -> int:
+        """Ein Durchlauf ueber alle offenen Ankerauftraege. Rueckgabe: Zahl der
+        Versuche.
+
+        Zwei Faelle, beide hier: ein Auftrag ohne Beleg wird beauftragt, ein
+        Beleg ohne endgueltige Attestierung wird aufgewertet (OpenTimestamps).
+        Fehler beenden den Durchlauf nicht - ein nicht erreichbarer Dienst darf
+        nicht dazu fuehren, dass der andere auch nicht drankommt.
+        """
+        offen = self.board_store.anker_offen(
+            self.anker_max_versuche, self.anker_wiederholung_s, self.anker_aufwertung_s
+        )
+        versuche = 0
+        for zeile in offen:
+            zeuge = self.zeugen.get(zeile.dienst)
+            if zeuge is None:
+                # Dienst abgeschaltet oder umbenannt: Die Zeile bleibt stehen
+                # (der Beleg von gestern bleibt gueltig), aber sie wird nicht
+                # stillschweigend zu einem erledigten Auftrag.
+                continue
+            versuche += 1
+            try:
+                self._versuche_anker(zeuge, zeile)
+            except AnkerNichtVerfuegbar as exc:
+                self._anker_fehler(zeile, str(exc))
+            except Exception as exc:  # ein stiller Ankerausfall ist der Fehler, den wir suchen
+                log_board.exception("anker", exc)
+                self._anker_fehler(zeile, f"{type(exc).__name__}: {exc}")
+        return versuche
+
+    def _versuche_anker(self, zeuge: Zeitzeuge, zeile: AnkerZeile) -> None:
+        if zeile.zustand == "bezeugt" and zeile.beleg:
+            quittung = zeuge.werte_auf(bytes(zeile.beleg))
+            if quittung is None:
+                # Noch kein Block. Kein Fehler, aber ein Versuch - sonst liefe
+                # die Aufwertung endlos, ohne dass die Zaehlung es zeigt.
+                self.board_store.anker_ergebnis(
+                    zeile.poll_id, zeile.batch, zeile.dienst, zustand="bezeugt", fehler=None
+                )
+                return
+        else:
+            quittung = zeuge.beauftrage(zeile.root)
+        self.board_store.anker_ergebnis(
+            zeile.poll_id,
+            zeile.batch,
+            zeile.dienst,
+            zustand=quittung.zustand,
+            beleg=quittung.beleg,
+            bezeugt=quittung.bezeugt_um.isoformat(timespec="seconds")
+            if quittung.bezeugt_um
+            else None,
+            hinweis=quittung.hinweis,
+            fehler=None,
+        )
+        log_board.info(
+            "anker",
+            f"Batch {zeile.batch} von '{zeile.poll_id}': {zeuge.titel} "
+            f"{'endgueltig bezeugt' if quittung.endgueltig else 'quittiert'}"
+            + (f" ({quittung.hinweis})" if quittung.hinweis else ""),
+            poll=zeile.poll_id,
+        )
+
+    def _anker_fehler(self, zeile: AnkerZeile, grund: str) -> None:
+        versuche = zeile.versuche + 1
+        # Ein bereits vorhandener Beleg bleibt, was er ist: Wenn die Aufwertung
+        # scheitert, ist die Kalenderquittung nicht ungueltig geworden.
+        zustand = "bezeugt" if zeile.hat_beleg and zeile.zustand == "bezeugt" else "fehlgeschlagen"
+        self.board_store.anker_ergebnis(
+            zeile.poll_id, zeile.batch, zeile.dienst, zustand=zustand, fehler=grund
+        )
+        if versuche >= self.anker_max_versuche and zustand == "fehlgeschlagen":
+            # Aufgegeben heisst: Dieser Batch bleibt ohne diesen Zeugen. Das ist
+            # eine Luecke in der Ankerreihe und damit ein Befund, kein Logeintrag
+            # (ADR E6.2).
+            log_board.inconsistency(
+                "anker",
+                f"Batch {zeile.batch} von '{zeile.poll_id}' bleibt ohne "
+                f"{zeile.dienst}-Anker: nach {versuche} Versuchen kein Beleg ({grund}).",
+                poll=zeile.poll_id,
+                dienst=zeile.dienst,
+            )
+        else:
+            log_board.error(
+                "anker",
+                f"Batch {zeile.batch} von '{zeile.poll_id}', {zeile.dienst}: "
+                f"Versuch {versuche} fehlgeschlagen ({grund}).",
+                poll=zeile.poll_id,
+            )
+
+    def anker_je_batch(self, poll_id: str) -> dict[int, list[AnkerZeile]]:
+        return self.board_store.anker_je_batch(poll_id)
+
+    def anker_beleg(self, poll_id: str, batch: int, dienst: str) -> tuple[bytes, str]:
+        """Beleg und Dateiname zum Herunterladen. Wirft ``Rejected``, wenn keiner da ist."""
+        zeile = self.board_store.anker_zeile(poll_id, batch, dienst)
+        if zeile is None or not zeile.beleg:
+            raise Rejected(f"Fuer Batch {batch} liegt kein {dienst}-Beleg vor.", 404)
+        zeuge = self.zeugen.get(dienst)
+        endung = zeuge.endung if zeuge else dienst
+        # Die Namen sind so gewaehlt, dass die Pruefbefehle der Board-Seite
+        # unveraendert funktionieren: ``ots verify x.root.ots`` sucht die Datei
+        # ``x.root`` daneben, und die ist der Download der Root selbst.
+        basis = f"{poll_id}-batch-{batch}"
+        name = f"{basis}.root.ots" if endung == "ots" else f"{basis}.{endung}"
+        return bytes(zeile.beleg), name
+
+    def pruefe_anker(self, poll_id: str, bericht: Pruefbericht | None = None) -> list[str]:
+        """Vergleicht die nachgerechneten Roots gegen das, was die Belege binden.
+
+        Das ist der Punkt der ganzen Verankerung (ADR E6.1) und der Grund, warum
+        der Hash aus dem **Beleg** gelesen wird und nicht aus der Spalte
+        ``root``: Wer die Datenbank umschreibt, aendert die Spalte mit. Den
+        signierten Beleg kann er nicht mitaendern - er muesste ihn neu
+        beschaffen, und dann traegt er das heutige Datum.
+
+        Ohne Netz und ohne die Ankerbibliotheken lauffaehig: Fehlt die
+        Bibliothek, die den Beleg lesen kann, gibt es fuer diese Zeile nichts zu
+        vergleichen, und das wird gesagt statt uebersprungen.
+        """
+        bericht = bericht or self.pruefbericht(poll_id)
+        anker = self.board_store.anker_je_batch(poll_id)
+        befunde: list[str] = []
+        jetzt = datetime.now()
+        for batch in bericht.batches:
+            zeilen = anker.get(batch.n, [])
+            befunde.extend(self._befunde_je_batch(batch, zeilen, jetzt))
+        for finding in befunde:
+            log_board.inconsistency("anker", finding, poll=poll_id)
+        return befunde
+
+    def _befunde_je_batch(
+        self, batch: Batch, zeilen: Sequence[AnkerZeile], jetzt: datetime
+    ) -> list[str]:
+        """Die vier Ankerbefunde aus ADR E6 fuer einen Batch."""
+        befunde: list[str] = []
+        if not self.zeugen:
+            return befunde
+        vorhanden = {z.dienst for z in zeilen}
+        for fehlend in sorted(set(self.zeugen) - vorhanden):
+            # E6.2 im schaerfsten Fall: nicht einmal beauftragt. Das passiert,
+            # wenn ein Batch aelter ist als die Verankerung - oder wenn jemand
+            # die Zeile entfernt hat.
+            befunde.append(
+                f"Batch {batch.n}: kein {fehlend}-Anker beauftragt. Diese Root ist "
+                "von aussen nicht datiert."
+            )
+        zeiten: dict[str, datetime] = {}
+        for zeile in zeilen:
+            alter = jetzt - _iso(zeile.beauftragt)
+            if not zeile.hat_beleg:
+                if alter.total_seconds() > self.anker_frist_s:  # E6.2
+                    befunde.append(
+                        f"Batch {batch.n}: seit {_dauer(alter)} kein {zeile.dienst}-Beleg "
+                        f"({zeile.versuche} Versuche, zuletzt: {zeile.fehler or 'ohne Angabe'})."
+                    )
+                continue
+            if zeile.zustand == "bezeugt" and alter.total_seconds() > self.anker_upgrade_s:
+                # E6.3: Die Kalenderquittung ist eine Zusage. Kommt die
+                # Bitcoin-Attestierung nicht, ist die Zusage alles, was bleibt -
+                # und das darf nicht unbemerkt der Dauerzustand werden.
+                befunde.append(
+                    f"Batch {batch.n}: {zeile.dienst}-Beleg wartet seit {_dauer(alter)} auf "
+                    "die endgueltige Attestierung."
+                )
+            zeuge = self.zeugen.get(zeile.dienst)
+            bezeugt = zeuge.bezeugter_hash(bytes(zeile.beleg)) if zeuge else None
+            if bezeugt is None:
+                befunde.append(
+                    f"Batch {batch.n}: {zeile.dienst}-Beleg liegt vor, ist aber nicht "
+                    "lesbar - die Bezeugung dieser Root ist derzeit nicht nachpruefbar."
+                )
+            elif bezeugt != anker_modul.erwarteter_hash(batch.batch_root):
+                # E6.1 - der Fall, fuer den das Ganze da ist.
+                befunde.append(
+                    f"Batch {batch.n}: Der {zeile.dienst}-Beleg bezeugt eine andere Root "
+                    "als die, die aus den Eintraegen folgt. Das Board wurde nach der "
+                    "Verankerung veraendert."
+                )
+            if zeile.bezeugt:
+                zeiten[zeile.dienst] = _iso(zeile.bezeugt)
+        if len(zeiten) > 1:  # E6.4
+            spanne = max(zeiten.values()) - min(zeiten.values())
+            if abs(spanne.total_seconds()) > self.anker_toleranz_s:
+                befunde.append(
+                    f"Batch {batch.n}: Die Zeugen datieren dieselbe Root {_dauer(spanne)} "
+                    "auseinander - mindestens einer von beiden datiert falsch."
+                )
+        return befunde
 
     def publiziere_faellige(self) -> None:
         """Zeitdeckel-Durchlauf ueber alle Umfragen (Hintergrundaufgabe)."""
@@ -906,6 +1175,7 @@ class PollService:
         aus unabhaengiger Quelle hat, laesst ihn mit --pubkey dagegenhalten.
         """
         poll = self.poll(poll_id)
+        anker = self.board_store.anker_je_batch(poll_id)
         return {
             "poll": poll.poll_id,
             "question": poll.question,
@@ -924,6 +1194,20 @@ class PollService:
                     # Nur die Payload-Zeilen: Blatt-Hashes rechnet der Pruefer
                     # nach, statt sie zu glauben (verifikation.batches_from_export).
                     "entries": [e.payload for e in b.entries],
+                    # Der Ankerstand, ohne die Belege selbst: Die sind binaer
+                    # und liegen je unter /anker/{poll}/{batch}/{dienst}. Hier
+                    # steht, was es zu holen gibt - und die Zustaende sind
+                    # Selbstauskunft, die der Beleg dann widerlegen oder
+                    # bestaetigen kann (EIP-ADR-20260801-002).
+                    "anker": [
+                        {
+                            "dienst": a.dienst,
+                            "zustand": a.zustand,
+                            "bezeugt": a.bezeugt,
+                            "hinweis": a.hinweis,
+                        }
+                        for a in anker.get(b.n, ())
+                    ],
                 }
                 for b in self.board_store.veroeffentlichte_batches(poll_id)
             ],

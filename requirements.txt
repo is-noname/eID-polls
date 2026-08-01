@@ -4,5 +4,11 @@ jinja2
 cryptography
 markdown
 
+# Externe Anker auf die Batch-Root (EIP-ADR-20260801-002). Nichts davon ist
+# selbst geschrieben - das ist KODEX §3, nicht Bequemlichkeit. Fehlen sie,
+# laeuft die App weiter und die Board-Seite sagt, dass keine Wurzel datiert ist.
+rfc3161-client
+opentimestamps-client
+
 # Nur fuer browser_test.py:
 # playwright

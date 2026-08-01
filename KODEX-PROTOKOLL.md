@@ -15,6 +15,95 @@
 
 ## Änderungsprotokoll
 
+### Version 18 — 2026-08-01
+
+**§ 2 bekommt seine Netzwerkebene — und der Grund, sie überhaupt aufzuschreiben, ist ein Korrelator,
+den der Paragraph bis heute nicht kannte**
+(EIP-ADR-20260801-003,
+EIP-T-034).
+
+**Was der Paragraph nicht gesehen hat.** Die Netzwerkebene stand seit Version 7 als Zeiger auf ein
+Ticket, und die Sache galt als „die IP sieht man während des Requests". Das war zu wenig. Seit
+EIP-ADR-20260725-002 laufen beide Phasen in *einem* Klick gegen
+dieselbe Origin — also typischerweise über **dieselbe TCP-Verbindung**. Wer den Socket sieht,
+verkettet Pseudonym und Stimme, ohne ein Feld zu lesen. Baustein F aus EIP-T-033 nimmt dem
+Abstimm-Request Cookie, Auth-Header und Referrer; die Schicht darunter hat er nie angefasst.
+
+**Warum das die Entscheidung umdreht.** Heute verdeckt Renders Loadbalancer diesen zweiten
+Korrelator — bei uns endet nur der Proxy-Socket. Ein Onion-Service nimmt genau diesen Proxy weg und
+reichte uns den Client-Socket, den wir vorher nicht hatten. Der anonyme Kanal hätte also den
+Korrelator ausgetauscht statt ihn zu entfernen. Gebaut wird deshalb zuerst die Verbindungstrennung,
+und erst dann der Kanal.
+
+**Was umgesetzt ist.** Eine Verbindung, die eine Identität getragen hat, endet mit ihrer Antwort:
+die Phasen-Routen schließen immer, jede Antwort mit Sitzungs- oder Admin-Cookie ebenfalls. Eine
+Verbindung ohne Identität bleibt nutzbar — die Regel ist gezielt, nicht pauschal, sonst wäre sie
+ein Kostenposten ohne Wirkung. Dazu Kanalblindheit: Absender-IP aus der Proxy-Kette und
+angesprochener Hostname stehen nirgends, und ein Test hält das fest, statt es zuzusagen.
+
+**Was ausdrücklich nicht gemessen wird.** Ob zwei Requests denselben Socket hatten. Das ginge nur,
+indem der Server Absender-Adresse und -Port vorhält — ein neues Datum über Teilnehmende und damit
+§ 1. Die Regel wird verhindert statt gemeldet. Dass hier ausnahmsweise kein Befund im Debug-Modul
+steht, ist keine Nachlässigkeit, sondern die Rangfolge: Ein Befund, den man nur durch Vorhalten der
+IP erzeugen kann, ist teurer als das Problem, das er meldet.
+
+**Was `offen` bleibt und jetzt ehrlicher dasteht.** Der Kanal selbst, als Option und nicht als
+einziger Weg → EIP-T-082, fällig vor `produktiv`. Dazu zwei
+Grenzen, die in den Paragraphen gehören und nicht in einen ADR allein: Die Verbindungstrennung
+wirkt auf *unsere* Verbindung — auf der laufenden Instanz sieht der fremde Proxy weiterhin eine
+Verbindung und die IP ohnehin. Und die Zusage k = 10 deckt den Kanal nicht: Die wirksame
+Anonymitätsmenge eines Kanalnutzers ist die Zahl der Stimmen aus demselben Kanal im selben Batch,
+bei einem einzelnen also 1. Ein Kanal, der als sicher angeboten und von drei Leuten benutzt wird,
+ist eine Zusage ohne Deckung.
+
+**Die Schuldenübersicht bekommt eine zweite Zeile für § 2, die Zahl bleibt bei 11 von 20.** Das ist
+der zweite Fall nach Version 14, in dem die Kennzahl verschweigt, was passiert ist — hier sogar in
+beide Richtungen: Es wurde etwas gebaut, *und* es wurde eine Schuld sichtbar gemacht, die vorher
+nur als Zeiger im Fließtext stand. Wer Paragraphen zählt, sieht keins von beidem.
+
+### Version 17 — 2026-08-01
+
+**§ 2 bekommt seinen Anker — und § 2 wird zugleich korrigiert, weil er zu viel behauptet hat**
+(EIP-ADR-20260801-002,
+EIP-T-006).
+
+**Was umgesetzt ist.** Jede `batch_root(n)` wird bei zwei unabhängigen Diensten datiert: einem
+RFC-3161-Zeitstempel (freetsa.org, Antwort in Sekunden) und OpenTimestamps, das den Hash gebündelt
+in eine Bitcoin-Transaktion schreibt. Beide Belege stehen öffentlich unter
+`/anker/{umfrage}/{batch}/…` und sind mit `openssl ts -verify` und `ots verify` prüfbar — mit
+Werkzeugen, die es vor uns gab, gegen Infrastruktur, die uns nicht gehört. Läuft die lokal
+nachgerechnete Wurzel von der bezeugten weg, ist das ein Befund im Debug-Modul und ein Banner auf
+der öffentlichen Board-Seite. Der Hash wird dabei aus dem **Beleg** gelesen, nicht aus der
+Datenbankspalte: Wer die Datenbank umschreibt, ändert die Spalte mit, den signierten Beleg nicht.
+
+**Was das schließt.** Das rückwirkende Umschreiben — die Angriffsdemo „Board umschreiben" unter
+`/admin`. Sie rechnet die Kette neu und bleibt an jeder lokalen Prüfung unsichtbar; am Zeitstempel
+nicht mehr, denn für die neue Wurzel gäbe es nur ein Datum von heute.
+
+**Was der Paragraph falsch gesagt hat.** § 2 führte „öffentlicher Anker gegen Split-View" als einen
+Vermerk. Das sind zwei Angriffe, und der Anker trifft nur den ersten. Gegen Split-View — zwei von
+Anfang an parallel geführte Boards — leistet ein Zeitstempel prinzipiell nichts: Beide Wurzeln
+ließen sich ehrlich datieren, jede zu ihrer Zeit. Dazu gehört Aufzählbarkeit, also unabhängige
+Gegenzeichner, die alle je veröffentlichten Wurzeln vergleichen
+(EIP-T-036). Der Vermerk wandert deshalb dorthin und wird **nicht**
+gestrichen. Wer die Umsetzung als Auflösung dargestellt hätte, hätte einen Paragraphen freigekauft,
+indem er die Hälfte eines Problems löst und die Überschrift behält.
+
+**§ 4 bekommt dafür eine Kennzeichnungspflicht.** Wo ein Anker angezeigt wird, ist seine Grenze
+mitzunennen. Die Board-Seite tut das im selben Abschnitt, in dem sie den Anker zeigt — nicht in
+einer Fußnote.
+
+**`check_kodex.py` unterscheidet jetzt Zitat und Zeiger.** § 2 nennt seit dieser Version zwei
+Tickets: ein erledigtes als Beleg dafür, was der Anker schon leistet, und ein offenes für das, was
+fehlt. Das Skript hätte den Beleg als Formfehler gemeldet — und damit ausgerechnet die ehrlichere
+Fassung des Paragraphen bestraft. Es prüft deshalb nur noch Tickets, die als Zeiger (`→ EIP-T-NNN`)
+genannt sind; ohne Zeiger zählt weiter jede Nennung, damit kein Paragraph durchrutscht, weil
+niemand einen Pfeil gesetzt hat. Dieselbe Unterscheidung gilt im Wiki seit EIP-T-053.
+
+**Die Zahl bleibt bei 11 von 20, Grenze 8, der Baustopp gilt weiter.** Zum fünften Mal in Folge
+steht die Kennzahl still, während sich etwas bewegt — und diesmal ist das ausdrücklich richtig so:
+Ein halb gelöstes Problem ist ein offenes Problem.
+
 ### Version 16 — 2026-08-01
 
 **§ 2 löst zwei seiner drei Vermerke ein: Speichertrennung und die Token-Suche auf `/verify`**

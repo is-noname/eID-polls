@@ -213,9 +213,49 @@ Befund. Weil jede Umfrage ihren eigenen Schlüssel hat, ist auch der Schlüssel 
 Umfrage eine Abweichung.
 
 **Was das nicht leistet:** Der Export kommt weiterhin von diesem Server. Zwei Betrachter können
-zwei verschiedene, jeweils in sich stimmige Boards bekommen, und ein Betreiber mit Schreibzugriff
-rechnet die Kette nach einer Änderung neu durch. Dagegen hilft nur ein extern verankerter
-Merkle-Root und Gegenzeichner (§12).
+zwei verschiedene, jeweils in sich stimmige Boards bekommen. Gegen die zweite Hälfte dieses Problems
+— ein Betreiber mit Schreibzugriff, der die Kette nach einer Änderung neu durchrechnet — helfen seit
+2026-08-01 die externen Zeitstempel (nächster Abschnitt). Gegen die erste hilft weiter nichts, was
+auf dieser Seite steht.
+
+### Externe Zeitstempel auf die Batch-Wurzel
+
+Die Batch-Kette entlarvt nur einen Angreifer, der die Prüfsummen stehen lässt. Wer die Datenbank
+schreiben kann — also der Betreiber — rechnet Wurzeln und Kette neu, und danach ist alles in sich
+stimmig. Genau das führt die Angriffsdemo „Board umschreiben" vor.
+
+Deshalb wird jede `batch_root(n)` bei **zwei voneinander unabhängigen Diensten** datiert
+([[EIP-ADR-20260801-002_Externer-Anker-zwei-Zeitstempel-auf-die-Batch-Root]]):
+
+| Dienst | Wie schnell | Wogegen |
+|---|---|---|
+| RFC 3161 (freetsa.org) | Sekunden | Prüfbar mit `openssl`, aber eine zentrale Stelle |
+| OpenTimestamps → Bitcoin | Stunden | Prüfbar gegen die Blockheader, ohne jemandem zu glauben |
+
+Auf der Board-Seite steht je Batch der Stand und ein Download der Wurzel und der Belege. Selbst
+prüfen, für Batch N:
+
+```bash
+curl -sO http://127.0.0.1:8731/anker/{poll_id}/N/root          # die 32 Rohbytes der Wurzel
+curl -sO https://freetsa.org/files/cacert.pem
+curl -sO https://freetsa.org/files/tsa.crt
+openssl ts -verify -data {poll_id}-batch-N.root -in {poll_id}-batch-N.tsr \
+  -CAfile cacert.pem -untrusted tsa.crt
+
+pip install opentimestamps-client
+ots verify {poll_id}-batch-N.root.ots
+```
+
+Läuft die aus den Einträgen nachgerechnete Wurzel von der bezeugten weg, steht ein Banner auf der
+Board-Seite und ein `inconsistency` im Debug-Modul. Verglichen wird dabei der Hash **aus dem
+Beleg**, nicht der Wert aus der Datenbank: Wer die Datenbank umschreibt, ändert den Wert mit, den
+signierten Beleg nicht.
+
+**Was der Zeitstempel nicht leistet.** Er verhindert nicht, dass ein Betreiber von Anfang an zwei
+verschiedene Boards führt und sie verschiedenen Betrachtern zeigt (*Split-View*). Beide Wurzeln
+ließen sich ehrlich datieren. Dagegen hilft kein Zeitstempel, sondern nur, dass unabhängige Dritte
+alle je veröffentlichten Wurzeln gegenzeichnen und untereinander vergleichen — das gibt es hier
+noch nicht (EIP-T-036).
 
 ### Ohne unseren Code nachrechnen: `auditor.py`
 
@@ -414,12 +454,13 @@ static/ballot.js (+ blind.js)            web.py          HTTP, Cookies
 | `static/blind.js` | Dieselbe Krypto im Browser. Beide Seiten müssen bitgenau gleich rechnen. |
 | `static/ballot.js` | Der Weg einer Stimme im Browser: Token erzeugen, verblinden, signieren lassen, entblinden, abgeben — plus der Zwischenstand, wenn die Abgabe danach abbricht (EIP-ADR-20260725-002). `blind.js` rechnet, `ballot.js` führt. `templates/poll.html` enthält nur noch die DOM-Verdrahtung. |
 | `static/beleg.js` | Der Beleg: Kassenbon, QR-Code, Textdatei. Reine Darstellung — kein Krypto, kein Netz, kein Speicher. |
-| `store.py` | SQLite der **Board-Seite**: `polls`, `spent`, `board`, `batches` — ohne Eingangsreihenfolge (`WITHOUT ROWID`, EIP-T-033 E). Puffert Einträge und veröffentlicht sie als Batch. Enthält auch die gemeinsame Basis beider Speicher (`SqliteStore`: config, `vernichte_config`, `kopiere_ohne_geheimnisse`). Alle Zugriffe — auch lesende — laufen über ein `RLock`, weil sich alle Threads eine Verbindung teilen (EIP-T-019). |
+| `store.py` | SQLite der **Board-Seite**: `polls`, `spent`, `board`, `batches`, `anker` — ohne Eingangsreihenfolge (`WITHOUT ROWID`, EIP-T-033 E). Puffert Einträge und veröffentlicht sie als Batch. Enthält auch die gemeinsame Basis beider Speicher (`SqliteStore`: config, `vernichte_config`, `kopiere_ohne_geheimnisse`). Alle Zugriffe — auch lesende — laufen über ein `RLock`, weil sich alle Threads eine Verbindung teilen (EIP-T-019). |
 | `berechtigung_store.py` | SQLite der **Berechtigungsseite** (EIP-T-033, Baustein G): `eligibility`, der kurzlebige `issue_retry` (EIP-T-070) und alle Schlüssel, die mit dem Pseudonym zu tun haben (`poll_secret`, `poll_key`, `cookie_secret`). Eigene Datei neben der Board-Datenbank — ein Join über beide Seiten ist damit eine bewusste Handlung über zwei Verbindungen, kein `SELECT` über zwei Tabellen derselben Datei. Die Trennlinie ist die künftige Betreibergrenze aus Stufe 2. |
 | `board_eintrag.py` | Das Eintragsformat: kanonisches JSON, Blatt-Hash, Merkle-Baum, Batch-Kette, Konstruktoren (`vote`, `token_issued`, `poll_open` — trägt den öffentlichen Token-Schlüssel der Umfrage —, `poll_closed`) und `parse(entry) -> Vote \| TokenIssued \| PollOpen \| PollClosed \| Unlesbar`. Rohe Dicts baut und liest niemand mehr selbst. Ein Eintrag, den `parse` nicht deuten kann, wird zu `Unlesbar` — er zählt nirgends mit und macht das Ergebnis unbelastbar, statt still zu verschwinden. |
 | `verifikation.py` | Die gesamte Prüfung über das veröffentlichte Board: `pruefe(batches, options) -> Pruefbericht` — Merkle-Wurzeln, Batch-Kette, Signaturen, Abrechnung, Auszählung. Den öffentlichen Schlüssel holt sie sich aus dem Board selbst (`schluessel_aus_board`); ein unabhängig mitgegebener wird dagegen gehalten. Ohne Datenbank, ohne privaten Schlüssel, auch als Kommandozeilen-Werkzeug für Dritte lauffähig. |
 | `auditor.py` | Die unabhängige Gegenprobe (EIP-T-071): eine Datei, kein Import aus dem Projekt, rechnet Struktur, Signaturen, Token-Eindeutigkeit, Abrechnung und Auszählung allein aus dem Board-Export nach und hält sie gegen `/api/status`. Prüft mit `--beleg` auch Beleg-Signatur und Inklusionspfad. Gehört bewusst **nicht** zum Kern — sie darf nichts von ihm wissen. |
 | `poll_service.py` | Phasenlogik, Regeln, Konsistenzprüfung. Die Auszählung selbst delegiert es an `verifikation.py` und übersetzt Befunde in Abweisungen. Hält den Lebenszyklus beider Umfrage-Schlüssel: erzeugen beim Anlegen, `vernichte_poll_secret()` und `vernichte_poll_key()` beim Schließen. Den privaten Signaturschlüssel liest es bewusst **ohne Zwischenspeicher** aus der Datenbank — ein Cache im Prozess hielte ihn über seine Vernichtung hinaus am Leben. |
+| `anker.py` | Die externen Zeitzeugen (EIP-ADR-20260801-002): RFC 3161 und OpenTimestamps, beide hinter einer gemeinsamen schmalen Fläche (`beauftrage`, `werte_auf`, `bezeugter_hash`, `pruefanleitung`). Nichts davon ist selbst gerechnet — das ist Kodex § 3. Die Importe der beiden Fremdbibliotheken liegen bewusst *in* den Methoden: Fehlt eine, fällt genau dieser Zeuge aus und die App startet trotzdem. Kennt keine Datenbank und keinen Service. |
 | `demo.py` | Die Angriffsdemos aus §9 — außerhalb des Kerns (EIP-T-050). Sie benutzen `PollService` von außen und schreiben an der Anwendung vorbei direkt in die Datenbank, weil genau das das Angreifermodell ist: Wer die Platte hat, braucht keine API. Verdrahtet nur bei `Settings.demos` (`EIDPOLL_DEMOS`, lokal an, öffentlich aus). |
 | `debug.py` | Ringpuffer im Prozessspeicher (500 Ereignisse je Log), bewusst keine zweite Wahrheit. Drei getrennte Logs — Berechtigung, Board, Betrieb (EIP-T-033 G); `/debug` führt sie erst beim Anzeigen zusammen. |
 | `stand.py` | Welcher Stand hier läuft (`/version`) und ob er vom veröffentlichten abweicht (EIP-T-074, Kodex § 20). Der Dateihash ist so definiert, dass ihn ein Dritter mit `git ls-files` und `sha256sum` nachrechnen kann — eine Definition für Instanz, Prüfskript und Außenstehende. Bildet die `.gitignore` in Python nach, weil der Container kein git hat. |
@@ -456,8 +497,19 @@ Abweisung schützte nichts mehr —, aber der Vorfall steht als Befund im Debug-
 frühestens nach `EIDPOLL_ANTWORT_FLOOR_S` Sekunden, damit die Bearbeitungsdauer nicht verrät, was
 der Server gerade tat (schnelle Abweisung vs. langsame Signatur). Ehrlich dazu: Das ist ein Floor,
 keine Konstante — dauert die Bearbeitung länger als der Floor, ist die Dauer wieder sichtbar. Und
-gegen Korrelation über IP-Adresse und Uhrzeit auf Netzwerkebene hilft beides nicht (Abschnitt 5;
-der anonyme Zustellkanal ist EIP-T-034).
+gegen Korrelation über die IP-Adresse hilft beides nicht (Abschnitt 5).
+
+**Die Verbindung darunter (EIP-T-034):** Seit beide Phasen in einem Klick laufen, gehen sie
+typischerweise über *dieselbe TCP-Verbindung* — wer den Socket sieht, verkettet Pseudonym und
+Stimme, ohne ein Feld zu lesen. Deshalb gilt: Eine Verbindung, die eine Identität getragen hat,
+endet mit ihrer Antwort (Phasen-Routen immer, jede Antwort mit Sitzungs- oder Admin-Cookie
+ebenfalls); eine Verbindung ohne Identität bleibt nutzbar. Ob zwei Anfragen denselben Socket
+hatten, wird bewusst **nicht gemessen** — das ginge nur, indem der Server Absender-Adresse und
+-Port vorhält, und das verbietet Kodex § 1. Deshalb steht hier ausnahmsweise kein Befund im
+Debug-Modul, sondern nur die Regel. Ehrlich dazu: Die Maßnahme wirkt auf *unsere* Verbindung; steht
+ein fremder Proxy davor (öffentlich: Render, davor Cloudflare), sieht der weiterhin eine Verbindung
+und die IP ohnehin. Der anonyme Zustellkanal ist entschieden und vertagt
+(EIP-ADR-20260801-003, EIP-T-082).
 
 Auch die **Prüfseite** gehört zur Sitzungstrennung: `/verify` nahm das Token früher als
 GET-Parameter entgegen — wer nach der Abstimmung angemeldet prüfte, lieferte dem Server Pseudonym
@@ -611,6 +663,7 @@ Abgleichbar ist er seit dem 2026-08-01 (Abschnitt oben) — geprüft ist er dami
 zeigt, dass ausgeliefert wird, was veröffentlicht ist, nicht dass der veröffentlichte Code richtig
 rechnet. Und er entlarvt keine Auslieferung, die einzelne Besucher gezielt anders bedient.
 
-**Nicht gebaut** (§12): verteilte Schwellensignatur, externer Merkle-Anker, Produktiv-Berechtigungs-
+**Nicht gebaut** (§12): verteilte Schwellensignatur, Gegenzeichner gegen Split-View (der Zeitanker
+steht seit 2026-08-01, die Gegenzeichner nicht), Produktiv-Berechtigungs-
 zertifikat, eIDAS-Ausland, Multi-Tenant, mehrere Fragen oder Ranking. Die Oberfläche verspricht
 nichts davon.

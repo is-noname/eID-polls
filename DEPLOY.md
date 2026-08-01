@@ -175,7 +175,18 @@ denkt (`config.py`):
 | `EIDPOLL_DEMOS` | an, außer bei `PUBLIC` | Angriffsdemos (`demo.py`) einhängen: Board umschreiben, Stimme einschleusen, Testzugang zurücksetzen |
 | `EIDPOLL_SEED_DEMO` | an, wenn `PUBLIC` | Demo-Umfrage beim Start anlegen |
 | `EIDPOLL_SEED_POLL_ID` / `_QUESTION` / `_OPTIONS` | `demo` / eID-Frage / `Ja,Nein,Unentschieden` | Inhalt der Demo-Umfrage |
+| `EIDPOLL_ANKER` | an | Externe Zeitstempel auf jede Batch-Wurzel (RFC 3161 + OpenTimestamps). `0` schaltet ab — die Board-Seite sagt dann sichtbar, dass keine Wurzel von außen datiert ist |
+| `EIDPOLL_ANKER_FRIST_H` | 1 | Ab wann ein Batch ohne Beleg ein Befund im Debug-Modul ist |
+| `EIDPOLL_ANKER_UPGRADE_H` | 24 | Ab wann ein OpenTimestamps-Beleg, der noch auf die Bitcoin-Attestierung wartet, ein Befund ist |
+| `EIDPOLL_ANKER_TOLERANZ_MIN` | 15 | Wie weit zwei Zeugen dieselbe Wurzel datieren dürfen, bevor es ein Befund ist |
 | `PORT` | 8731 | Von der Plattform gesetzt |
+
+**Zu den Ankern:** Sie brauchen eine ausgehende Netzverbindung zu `freetsa.org` und den
+OpenTimestamps-Kalendern. Beides ist kostenlos und ohne Konto, beides sind fremde Gratis-Dienste —
+deshalb fragt die App im Abstand von Minuten, nicht im Sekundentakt. Fehlen die Bibliotheken aus
+`requirements.txt`, startet die App trotzdem; die Board-Seite zeigt dann je Batch „kein Beleg" mit
+Grund. Ein Betrieb ohne Anker ist zulässig, aber nicht stillschweigend: Er senkt die Aussagekraft
+der Seite, und die Seite sagt das.
 
 ## Vorführung
 

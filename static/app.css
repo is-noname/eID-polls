@@ -267,6 +267,9 @@ body.dense .sub { font-size: 13px; margin-bottom: 16px; }
 .banner a { color: inherit; text-decoration: underline; }
 .banner.err { border-color: var(--red-border); background: var(--red-bg); color: var(--red); }
 .banner.ok { border-color: var(--border); background: var(--accent-soft); color: var(--accent); }
+/* Weder Fehler noch Entwarnung: ein Zustand, den der Betreiber gewaehlt hat und
+   der den Aussagewert der Seite senkt - etwa abgeschaltete externe Anker. */
+.banner.warn { border-color: var(--yellow-border); background: var(--yellow-bg); color: var(--yellow); }
 .banner small {
   display: block;
   font-weight: 400;

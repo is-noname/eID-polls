@@ -65,6 +65,16 @@ class Settings:
     # (EIP-RPT-20260731-001). 10 heisst jetzt 10 Stimmen.
     batch_k: int = 10
     batch_deckel_h: float = 6.0
+    # Externe Anker auf batch_root(n) (EIP-ADR-20260801-002). Standardmaessig
+    # an: Eine oeffentlich erreichbare Instanz ohne Anker kann rueckwirkendes
+    # Umschreiben nicht ausschliessen, und das ist Betriebsstufe 2 (KODEX §2).
+    # EIDPOLL_ANKER=0 schaltet ab - fuer Tests und fuer den Betrieb ohne
+    # ausgehende Netzverbindung. Abgeschaltet ist ein zulaessiger Zustand, aber
+    # ein sichtbarer: Die Board-Seite sagt dann, dass keine Root datiert ist.
+    anker: bool = True
+    anker_frist_h: float = 1.0
+    anker_upgrade_h: float = 24.0
+    anker_toleranz_min: float = 15.0
     # Mindest-Antwortzeit der Phasen-Routen /api/token und /api/vote in
     # Sekunden (EIP-T-033, Baustein F): Beide Routen antworten fruehestens nach
     # dieser Zeit, damit die Bearbeitungsdauer nicht zum Seitenkanal wird
@@ -116,6 +126,10 @@ class Settings:
             batch_k=int(os.environ.get("EIDPOLL_BATCH_K", "10") or 10),
             batch_deckel_h=float(os.environ.get("EIDPOLL_BATCH_DECKEL_H", "6") or 6),
             antwort_floor_s=float(os.environ.get("EIDPOLL_ANTWORT_FLOOR_S", "0.3") or 0.3),
+            anker=os.environ.get("EIDPOLL_ANKER", "1").strip() not in {"0", "false", "no", "off"},
+            anker_frist_h=float(os.environ.get("EIDPOLL_ANKER_FRIST_H", "1") or 1),
+            anker_upgrade_h=float(os.environ.get("EIDPOLL_ANKER_UPGRADE_H", "24") or 24),
+            anker_toleranz_min=float(os.environ.get("EIDPOLL_ANKER_TOLERANZ_MIN", "15") or 15),
             retry_cache_h=float(os.environ.get("EIDPOLL_RETRY_CACHE_H", "24") or 24),
             # Demo-Umfrage beim Start, wenn noch keine existiert. Auf
             # Gratis-Hosting ohne persistente Platte ist die Datenbank nach
@@ -145,6 +159,14 @@ class Settings:
         lines.append(
             f"Batch-Veroeffentlichung: k={self.batch_k} Stimmen, Zeitdeckel "
             f"{self.batch_deckel_h} h (EIP-ADR-20260728-001, EIP-T-076)"
+        )
+        lines.append(
+            "Externe Anker auf die Batch-Root: "
+            + (
+                "RFC 3161 + OpenTimestamps (EIP-ADR-20260801-002)"
+                if self.anker
+                else "abgeschaltet (EIDPOLL_ANKER=0) - keine Root ist von aussen datiert"
+            )
         )
         lines.append(
             "Wiederhol-Puffer der Token-Ausgabe: "

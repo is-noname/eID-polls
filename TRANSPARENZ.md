@@ -103,3 +103,29 @@ der Stimme — die steht in keinem Log —, wohl aber die Tatsache, dass jemand 
 Eine schriftliche Anfrage an Render mit genau diesen Fragen ist formuliert, aber zum Stand dieses
 Berichts **noch nicht abgesendet**. Wann sie herausgeht, steht hier; die Antwort wird
 veröffentlicht, auch wenn sie ungünstig ausfällt oder ausbleibt.
+
+## Die Verbindung, aus der Sie kommen
+
+**Stand 2026-08-01.** Die Trennung von Berechtigung und Stimme ist mathematisch — aber sie gilt für
+das, was *in* den Anfragen steht. Beide Anfragen kommen aus derselben Internetverbindung, wenige
+Sekunden auseinander. Wir speichern die Adresse nicht; sie besteht trotzdem, solange die Anfrage
+läuft. Wer diesen Server betreibt, muss zum Verketten nichts speichern — er muss nur hinsehen. Das
+ist die ehrliche Fassung, und sie ändert sich nicht dadurch, dass wir es nicht tun.
+
+Zwei Dinge haben wir daran geändert, und eines steht aus.
+
+**Geändert:** Ihr Browser hält normalerweise *eine* Verbindung offen und schickt beide Anfragen
+darüber. Damit wären sie auch ohne Adresse verkettet. Seit dem 2026-08-01 wird jede Verbindung, die
+eine Anmeldung getragen hat, nach ihrer Antwort geschlossen; Ihre Stimme geht über eine neue. Und
+wir halten nirgends fest, über welchen Weg eine Anfrage kam.
+
+**Ausstehend:** Ein anonymer Zustellweg (Tor-Onion-Dienst), über den wir Ihre Adresse gar nicht erst
+bekommen. Er ist entschieden — als *Option* neben dem normalen Weg —, aber nicht gebaut, und er ist
+vor einem echten Durchlauf fällig, nicht vorher.
+
+**Was auch dann bleibt.** Der Verbindungsschluss wirkt auf unsere Seite. Auf der laufenden Instanz
+steht Renders Loadbalancer davor und sieht beides weiterhin als eine Verbindung — solange die
+Instanz dort läuft, ist die Maßnahme eine Voraussetzung und keine Lösung. Und ein anonymer Weg
+schützt nur so weit, wie ihn andere mitbenutzen: Sind Sie in einem Veröffentlichungspaket der
+einzige, der ihn genommen hat, sind Sie darin eindeutig — auch ohne Adresse. Wenn dieser Weg kommt,
+wird dabeistehen, wie viele ihn genutzt haben.

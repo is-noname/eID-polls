@@ -21,6 +21,10 @@ PROTOTYPE_two-ledger/NOTES.md und EIP-ADR-20260728-001:
                einem veroeffentlichten Batch oder wartet im Puffer (batch NULL)
   batches      die veroeffentlichten Batches mit Merkle-Root und Batch-Kette -
                zusammen mit board die einzige Auszaehlungsquelle (§7)
+  anker        je Batch und Zeuge der externe Zeitstempel auf batch_root(n)
+               (EIP-ADR-20260801-002). Keine Auszaehlungsquelle: Ein Anker sagt
+               nichts darueber, *was* im Board steht, nur dass es das damals
+               schon tat.
 
 Keine Tabelle traegt eine Eingangsreihenfolge (EIP-T-033, Baustein E): spent
 ist WITHOUT ROWID ueber seinen Primaerschluessel, board haengt an (poll_id,
@@ -48,7 +52,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Sequence
 
 import board_eintrag
 from board_eintrag import GENESIS, BoardEntry, canonical
@@ -56,6 +60,7 @@ from verifikation import Batch
 
 __all__ = [
     "GENESIS",
+    "AnkerZeile",
     "Batch",
     "BoardEntry",
     "PollRow",
@@ -66,6 +71,51 @@ __all__ = [
 
 # Praefix des gerundeten Puffer-Beginns je Umfrage (Zeitdeckel, ADR E3).
 PENDING_SINCE = "pending_since:"
+
+
+@dataclass(frozen=True)
+class AnkerZeile:
+    """Ein Ankerauftrag mit seinem Stand (EIP-ADR-20260801-002).
+
+    ``root`` ist die Root, auf die der Auftrag lautet - was der *Beleg* bindet,
+    steht nur im Beleg selbst und wird von dort gelesen (anker.bezeugter_hash).
+    Der Unterschied ist der ganze Zweck: Wer die Datenbank umschreibt, aendert
+    diese Spalte mit, den signierten Beleg aber nicht.
+    """
+
+    poll_id: str
+    batch: int
+    root: str
+    dienst: str
+    zustand: str
+    bezeugt: str | None
+    hinweis: str | None
+    beleg: bytes | None
+    fehler: str | None
+    versuche: int
+    beauftragt: str
+    aktualisiert: str
+
+    @property
+    def hat_beleg(self) -> bool:
+        return bool(self.beleg)
+
+
+def _anker_zeile(row: sqlite3.Row) -> AnkerZeile:
+    return AnkerZeile(
+        poll_id=str(row["poll_id"]),
+        batch=int(row["batch"]),
+        root=str(row["root"]),
+        dienst=str(row["dienst"]),
+        zustand=str(row["zustand"]),
+        bezeugt=row["bezeugt"],
+        hinweis=row["hinweis"],
+        beleg=row["beleg"],
+        fehler=row["fehler"],
+        versuche=int(row["versuche"]),
+        beauftragt=str(row["beauftragt"]),
+        aktualisiert=str(row["aktualisiert"]),
+    )
 
 
 @dataclass(frozen=True)
@@ -321,6 +371,21 @@ class Store(SqliteStore):
         batch_root  TEXT NOT NULL,
         published   TEXT NOT NULL,
         PRIMARY KEY (poll_id, batch)
+    ) WITHOUT ROWID;
+    CREATE TABLE IF NOT EXISTS anker (
+        poll_id      TEXT NOT NULL,
+        batch        INTEGER NOT NULL,
+        dienst       TEXT NOT NULL,
+        root         TEXT NOT NULL,
+        zustand      TEXT NOT NULL,
+        bezeugt      TEXT,
+        hinweis      TEXT,
+        beleg        BLOB,
+        fehler       TEXT,
+        versuche     INTEGER NOT NULL DEFAULT 0,
+        beauftragt   TEXT NOT NULL,
+        aktualisiert TEXT NOT NULL,
+        PRIMARY KEY (poll_id, batch, dienst)
     ) WITHOUT ROWID;
     """
     KOPIERBARE_CONFIG_PRAEFIXE = (PENDING_SINCE,)
@@ -590,3 +655,114 @@ class Store(SqliteStore):
                 batch_root=glied,
                 entries=tuple(BoardEntry(e.payload, e.leaf_hash, n) for e in pending),
             )
+
+    # -- Externe Anker (EIP-ADR-20260801-002) ------------------------------
+    #
+    # Warum hier nur Persistenz und kein Netzaufruf: ``publiziere`` laeuft unter
+    # dem Schreib-Lock und in der Anfrage, die den Batch ausloest. Ein Aufruf an
+    # einen fremden Dienst an dieser Stelle wuerde die Sichtbarkeit einer Stimme
+    # an dessen Erreichbarkeit binden (ADR, Fund 3). Der Auftrag wird deshalb
+    # nur *notiert*; die Netzarbeit macht poll_service.arbeite_anker_ab() spaeter
+    # und ausserhalb des Locks.
+
+    def anker_beauftrage(self, poll_id: str, batch: int, root: str, dienste: Sequence[str]) -> None:
+        """Vermerkt fuer jeden Zeugen einen offenen Auftrag auf diese Root."""
+        jetzt = datetime.now().isoformat(timespec="seconds")
+        with self._lock:
+            for dienst in dienste:
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO anker "
+                    "(poll_id, batch, dienst, root, zustand, versuche, beauftragt, aktualisiert) "
+                    "VALUES (?, ?, ?, ?, 'ausstehend', 0, ?, ?)",
+                    (poll_id, batch, dienst, root, jetzt, jetzt),
+                )
+            self._conn.commit()
+
+    def anker_offen(
+        self, max_versuche: int, wiederholung_s: int, aufwertung_s: int
+    ) -> list[AnkerZeile]:
+        """Auftraege, an denen jetzt zu arbeiten ist.
+
+        Zwei Faelle in einer Abfrage: noch gar kein Beleg (``ausstehend``, und
+        gescheiterte Versuche unterhalb der Grenze) und ein Beleg, der noch
+        nicht endgueltig ist (``bezeugt`` - die OpenTimestamps-Aufwertung).
+        ``endgueltig`` und endgueltig ``fehlgeschlagen`` fallen heraus.
+
+        Die beiden Wartezeiten sind kein Feinschliff, sondern Ruecksicht: Die
+        Hintergrundaufgabe laeuft jede Minute, die Kalender sind fremde
+        Gratis-Dienste, und eine Bitcoin-Bestaetigung dauert Stunden. Ohne
+        Abstand fragte diese Instanz vier fremde Server im Minutentakt nach
+        einer Antwort, die es noch gar nicht geben kann.
+
+        Ein noch nie versuchter Auftrag (``versuche = 0``) ist davon
+        ausgenommen - der erste Anlauf soll sofort passieren.
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM anker WHERE "
+                "  (zustand = 'bezeugt' "
+                "     AND (julianday('now', 'localtime') - julianday(aktualisiert)) * 86400 >= ?) "
+                "  OR (zustand IN ('ausstehend', 'fehlgeschlagen') AND versuche < ? "
+                "     AND (versuche = 0 "
+                "          OR (julianday('now', 'localtime') - julianday(aktualisiert)) * 86400 >= ?)) "
+                "ORDER BY poll_id, batch, dienst",
+                (aufwertung_s, max_versuche, wiederholung_s),
+            ).fetchall()
+        return [_anker_zeile(r) for r in rows]
+
+    def anker_ergebnis(
+        self,
+        poll_id: str,
+        batch: int,
+        dienst: str,
+        *,
+        zustand: str,
+        beleg: bytes | None = None,
+        bezeugt: str | None = None,
+        hinweis: str | None = None,
+        fehler: str | None = None,
+    ) -> None:
+        """Schreibt das Ergebnis eines Versuchs zurueck.
+
+        ``versuche`` zaehlt jeden Versuch, auch den erfolgreichen: Die Zahl sagt
+        "so oft haben wir es angefasst", nicht "so oft ist es schiefgegangen" -
+        fuer die Grenze in ``anker_offen`` zaehlt beides gleich, und ein Beleg,
+        der erst im vierten Anlauf kam, ist eine Betriebsinformation.
+        """
+        with self._lock:
+            self._conn.execute(
+                "UPDATE anker SET zustand = ?, versuche = versuche + 1, aktualisiert = ?, "
+                "  beleg = COALESCE(?, beleg), bezeugt = COALESCE(?, bezeugt), "
+                "  hinweis = COALESCE(?, hinweis), fehler = ? "
+                "WHERE poll_id = ? AND batch = ? AND dienst = ?",
+                (
+                    zustand,
+                    datetime.now().isoformat(timespec="seconds"),
+                    beleg,
+                    bezeugt,
+                    hinweis,
+                    fehler,
+                    poll_id,
+                    batch,
+                    dienst,
+                ),
+            )
+            self._conn.commit()
+
+    def anker_je_batch(self, poll_id: str) -> dict[int, list[AnkerZeile]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM anker WHERE poll_id = ? ORDER BY batch, dienst", (poll_id,)
+            ).fetchall()
+        je_batch: dict[int, list[AnkerZeile]] = {}
+        for r in rows:
+            je_batch.setdefault(int(r["batch"]), []).append(_anker_zeile(r))
+        return je_batch
+
+    def anker_zeile(self, poll_id: str, batch: int, dienst: str) -> AnkerZeile | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM anker WHERE poll_id = ? AND batch = ? AND dienst = ?",
+                (poll_id, batch, dienst),
+            ).fetchone()
+        return _anker_zeile(row) if row else None

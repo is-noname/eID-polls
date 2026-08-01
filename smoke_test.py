@@ -22,7 +22,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import blind  # noqa: E402
 import demo  # noqa: E402
-from debug import DebugLog  # noqa: E402
+import anker as anker_modul  # noqa: E402
+from debug import DebugLog, log_board  # noqa: E402
 from config import Settings  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from web import create_app  # noqa: E402
@@ -1211,6 +1212,186 @@ def batch_veroeffentlichung() -> None:
           json.dumps({k: export.get(k) for k in ("batch_k", "batch_deckel_s")}))
 
 
+class _TestZeuge:
+    """Ein Zeitzeuge ohne Netz - fuer den Ankertest (EIP-ADR-20260801-002).
+
+    Bezeugt wird, wie bei den echten Zeugen, ``SHA256(rohbytes der Root)``; der
+    "Beleg" ist genau dieser Hash. Damit prueft der Test dieselbe Mechanik, die
+    im Betrieb greift: Der Vergleich liest den Hash aus dem *Beleg*, nicht aus
+    der Datenbankspalte.
+    """
+
+    endung = "test"
+
+    def __init__(self, name: str = "testzeuge", stufen: bool = False) -> None:
+        self.name = name
+        self.titel = f"Testzeuge {name}"
+        # stufen=True bildet OpenTimestamps nach: erst Quittung, dann endgueltig.
+        self.stufen = stufen
+        self.beauftragt: list[str] = []
+        self.faellt_aus = False
+        self.zeitversatz = timedelta(0)
+
+    def beauftrage(self, root: str) -> "anker_modul.Quittung":
+        if self.faellt_aus:
+            raise anker_modul.AnkerNichtVerfuegbar("Testzeuge ausgeschaltet")
+        self.beauftragt.append(root)
+        return anker_modul.Quittung(
+            beleg=bytes.fromhex(anker_modul.erwarteter_hash(root)),
+            bezeugt_um=datetime.now() + self.zeitversatz,
+            endgueltig=not self.stufen,
+        )
+
+    def werte_auf(self, beleg: bytes) -> "anker_modul.Quittung | None":
+        if self.faellt_aus:
+            raise anker_modul.AnkerNichtVerfuegbar("Testzeuge ausgeschaltet")
+        return anker_modul.Quittung(
+            beleg=beleg, bezeugt_um=datetime.now() + self.zeitversatz, endgueltig=True
+        )
+
+    def bezeugter_hash(self, beleg: bytes) -> str | None:
+        return beleg.hex() if len(beleg) == 32 else None
+
+    def pruefanleitung(self, basisname: str) -> list[str]:
+        return [f"# Testzeuge, kein echter Befehl fuer {basisname}"]
+
+
+def externer_anker() -> None:
+    """Zeitstempel auf die Batch-Root (EIP-ADR-20260801-002, EIP-T-006).
+
+    Sechs Zusagen, und die dritte ist der eigentliche Zweck:
+
+    1. Jeder veroeffentlichte Batch wird bei jedem Zeugen beauftragt - ohne
+       Netzaufruf im Veroeffentlichungspfad.
+    2. Der Durchlauf der Hintergrundaufgabe holt die Belege.
+    3. Wird das Board **umgeschrieben und die Kette neu gerechnet**, faellt das
+       am Anker auf. Genau das kann die Kettenpruefung nicht (Angriffsdemo
+       "Board umschreiben").
+    4. Ein zweistufiger Zeuge (OpenTimestamps-Muster) wird aufgewertet.
+    5. Ein ausgefallener Dienst haelt die Veroeffentlichung nicht auf und wird
+       nach der Versuchsgrenze zum Befund.
+    6. Zeugen, die dieselbe Root verschieden datieren, sind ein Befund.
+    """
+    import board_eintrag as be
+
+    zeuge = _TestZeuge()
+    zweistufig = _TestZeuge("zweistufig", stufen=True)
+    anker_app = create_app(
+        store_path=Path(tempfile.mkdtemp()) / "anker.sqlite3",
+        settings=Settings(admin_token="admin", batch_k=2, antwort_floor_s=0),
+    )
+    svc = anker_app.state.deps.service
+    svc.zeugen = {z.name: z for z in (zeuge, zweistufig)}
+    # Ohne Wartezeit zwischen den Anlaeufen - im Betrieb sind es Minuten, damit
+    # die Instanz nicht im Minutentakt an fremden Gratis-Diensten klopft; hier
+    # sollen zwei Durchlaeufe hintereinander auch zwei Versuche sein.
+    svc.anker_wiederholung_s = 0
+    svc.anker_aufwertung_s = 0
+    client = TestClient(anker_app)
+    poll = "verankert"
+    client.post("/api/admin/login", json={"token": "admin"})
+    client.post("/api/admin/create",
+                json={"poll_id": poll, "question": "Verankert?", "options": ["Ja", "Nein"]})
+
+    # 1 - POLL_OPEN ist veroeffentlicht, also beauftragt, aber noch ohne Beleg.
+    zeilen = svc.anker_je_batch(poll).get(0, [])
+    check("Anker: Veroeffentlichung beauftragt jeden Zeugen",
+          len(zeilen) == 2 and all(z.zustand == "ausstehend" for z in zeilen),
+          str([(z.dienst, z.zustand) for z in zeilen]))
+    check("Anker: Veroeffentlichungspfad ruft keinen Dienst auf",
+          zeuge.beauftragt == [], str(zeuge.beauftragt))
+
+    # 2 - Erst die Hintergrundaufgabe geht ans Netz.
+    svc.arbeite_anker_ab()
+    zeilen = {z.dienst: z for z in svc.anker_je_batch(poll)[0]}
+    root0 = svc.board_store.veroeffentlichte_batches(poll)[0].batch_root
+    check("Anker: Durchlauf holt den Beleg auf batch_root(0)",
+          zeilen["testzeuge"].zustand == "endgueltig"
+          and zeuge.beauftragt == [root0],
+          str(zeilen["testzeuge"].zustand))
+    check("Anker: zweistufiger Zeuge ist erst quittiert, nicht endgueltig",
+          zeilen["zweistufig"].zustand == "bezeugt")
+    check("Anker: keine Befunde bei unveraendertem Board",
+          svc.pruefe_anker(poll) == [], str(svc.pruefe_anker(poll)))
+
+    # 4 - Aufwertung (OpenTimestamps-Muster).
+    svc.arbeite_anker_ab()
+    check("Anker: zweiter Durchlauf wertet die Quittung zur Bezeugung auf",
+          svc.anker_je_batch(poll)[0][1].zustand == "endgueltig"
+          or {z.dienst: z.zustand for z in svc.anker_je_batch(poll)[0]}["zweistufig"]
+          == "endgueltig")
+
+    # 3 - Der Kern: Board umschreiben *mit* neu gerechneter Kette.
+    #     Die Kettenpruefung sieht danach nichts. Der Anker schon.
+    with svc.board_store._lock:  # bewusst am Store vorbei - das ist der Angriff
+        alt = svc.board_store._conn.execute(
+            "SELECT leaf_hash, payload FROM board WHERE poll_id = ? AND batch = 0", (poll,)
+        ).fetchone()
+        neu = json.loads(alt["payload"])
+        neu["question"] = "Manipuliert?"
+        neu_payload = be.canonical(neu)
+        neu_hash = be.leaf_hash(neu_payload)
+        svc.board_store._conn.execute(
+            "UPDATE board SET leaf_hash = ?, payload = ? WHERE poll_id = ? AND leaf_hash = ?",
+            (neu_hash, neu_payload, poll, alt["leaf_hash"]),
+        )
+        # Und die Pruefsummen hinterher, wie es ein Betreiber taete:
+        neue_root = be.merkle_root([neu_hash])
+        svc.board_store._conn.execute(
+            "UPDATE batches SET merkle_root = ?, batch_root = ? WHERE poll_id = ? AND batch = 0",
+            (neue_root, be.batch_root(neue_root, be.GENESIS), poll),
+        )
+        svc.board_store._conn.commit()
+    svc._letzte_pruefung.pop(poll, None)
+    bericht = svc.pruefbericht(poll)
+    befunde = svc.pruefe_anker(poll, bericht)
+    check("Anker: umgeschriebenes Board mit neu gerechneter Kette faellt nicht "
+          "an der Kette auf", bericht.chain.ok)
+    check("Anker: ... aber am Zeitstempel", len(befunde) >= 1 and
+          any("andere Root" in b for b in befunde), str(befunde))
+    check("Anker: der Befund steht auf der oeffentlichen Board-Seite",
+          "passen nicht zu diesem Board" in client.get(f"/board/{poll}").text)
+
+    # 5 - Ausgefallener Dienst: Veroeffentlichung laeuft weiter, Befund kommt.
+    #     Eigene Umfrage, weil die erste eben absichtlich beschaedigt wurde -
+    #     dort gibt es zu Recht keine Token mehr.
+    import secrets as sec
+
+    poll2 = "verankert2"
+    ausfall = _TestZeuge("ausfall")
+    ausfall.faellt_aus = True
+    svc.zeugen = {"ausfall": ausfall}
+    svc.anker_max_versuche = 2
+    client.post("/api/admin/create",
+                json={"poll_id": poll2, "question": "Und ohne Dienst?", "options": ["Ja", "Nein"]})
+    client.post("/api/auth", json={"credential": "testperson71"})
+    tok = sec.token_bytes(32)
+    blinded, inv = blind.blind(tok, *svc.poll_params(poll2))
+    resp = client.post(f"/api/token/{poll2}", json={"blinded": blinded.hex()})
+    sig = blind.finalize(bytes.fromhex(resp.json()["blind_sig"]), inv, svc.poll_params(poll2)[0])
+    gestimmt = client.post(f"/api/vote/{poll2}",
+                           json={"token": tok.hex(), "sig": sig.hex(), "choices": ["Ja"]})
+    check("Anker: Stimmabgabe haengt nicht am Anker-Dienst", gestimmt.status_code == 200)
+    for _ in range(3):
+        svc.arbeite_anker_ab()
+    inkonsistenzen = [e.message for e in log_board.events("inconsistency")]
+    check("Anker: aufgegebener Auftrag wird als Inkonsistenz gemeldet",
+          any("bleibt ohne ausfall-Anker" in m for m in inkonsistenzen),
+          str(inkonsistenzen[:2]))
+
+    # 6 - Zwei Zeugen, die dieselbe Root verschieden datieren.
+    a, b = _TestZeuge("frueh"), _TestZeuge("spaet")
+    b.zeitversatz = timedelta(hours=3)
+    svc.zeugen = {"frueh": a, "spaet": b}
+    svc.anker_max_versuche = 5
+    svc.close_poll(poll2)
+    for _ in range(2):
+        svc.arbeite_anker_ab()
+    befunde = svc.pruefe_anker(poll2)
+    check("Anker: auseinanderlaufende Datierung ist ein Befund",
+          any("auseinander" in x for x in befunde), str(befunde))
+
+
 def sitzungstrennung() -> None:
     """Phase B ohne Sitzungskontext (EIP-T-033, Baustein F).
 
@@ -1287,6 +1468,46 @@ def sitzungstrennung() -> None:
     check("Sitzungstrennung: Befund benennt, was mitkam",
           bool(befunde) and "eidpoll_session" in befunde[0].detail.get("mitgesandt", ""),
           str(befunde[0].detail if befunde else {}))
+
+    # Verbindungsebene (EIP-T-034): Eine Verbindung, die eine Identitaet
+    # getragen hat, endet mit ihrer Antwort - sonst laufen Phase A und Phase B
+    # ueber denselben Socket und sind verkettet, ohne dass ein Feld mitfaehrt.
+    # Geprueft wird die Anweisung im Header, nicht der Socket: TestClient
+    # spricht ASGI, da gibt es keine TCP-Verbindung, die sich schliessen
+    # liesse. Dass uvicorn "connection: close" befolgt, ist dessen Zusage;
+    # unsere ist, sie zu geben.
+    angemeldet = TestClient(eigen)
+    angemeldet.post("/api/auth", json={"credential": "testperson72"})
+    seite = angemeldet.get(f"/poll/{poll}")
+    phase_a = angemeldet.post(f"/api/token/{poll}", json={"blinded": "zz"})
+    anonym_seite = anon.get(f"/board/{poll}")
+    check("Verbindungsebene: Phase-Routen schliessen die Verbindung",
+          phase_a.headers.get("connection") == "close"
+          and voted.headers.get("connection") == "close",
+          f"A={phase_a.headers.get('connection')} B={voted.headers.get('connection')}")
+    check("Verbindungsebene: Seite mit Sitzungs-Cookie schliesst die Verbindung",
+          seite.headers.get("connection") == "close", str(seite.headers.get("connection")))
+    check("Verbindungsebene: anonymer Abruf bleibt wiederverwendbar",
+          anonym_seite.headers.get("connection") != "close",
+          "eine Verbindung ohne Identitaet darf eine Stimme tragen")
+
+    # Kanal-Blindheit (EIP-T-034, Akzeptanzkriterium 3): Wird der anonyme Kanal
+    # eine Option neben dem normalen Weg, ist die Kanalwahl selbst ein Merkmal -
+    # und zwar genau dann, wenn der Server sie festhaelt. Heute haelt er sie
+    # nicht fest; dieser Test haelt es so. Gesucht wird nach dem, was den Kanal
+    # verriete: Absender-IP aus der Proxy-Kette und der angesprochene Hostname
+    # (eine Onion-Adresse steht im Host-Header und sonst nirgends).
+    kanal = TestClient(eigen)
+    kanal.post("/api/auth", json={"credential": "testperson74"})
+    kopfzeilen = {"x-forwarded-for": "203.0.113.77", "host": "kanaltest.onion"}
+    kanal.post(f"/api/token/{poll}", json={"blinded": "zz"}, headers=kopfzeilen)
+    anon.post(f"/api/vote/{poll}", json={"token": "zz", "sig": "zz", "choices": ["Ja"]},
+              headers=kopfzeilen)
+    kanal_abzug = "\n".join(
+        f"{e.category} {e.message} {e.detail}" for e in debug_modul.events_gesamt("all"))
+    check("Kanal-Blindheit: weder Absender-IP noch Zielhost im Debug-Modul",
+          "203.0.113.77" not in kanal_abzug and "kanaltest.onion" not in kanal_abzug,
+          "sonst unterscheidet der Betreiber Onion- von Normalweg-Teilnehmenden")
 
 
 def _verzeichnis_bytes(verzeichnis: Path) -> bytes:
@@ -1883,6 +2104,7 @@ def main() -> int:
     anspruch_atomar()
     laufende_pruefung()
     batch_veroeffentlichung()
+    externer_anker()
     abbruch_nach_signatur()
     puffer_abschaltbar()
     sitzungstrennung()

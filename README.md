@@ -135,7 +135,7 @@ Betrieb offen.
 Beide Angriffe lassen sich unter `/admin` vorführen und danach auf dem Board und im Debug-Modul
 ansehen.
 
-**4. Nicht gebaut** (§12, unverändert): verteilte Schwellensignatur, externer Merkle-Anker,
+**4. Nicht gebaut** (§12): verteilte Schwellensignatur, Gegenzeichner gegen Split-View,
 Netzwerk-Anonymisierung, Produktiv-Berechtigungszertifikat, eIDAS-Ausland, Multi-Tenant.
 Die UI verspricht nichts davon.
 
@@ -150,7 +150,8 @@ Plan: `EIP-RFC-20260725-002_eID-Flow-Umsetzungsplan.md`. Nachverfolgung in `tick
 | `EIP-T-003` | ADR: SAML-SP in Python oder als Java-Sidecar | vor T-004 zu entscheiden |
 | `EIP-T-004` | `SamlEidAuthenticator` füllen | blockiert durch T-001 |
 | `EIP-T-005` | Stub ablösen, Modusanzeige | blockiert durch T-004 |
-| `EIP-T-006/7/8` | Merkle-Anker, Build-Hash, auditierte Krypto | Gruppe `haertung` |
+| `EIP-T-036` | Gegenzeichner der Batch-Wurzel gegen Split-View | Gruppe `unverkettbarkeit` |
+| `EIP-T-007/8` | Build-Hash, auditierte Krypto | Gruppe `haertung` |
 
 Ein physischer NFC-Leser und Testkarten werden **nicht** gebraucht: die AusweisApp bringt seit
 V1.24 einen Karten-Simulator für die Test-PKI mit.

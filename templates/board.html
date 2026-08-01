@@ -55,7 +55,15 @@
     <small>
       Reichweite dieser Prüfung: Sie entlarvt nur einen Angreifer, der die Prüfsummen stehen lässt.
       Ein Betreiber mit Schreibzugriff rechnet Wurzeln und Kette dahinter neu und bleibt hier
-      unsichtbar. Dagegen hilft erst ein Anker außerhalb dieses Servers.
+      unsichtbar. Dagegen helfen die externen Zeitstempel weiter unten.
+    </small>
+  </div>
+{% endif %}
+{% if anker_befunde %}
+  <div class="banner err">
+    Die externen Zeitstempel passen nicht zu diesem Board.
+    <small>
+      {% for befund in anker_befunde %}{{ befund }}{{ ' ' if not loop.last }}{% endfor %}
     </small>
   </div>
 {% endif %}
@@ -91,6 +99,90 @@
   beide Zähler oben blieben im Gleichgewicht. Dagegen hilft keine Prüfung auf dieser Seite, sondern
   erst ein auf mehrere Parteien verteilter Schlüssel. Bis dahin ist das Selbstbindung.
 </p>
+
+<h2>Externe Zeitstempel</h2>
+{% if not anker_zeugen %}
+  <div class="banner warn">
+    Für dieses Board ist <strong>keine</strong> Wurzel von außen datiert.
+    <small>
+      Die Verankerung ist auf dieser Instanz abgeschaltet (<code>EIDPOLL_ANKER=0</code>). Damit
+      lässt sich nicht ausschließen, dass der Betreiber das Board nachträglich umgeschrieben und die
+      Prüfsummen neu gerechnet hat — die Prüfungen oben würden das nicht zeigen.
+    </small>
+  </div>
+{% else %}
+  <p class="faint small">
+    Jede Batch-Wurzel wird bei zwei voneinander unabhängigen Diensten datiert. Das schließt eine
+    bestimmte Manipulation aus: Wir können ein Board nicht nachträglich umschreiben, denn die alte
+    Wurzel ist außerhalb unserer Reichweite bezeugt, und einen neuen Zeitstempel bekämen wir nur mit
+    dem heutigen Datum. Die Belege sind mit Standardwerkzeugen prüfbar, nicht mit unseren.
+  </p>
+  <div class="rows" style="margin-bottom:12px">
+    {% for batch in batches %}
+      {% set zeilen = anker_je_batch.get(batch.n, []) %}
+      <div class="row">
+        <div class="grow">
+          <div class="row-title">Batch {{ batch.n }}</div>
+          <div class="faint small mono">Kette {{ batch.batch_root }}</div>
+          <div class="muted small">
+            {% if not zeilen %}
+              Noch kein Zeitstempel beauftragt.
+            {% else %}
+              {% for z in zeilen %}
+                {{ z.dienst }}:
+                {% if z.zustand == 'endgueltig' %}
+                  bezeugt{% if z.bezeugt %} für {{ z.bezeugt }}{% endif %}{% if z.hinweis %} ({{ z.hinweis }}){% endif %}
+                {% elif z.zustand == 'bezeugt' %}
+                  quittiert, wartet auf die endgültige Attestierung
+                {% elif z.zustand == 'ausstehend' %}
+                  beauftragt, noch keine Antwort
+                {% else %}
+                  <span class="bad">kein Beleg ({{ z.fehler or 'ohne Angabe' }})</span>
+                {% endif %}
+                {{ '·' if not loop.last }}
+              {% endfor %}
+            {% endif %}
+          </div>
+        </div>
+        <div>
+          <a href="/anker/{{ poll.poll_id }}/{{ batch.n }}/root"><button class="ghost">Wurzel</button></a>
+          {% for z in zeilen if z.beleg %}
+            <a href="/anker/{{ poll.poll_id }}/{{ batch.n }}/{{ z.dienst }}"><button class="ghost">{{ z.dienst }}</button></a>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <details class="explain">
+    <summary>Einen Zeitstempel selbst prüfen</summary>
+    <div class="explain-body">
+      <p>
+        „Wurzel“ lädt die 32 Rohbytes der Batch-Wurzel als Datei
+        <code>{{ poll.poll_id }}-batch-N.root</code>, daneben den jeweiligen Beleg. Beide Dienste
+        bezeugen den SHA-256 dieser Datei. Für Batch N also:
+      </p>
+      {% for z in anker_zeugen %}
+        <p class="mono small" style="margin:10px 0 2px">{{ z.titel }}</p>
+        <pre class="mono small">{% for b in z.befehle %}{{ b }}
+{% endfor %}</pre>
+      {% endfor %}
+      <p>
+        Stimmt die Prüfung, hat ein Dritter bestätigt, dass genau diese Wurzel zum genannten
+        Zeitpunkt existierte — ohne dass er dafür etwas von uns wissen musste.
+      </p>
+    </div>
+  </details>
+
+  <p class="faint small" style="margin-top:12px">
+    <strong>Was der Zeitstempel nicht leistet.</strong> Er verhindert nicht, dass wir von Anfang an
+    zwei verschiedene Boards führen und sie verschiedenen Betrachtern zeigen. Beide Wurzeln ließen
+    sich ehrlich datieren, jede zu ihrer Zeit. Dagegen hilft kein Zeitstempel, sondern nur, dass
+    unabhängige Dritte alle je veröffentlichten Wurzeln gegenzeichnen und untereinander vergleichen.
+    Das gibt es hier <strong>noch nicht</strong>. Und die Dienste selbst sind nicht unfehlbar: Eine
+    Zeitstempelstelle könnte falsch datieren; deshalb sind es zwei, die verschieden funktionieren.
+  </p>
+{% endif %}
 
 <h2>Ergebnis</h2>
 {% if result %}
