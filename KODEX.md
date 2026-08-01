@@ -564,9 +564,8 @@ erlaubt und nach § 3 geboten; sie gehören in den veröffentlichten, gehashten 
 Hash-Veröffentlichung und Prüfanleitung sind `offen` → EIP-T-007, fällig vor
 dem ersten echten Durchlauf (Betriebsstufe `produktiv`).
 
-Die Übereinstimmung von Repository und Auslieferung ist seit
-EIP-T-074 **feststellbar statt behauptet**: Die Instanz weist
-ihren Stand unter `/version` aus — benannter Commit und ein Hash über die Dateien, die sie
+Die Übereinstimmung von Repository und Auslieferung ist seit dem 2026-08-01 (Stand `ec1044d`)
+**feststellbar statt behauptet**: Die Instanz weist ihren Stand unter `/version` aus — benannter Commit und ein Hash über die Dateien, die sie
 tatsächlich ausliefert —, und `app/DEPLOY.md` beschreibt den Prüfweg dorthin in zwei Befehlen, die
 ohne Rückfrage bei uns auskommen. Damit ist die Fälligkeit dieser Betriebsstufe erfüllt: Sie verlangt
 nicht, dass keine Abweichung entsteht, sondern dass eine entstandene auffällt. Ein Commit, der hier
