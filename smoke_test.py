@@ -2156,6 +2156,20 @@ def main() -> int:
           board_page.status_code == 200 and accounting.ok and status.sound,
           f"eligible={accounting.n_eligible} votes={accounting.n_votes} kette={status.ok}")
 
+    # EIP-T-025 / KODEX §8: Das Ergebnis erscheint nie ohne seinen Nenner. Der
+    # Wert selbst darf sich aendern (Bundestagswahl), die Nennung nicht - und
+    # sie steht *vor* dem Ergebnis, sonst liest sie niemand.
+    seite = board_page.text
+    quote_pos = seite.find("Beteiligung:")
+    check("Punkt 7b: Ergebnis nennt Beteiligungsquote und benannten Nenner",
+          quote_pos >= 0
+          and "59.200.000" in seite
+          and "Wahlberechtigte" in seite
+          and "bundeswahlleiterin.de" in seite,
+          f"quote_pos={quote_pos}")
+    check("Punkt 7c: Nenner steht vor den Ergebnisbalken",
+          quote_pos >= 0 and quote_pos < seite.find("bar-row"))
+
     # Erst hier: der Auditor prueft den *echten* Export dieser Umfrage, es muss
     # also abgestimmt und geschlossen sein.
     auditor_unabhaengig()

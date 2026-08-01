@@ -15,6 +15,64 @@
 
 ## Änderungsprotokoll
 
+### Version 22 — 2026-08-01
+
+**Die Liste der zulässigen Fälligkeitsereignisse steht nicht mehr im Skript, sondern im Kodex; § 4 b
+sagt jetzt, was es zählt und was es dabei nicht sieht** (EIP-T-086,
+Befund: EIP-AUD-20260801-005). Vier Änderungen, keine davon ändert eine Zusage
+nach außen — alle vier ändern, wie überprüfbar die bestehenden sind.
+
+**1. Die Ereignisliste ist Kodextext geworden** (neuer Leitfaden-Abschnitt *Fälligkeitsereignisse*).
+Bis Version 21 stand sie als Konstante `EREIGNISSE` in `scripts/check_kodex.py` und entschied dort,
+welche Fälligkeit § 4 a genügt — mitsamt dem Satz „Ein Ereignis, das hier nicht steht, ist eines, auf
+das sich niemand berufen kann". Wer die Liste erweiterte, erweiterte damit den Kodex ohne Version,
+ohne Eintrag hier und ohne Begründungspflicht. Das Skript liest die Liste jetzt aus `KODEX.md` und
+hält keine eigene Fassung; fehlt der Abschnitt, ist das ein Befund und kein stiller Durchlauf.
+
+**Die beiden Fassungen waren bereits auseinandergelaufen, in beide Richtungen.** Gestrichen sind drei
+Einträge, auf die sich kein Vermerk berief (`lokal`, Berechtigungszertifikat, politische Relevanz —
+letzteres stand nur in der Übersichtstabelle, nicht im Status-Absatz von § 12). Aufgenommen ist „vor
+der ersten Frage außerhalb einer Vorführung", das § 12 seit Version 20 nennt und das für die Prüfung
+unsichtbar war: Der Paragraph kam allein deshalb durch, weil im selben Absatz ersatzweise
+`produktiv` steht. Damit das nicht wiederkehrt, meldet das Skript ab sofort als Hinweis, welche
+Ereignisse von keinem Vermerk benutzt werden — der Zustand, in dem die alte Liste verwahrlost ist.
+
+**2. § 4 b nennt seine Zähleinheit und begründet sie.** Gezählt werden Paragraphen, nicht Vermerke.
+Das war schon immer so und stand nirgends: Der Grund ist, dass die Vermerksgrenze rein redaktionell
+ist — einen Absatz teilen erzeugt zwei Schulden — während die Paragraphengrenze nach § 17 nicht
+beiläufig verschiebbar ist. Der Preis ist die Blindheit gegenüber Zuwachs und Abtrag *innerhalb*
+eines belasteten Paragraphen. Dieser Preis wurde bis hierher dreimal in der Prosa der
+Schuldenübersicht neu erklärt (Version 12, 15, 20); er steht jetzt einmal in der Regel, und die
+Stellen in der Übersicht verweisen darauf, statt ihn zu wiederholen.
+
+**3. Das Umhängen einer Schuld in einen bereits belasteten Paragraphen ist ausdrücklich verboten**
+(§ 4, *Konkret verboten*). Das ist die einzige Umgehung der Grenze, die tatsächlich funktioniert:
+Sie senkt die Zahl um eins, ohne dass sich etwas ändert, und findet im Fließtext eines Paragraphen
+statt, wo sie von außen nicht als Umgehung zu erkennen ist. Die in EIP-T-068
+vermutete Umgehung — zwei Vermerke zusammenziehen — gibt es dagegen nicht; sie senkt eine Zahl, die
+niemand zählt.
+
+**Warum das trotzdem nur eine halbe Sicherung ist.** Ein Verbot im Text hindert niemanden daran, eine
+Schuld beim billigeren Paragraphen zu beschreiben; prüfen kann das keine Regex. Es macht die Bewegung
+nur benennbar, wenn sie jemandem auffällt. Das wird hier gesagt, statt den Punkt als geschlossen
+auszugeben.
+
+**4. Der Name „Schuldengrenze" bleibt, mit Begründung.** Der Einwand aus der Prüfung ist berechtigt:
+Der Name behauptet eine andere Einheit, als die Regel darunter zählt. Trotzdem sagt er das
+Richtige — begrenzt wird der Rückstand, gemessen wird er in Paragraphen, und beides steht jetzt
+nebeneinander. „Paragraphengrenze" würde die Messgröße zum Gegenstand machen.
+
+**Kein Punkt dieser Version senkt die Schuldenzahl.** Sie bleibt bei 13 von 20, der Baustopp gilt
+unverändert. Zulässig war die Arbeit als Prüfwerkzeug und als Arbeit an § 4 selbst (§ 4 b, erlaubte
+Ausnahmen). Offen bleibt der Befund aus derselben Prüfung, dass § 1 ein Statuswort trägt, das seine
+Lage nicht beschreibt → EIP-T-087.
+
+**Präzisiert, ohne neuen Verstoßeintrag:** § 1 belegte seine gerissene Fälligkeit mit „(V-002)". Der
+Eintrag steht im Kopf auf „behoben" — der uvicorn-Zugriffslog ist aus —, während die Fälligkeit
+weiterläuft; erst der Nachtrag vom 2026-07-31 sagt das im letzten Satz. Der Verweis nennt jetzt den
+Nachtrag. Ein zweiter V-Eintrag über denselben Sachverhalt wäre die doppelte Fassung, die § 18
+verbietet.
+
 ### Version 21 — 2026-08-01
 
 **Die erste der drei Zusagen aus der Zwischenregel des § 12 ist erzwungen statt versprochen**

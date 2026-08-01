@@ -342,6 +342,12 @@ def page(request: Request, template: str, status_code: int = 200, **context: Any
     context.setdefault("public", d.settings.public)
     context.setdefault("demos", d.settings.demos)
     context.setdefault("demo_codes", d.authenticator.sample_codes())
+    # Der Nenner steht jeder Vorlage zur Verfuegung, nicht nur der Board-Seite:
+    # Eine Teilnahmezahl ohne ihn ist nach EIP-T-025 keine Aussage (KODEX §8).
+    context.setdefault("nenner", d.settings.nenner)
+    context.setdefault("nenner_bezeichnung", d.settings.nenner_bezeichnung)
+    context.setdefault("nenner_quelle", d.settings.nenner_quelle)
+    context.setdefault("nenner_quelle_url", d.settings.nenner_quelle_url)
     return d.templates.TemplateResponse(request, template, context, status_code=status_code)
 
 

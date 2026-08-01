@@ -190,6 +190,20 @@
      waere sonst jeder Balken randvoll und die Grafik sagte nichts aus. Weil
      Mehrfachauswahl erlaubt ist, koennen sich die Anteile auf ueber 100 % summieren. #}
   {% set voters = accounting.n_votes %}
+  {# Beteiligungsquote vor dem Ergebnis, nicht darunter (EIP-T-025, KODEX §8):
+     Der Unterschied zu einer gewoehnlichen Onlineumfrage ist der benannte
+     Nenner. Steht er hinter dem Ergebnis, liest ihn niemand. #}
+  {% set quote = (100 * voters / nenner) if nenner else 0 %}
+  <div class="banner" style="margin-bottom:12px">
+    Beteiligung: <strong>{{ voters }} von {{ "{:,}".format(nenner) | replace(",", ".") }}</strong>
+    {{ nenner_bezeichnung }}
+    — {% if quote >= 0.01 %}{{ ("%.2f" % quote) | replace(".", ",") }} %{% else %}unter 0,01 %{% endif %}
+    <small>
+      Nenner: {{ nenner_quelle }}, <a href="{{ nenner_quelle_url }}" rel="noreferrer">Quelle</a>.
+      Vorab und dauerhaft festgelegt, nicht je Umfrage gewählt — ein nachträglich passender
+      Nenner wäre genau der Methodentrick, gegen den dieses Verfahren antritt.
+    </small>
+  </div>
   <div class="rows">
     {% for option, count in result.items() %}
       {% set share = (100 * count / voters) if voters else 0 %}
@@ -208,22 +222,20 @@
     Anteil der {{ voters }} Abstimmenden. Da mehrere Antworten möglich sind, kann die Summe über
     100 % liegen.
   </p>
-  {# KODEX §8/§11, Verstoss V-006: Der Prozentwert oben bezieht das Ergebnis auf
-     sich selbst. Beteiligungsquote, benannter Nenner und Veroeffentlichungs-
-     schwelle gibt es im Datenmodell nicht (EIP-T-025). Solange das so ist,
-     sagt die Seite es hier - eine Zahl ohne Nenner ist nach dem "Warum" von §8
-     genau die Sorte Zahl, gegen die dieses Projekt angetreten ist. #}
+  {# KODEX §11, Rest von Verstoss V-006: Nenner und Quote stehen jetzt oben
+     (EIP-T-025). Was bleibt, ist die Zugangshuerde - sie verschwindet nicht
+     dadurch, dass der Nenner benannt ist, sondern wird durch ihn erst
+     sichtbar. Eine Veroeffentlichungsschwelle gibt es bewusst nicht: Wir
+     zeigen die Quote und sagen, was sie ist. #}
   <div class="banner warn" style="margin-top:12px">
-    Diesem Ergebnis fehlt sein Nenner
+    Was diese Zahlen nicht sagen
     <small>
-      Der Prozentwert bezieht sich auf die {{ voters }} Abstimmenden — also auf sich selbst. Was
-      dieses Verfahren von einer gewöhnlichen Onlineumfrage unterscheiden soll, ist die
-      <strong>Beteiligungsquote</strong>: wie viele der Berechtigten das sind. Diese Zahl gibt es
-      hier noch nicht, ebenso wenig eine vorab festgelegte Schwelle, unterhalb derer gar kein
-      Ergebnis erschiene. Hinzu kommt die Zugangshürde selbst — mit dem Online-Ausweis abstimmen
-      kann nur, wer eine nutzbare eID hat, und wer teilnimmt, unterscheidet sich systematisch von
-      wer nicht teilnimmt. Bis beides steht, ist diese Darstellung eine Vorführung des Verfahrens,
-      keine Aussage über irgendeine Gruppe von Menschen.
+      Die Prozente an den Balken beziehen sich auf die {{ voters }} Abstimmenden — also auf sich
+      selbst; wie viel das gemessen an allen Berechtigten ist, steht oben. Hinzu kommt die
+      Zugangshürde: Mit dem Online-Ausweis abstimmen kann nur, wer eine nutzbare eID hat, und wer
+      teilnimmt, unterscheidet sich systematisch von wem nicht teilnimmt. Das Ergebnis ist damit
+      das Votum der Teilnehmenden, nie eine Aussage über die Bevölkerung. Solange kein echter
+      eID-Flow läuft, ist diese Darstellung ohnehin eine Vorführung des Verfahrens.
     </small>
   </div>
 {% else %}

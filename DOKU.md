@@ -554,6 +554,23 @@ bleibende Meldung ist ein Befund, eine verschwindende war der Schnappschuss-Effe
 | `EIDPOLL_ADMIN_TOKEN` | `admin` | Admin-Zugang |
 | `EIDPOLL_ANTWORT_FLOOR_S` | `0.3` | Mindest-Antwortzeit der Phasen-Routen in Sekunden, `0` schaltet ab (EIP-T-033 F) |
 | `EIDPOLL_RETRY_CACHE_H` | `24` | Lebensdauer des Wiederhol-Puffers der Token-Ausgabe in Stunden, `0` schaltet ab (EIP-T-070) |
+| `EIDPOLL_NENNER` | `59200000` | Nenner der Beteiligungsquote (EIP-T-025) |
+
+**Der Nenner.** Jedes Ergebnis erscheint als Quote, nie als bloße Teilnahmezahl: *N von
+59.200.000 Wahlberechtigten*. Der Nenner sind die Deutschen ab 18 im Inland nach der
+[Schätzung der Bundeswahlleiterin zur Bundestagswahl 2025](https://www.bundeswahlleiterin.de/mitteilungen/bundestagswahlen/2025/20241204_btw25_schaetzung-wahlberechtigte.html)
+— amtlich, registerbasiert, datiert, zu jeder Bundestagswahl neu festgestellt.
+
+Nicht gewählt wurde „alle Ausweisinhaber": **diese Zahl existiert nicht.** Das BMI führt keine
+zentrale Statistik über gültige Personalausweise; die Daten liegen bei rund 5.500
+Ausweisbehörden, und ob ausgelieferte Ausweise noch im Umlauf sind, ist unbekannt. Ein Nenner,
+den niemand nachschlagen kann, ist keiner.
+
+Der Wert steht in `config.py` und nicht im Template, weil er vorab und dauerhaft feststehen muss.
+Ein je Umfrage passend gewählter Nenner wäre genau der Methodentrick, gegen den dieses Verfahren
+antritt. Eine **Veröffentlichungsschwelle** gibt es bewusst nicht: Jedes Ergebnis erscheint mit
+seiner Quote, auch eine sehr kleine — was Dritte daraus machen, regelt Transparenz, nicht
+Zurückhaltung.
 
 **Schlüssel und ihre Lebensdauer.** Es gibt keinen globalen Token-Signaturschlüssel mehr
 (EIP-T-069). Jede Umfrage bekommt beim Anlegen zwei eigene, beide in der Datenbank, beide beim

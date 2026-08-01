@@ -11,7 +11,7 @@
 > Historie: [Kodex-Protokoll](/kodex/protokoll) · Begriffe: Glossar (projektintern) ·
 > These: EIP-RFC-20260726-001
 
-**Version 21 — 2026-08-01**
+**Version 22 — 2026-08-01**
 
 ---
 
@@ -97,6 +97,29 @@ er aufgelöst sein muss. Ohne beides ist der Vermerk unzulässig und der Paragra
 (§ 4 a). Die Schuldenübersicht am Ende führt alle Vermerke zusammen; `scripts/check_kodex.py` prüft
 ihre Form.
 
+## Fälligkeitsereignisse
+
+§ 4 a verlangt zu jeder Schuld ein Ereignis, vor dem sie aufgelöst sein muss. Zulässig sind
+ausschließlich die folgenden. **Ein Ereignis, das hier nicht steht, ist eines, auf das sich niemand
+berufen kann** — ein Vermerk, der ein anderes nennt, ist formfehlerhaft.
+
+- `öffentlich erreichbar` — Betriebsstufe, siehe oben
+- `produktiv` — Betriebsstufe, siehe oben
+- ersten echten Durchlauf — die erste Umfrage, deren Ergebnis zählen soll
+- ersten Frage außerhalb einer Vorführung — auch dann, wenn niemand das Ergebnis ernst nimmt
+- ersten Einbettung — die erste Einbindung auf einer fremden Seite
+- Annahme von Geld — die erste, gleich von wem und in welcher Höhe
+- Trägerwechsel — das Projekt wechselt den Betreiber oder die Rechtsform
+
+Diese Liste ist Kodextext, nicht Konfiguration: Sie zu erweitern ist eine Änderung nach § 17 und
+braucht Version, Protokolleintrag und Begründung. `scripts/check_kodex.py` **liest sie von hier**
+und hält keine eigene Fassung — eine zweite Liste im Code wäre ein zweiter Kodex ohne
+Änderungspflicht (Herleitung: EIP-AUD-20260801-005 Abschnitt 5).
+
+Die Formulierung im Status-Absatz muss das Ereignis wörtlich enthalten. Das ist Absicht: Wer sein
+Ereignis frei formuliert, hat es für jede Prüfung unsichtbar gemacht, und genau das war bis
+Version 22 bei § 12 der Fall.
+
 ---
 
 # Paragraphen
@@ -120,7 +143,11 @@ Berechtigungszertifikat sie erlaubt.
 
 **Status.** `bindend`. Die Umsetzung im Betrieb ist noch nicht abgeschlossen und bis dahin
 `Disziplin` → EIP-T-075, fällig ab Betriebsstufe
-`öffentlich erreichbar`. **Diese Fälligkeit ist gerissen** (V-002).
+`öffentlich erreichbar`. **Diese Fälligkeit ist gerissen** — maßgeblich ist der **Nachtrag vom
+2026-07-31 zu V-002**, nicht dessen Kopf: Der Eintrag selbst steht auf „behoben", weil der
+uvicorn-Zugriffslog aus ist; der Nachtrag sagt im letzten Satz, was hier gilt — *„V-002 ist
+geschlossen, § 1 ist es nicht."* Ein zweiter Verstoßeintrag über denselben Sachverhalt wäre die
+doppelte Fassung aus § 18.
 
 Was daran noch offen ist, ist seit dem 2026-07-31 auf einen Punkt zusammengeschnurrt: die eigene
 Seite — Zugriffslog, Reverse-Proxy, Debug-Modul, Schlüsselvernichtung samt WAL — ist erhoben,
@@ -258,6 +285,18 @@ Erlaubt bleiben in diesem Zustand: Arbeit an einem Paragraphen der Schuldenüber
 Fehlern und Verstößen, Prüfwerkzeuge, Dokumentation, Sicherheitsarbeit. Nicht erlaubt: alles, was
 Reichweite, Funktionsumfang oder Außenwirkung vergrößert.
 
+**Gezählt werden Paragraphen, nicht Vermerke.** Ein Paragraph mit drei Vermerken zählt einmal. Das
+ist gewählt, nicht zufällig: Die Vermerksgrenze ist rein redaktionell — wer einen Absatz teilt,
+erzeugt zwei Schulden, wer zwei zusammenschreibt, eine —, während die Paragraphengrenze nach § 17
+nicht beiläufig verschiebbar ist. Die Kennzahl ist damit gegen Umformulieren robust und **blind
+gegenüber Zuwachs und Abtrag innerhalb eines bereits belasteten Paragraphen**. Diese Blindheit ist
+der Preis der Robustheit und wird hier einmal benannt, statt bei jedem Anlass neu erklärt zu werden.
+Wer wissen will, was sich wirklich bewegt hat, liest die Tabelle, nicht die Zahl.
+
+**Der Name bleibt.** „Schuldengrenze" sagt, was begrenzt wird — der Rückstand des Projekts —, und
+der Satz darüber sagt, woran er gemessen wird. Ihn in „Paragraphengrenze" umzubenennen würde die
+Messgröße zum Gegenstand machen und den Blick genau von dem wegführen, um den es geht.
+
 **Warum.** Ein Projekt, das mit Vertrauen wirbt, wird an der Differenz zwischen „können wir nicht" und
 „tun wir nicht" gemessen. Die Zusätze a) und b) stehen hier, weil die Kennzeichnungspflicht allein
 einen Ausweg offenließ: Wer einen Text an den Ist-Zustand angleicht, hat diesem Paragraphen genügt,
@@ -274,6 +313,11 @@ verboten: einen Vermerk auf `offen`
 stehen lassen, ohne Ticket und Ereignis zu
 nennen; die Grenze aus b) durch Umdeklarieren eines Features zu „Wartung" umgehen; die Grenze
 anheben, statt eine Schuld abzutragen (das wäre eine Änderung nach § 17 und braucht deren Begründung).
+Ebenfalls verboten, seit Version 22 ausdrücklich: **eine Schuld in einen bereits belasteten
+Paragraphen umhängen.** Die Zahl fällt dabei um eins, ohne dass sich etwas ändert — und weil die
+Bewegung im Fließtext eines Paragraphen stattfindet, ist sie von außen nicht als Umgehung erkennbar.
+Eine Schuld gehört zu dem Paragraphen, dessen Zusage sie bricht; passt sie auf zwei, wird sie bei
+beiden geführt und nicht bei dem billigeren.
 
 Seit Version 9 gilt diese Disziplin nur noch **während** der Laufzeit einer Umfrage
 (EIP-T-069, 2026-07-31): Jede Umfrage hat ein eigenes
@@ -708,7 +752,8 @@ EIP-T-040).
 Alle Paragraphen, die ganz oder teilweise auf `offen` oder `Disziplin` stehen. Die Liste ist
 abgeleitet, nicht eigenständig: Maßgeblich ist der Status beim jeweiligen Paragraphen.
 `scripts/check_kodex.py` prüft, dass beide übereinstimmen und dass kein Vermerk ohne Ticket und
-Ereignis dasteht.
+Ereignis dasteht. Was die Zahl darunter zählt und was sie dabei nicht sieht, steht in § 4 b und
+nicht hier.
 
 **Stand 2026-08-01: 13 von 20 Paragraphen. Die Grenze aus § 4 b liegt bei 8 — sie ist überschritten,
 der Baustopp gilt.**
@@ -734,7 +779,7 @@ Version 15 löst den dritten Vermerk unter § 2 auf: Die Mindestmenge zählt jet
 damit die Zahl, die sie zu sein behauptet (EIP-T-076). Die Zahl
 oben bleibt trotzdem bei 11, weil § 2 zwei weitere Vermerke trägt — dieselbe Schwäche der Kennzahl
 wie bei ihrer Entstehung in Version 12, nur in die andere Richtung: Damals verschwieg sie einen neuen
-Befund, jetzt verschweigt sie gebaute Arbeit. Sie zählt Paragraphen, nicht Schulden.
+Befund, jetzt verschweigt sie gebaute Arbeit.
 
 Die Zahl steht seit Version 9 unverändert, obwohl § 10 mit Version 10 herausfällt: § 5 tritt an
 seine Stelle. Der Offenlegungsweg ist gebaut, der Eingangskanal für Behördenanfragen ist es nicht —
@@ -742,8 +787,8 @@ das war die bewusste Entscheidung, keine private Adresse dauerhaft an das Projek
 (EIP-T-063). Ein Tausch, kein Abtrag.
 
 Mit Version 12 kommt ein dritter Vermerk unter § 2 hinzu, ohne dass die Zahl steigt — § 2 war
-bereits belastet. **Das ist eine Schwäche dieser Kennzahl, keine Entwarnung:** Sie zählt
-Paragraphen, nicht Schulden. Der neue Vermerk ist keine kleine Ergänzung, sondern der Befund, dass
+bereits belastet. **Das ist die Blindheit der Kennzahl, keine Entwarnung** (seit Version 22 in § 4 b
+selbst benannt und begründet). Der neue Vermerk ist keine kleine Ergänzung, sondern der Befund, dass
 die Mindestmenge aus der Regel von § 2 heute nicht existiert. Wer nur auf die 11 sieht, hält den
 2026-07-31 für einen Tag ohne Veränderung.
 

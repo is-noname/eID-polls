@@ -93,6 +93,26 @@ class Settings:
     # geht (Abbruch, spaeter derselbe Browser), und laesst den Rest verfallen.
     # 0 schaltet den Puffer ab; dann gilt wieder "Anspruch weg, Token weg".
     retry_cache_h: float = 24.0
+    # Nenner der Beteiligungsquote (EIP-T-025): Deutsche ab 18 im Inland,
+    # Schaetzung der Bundeswahlleiterin zur Bundestagswahl 2025. Amtlich,
+    # registerbasiert, datiert - und zu jeder Bundestagswahl neu festgestellt.
+    #
+    # Warum nicht "alle Ausweisinhaber", wie das Konzept es zuerst vorsah: Diese
+    # Zahl gibt es nicht. Das BMI hat auf IFG-Anfrage bestaetigt, dass keine
+    # zentrale Statistik ueber gueltige Personalausweise gefuehrt wird - die
+    # Daten liegen bei rund 5.500 Ausweisbehoerden, Umlauf und Gueltigkeit sind
+    # unbekannt. Ein Nenner, den niemand nachschlagen kann, ist keiner.
+    #
+    # Der Wert steht hier und nicht im Template, weil er vorab und dauerhaft
+    # festgelegt sein muss: ein nachtraeglich passend gewaehlter Nenner waere
+    # genau der Methodentrick, gegen den sich dieses Projekt richtet.
+    nenner: int = 59_200_000
+    nenner_bezeichnung: str = "Wahlberechtigte (Deutsche ab 18 im Inland)"
+    nenner_quelle: str = "Bundeswahlleiterin, Schaetzung zur Bundestagswahl 2025 (Stand 2024-12-04)"
+    nenner_quelle_url: str = (
+        "https://www.bundeswahlleiterin.de/mitteilungen/bundestagswahlen/2025/"
+        "20241204_btw25_schaetzung-wahlberechtigte.html"
+    )
     seed_demo: bool = False
     seed_poll_id: str = "demo"
     seed_question: str = DEFAULT_QUESTION
@@ -131,6 +151,7 @@ class Settings:
             anker_upgrade_h=float(os.environ.get("EIDPOLL_ANKER_UPGRADE_H", "24") or 24),
             anker_toleranz_min=float(os.environ.get("EIDPOLL_ANKER_TOLERANZ_MIN", "15") or 15),
             retry_cache_h=float(os.environ.get("EIDPOLL_RETRY_CACHE_H", "24") or 24),
+            nenner=int(os.environ.get("EIDPOLL_NENNER", "") or 59_200_000),
             # Demo-Umfrage beim Start, wenn noch keine existiert. Auf
             # Gratis-Hosting ohne persistente Platte ist die Datenbank nach
             # jedem Neustart leer - ohne das hier stuende ein Besucher vor einer
@@ -172,5 +193,9 @@ class Settings:
             "Wiederhol-Puffer der Token-Ausgabe: "
             + (f"{self.retry_cache_h} h" if self.retry_cache_h > 0 else "abgeschaltet")
             + " (EIP-T-070)"
+        )
+        lines.append(
+            f"Nenner der Beteiligungsquote: {self.nenner:,} ".replace(",", ".")
+            + f"{self.nenner_bezeichnung} - {self.nenner_quelle} (EIP-T-025)"
         )
         return lines
