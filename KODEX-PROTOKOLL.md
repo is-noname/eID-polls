@@ -15,6 +15,38 @@
 
 ## Änderungsprotokoll
 
+### Version 23 — 2026-08-02
+
+**Der Nenner steht; § 8 Satz 1 ist eingelöst, Satz 2 wird zum offenen Widerspruch**
+(EIP-T-025, Verstoß V-006). Keine Regel wurde geändert —
+geändert haben sich drei Statusvermerke und die Schuldenübersicht.
+
+Eingelöst: Über dem Ergebnis der Board-Seite steht seit dem 2026-08-02 die Beteiligungsquote mit
+benanntem Nenner — 59.200.000 Wahlberechtigte (Deutsche ab 18 im Inland, Schätzung der
+Bundeswahlleiterin zur Bundestagswahl 2025), mit Quelle, Datum und Link, **vor** den
+Ergebnisbalken. Zwei Prüfungen in `smoke_test.py` halten beides fest, auch die Reihenfolge.
+
+Der Nenner ist nicht der, den das Ticket am 2026-07-26 vorsah. „Alle Ausweisinhaber aus dem
+Melderegister" wurde dort für die einzig registerexakte Größe gehalten. **Diese Zahl existiert
+nicht:** Das BMI führt keine zentrale Statistik über gültige Personalausweise, die Daten liegen bei
+rund 5.500 Ausweisbehörden, und ob ausgelieferte Ausweise im Umlauf sind, ist unbekannt. Ein
+Nenner, den niemand nachschlagen kann, ist keiner. Näheres im Nachtrag zu V-006.
+
+Nicht eingelöst und ausdrücklich nicht stillgestellt: § 8 Satz 2 verlangt eine Schwelle, unterhalb
+derer kein Ergebnis erscheint. Gegen sie ist im Ticket entschieden worden — wir zeigen jede Quote
+und sagen, was sie ist. Damit steht im Kodex eine Zusage, die das Projekt nicht mehr einzulösen
+gedenkt. Der Statusvermerk sagt das jetzt in genau diesen Worten, statt es weiter als Rückstand zu
+führen.
+
+**Warum die Regel trotzdem unverändert bleibt.** Naheliegend wäre gewesen, Satz 2 hier gleich mit
+zu streichen. § 17 verbietet das: Ein Paragraph darf nicht rückwirkend auf eine bereits getroffene
+Entscheidung angepasst werden, um sie nachträglich zu decken — und die Entscheidung fiel am
+2026-08-01, während der Kodex die Schwelle verlangte. Die Streichung ist möglich, aber sie ist eine
+eigene Änderung mit eigener Begründung und eigener Version, nicht der Anhang an die Meldung des
+Erfolgs. Bis dahin gilt der Satz. Das ist der unbequeme Zustand, und er ist der richtige: Ein
+Kodex, dessen Zusagen mit der Absicht verschwinden, verliert genau die Funktion, für die es ihn
+gibt.
+
 ### Version 22 — 2026-08-01
 
 **Die Liste der zulässigen Fälligkeitsereignisse steht nicht mehr im Skript, sondern im Kodex; § 4 b
@@ -1165,3 +1197,32 @@ Frage 2 ist eindeutig: Was auf der öffentlichen Instanz stand, war wirksam.
    angetreten ist (§ 8 Warum) — auch in einer Demo.
 3. Der Auswertungsplan aus § 7 ist bisher nirgends bedacht worden, auch nicht in EIP-T-025. Er
    gehört dort ergänzt.
+
+**Nachtrag 2026-08-02 — Nenner steht, und der oben genannte war falsch.** Zwei Dinge, die den
+Eintrag oben berichtigen, ohne ihn zu ersetzen (§ 18).
+
+*Erstens, erledigt:* Die Board-Seite zeigt seit heute Beteiligungsquote und benannten Nenner über
+dem Ergebnis. § 8 Satz 1 und der Nenner-Teil von § 7 sind damit eingelöst; die Vermerke sind
+entsprechend gekürzt (Version 23).
+
+*Zweitens, berichtigt:* Der Eintrag oben nennt als entschiedenen Nenner „Nenner 1, Ausweisinhaber
+aus dem Melderegister — als einziger registerexakt". **Das war sachlich falsch, und zwar in beiden
+Hälften.** Eine Recherche am 2026-08-02 ergab: Das BMI führt keine zentrale Statistik über gültige
+Personalausweise. Die Daten liegen bei rund 5.500 Ausweisbehörden; ob ausgelieferte Ausweise noch
+im Umlauf sind, ist nach Auskunft des Ministeriums auf eine IFG-Anfrage unbekannt. Die letzte
+veröffentlichte Zahl stammt von 2013. Ein Melderegisterwert für „Ausweisinhaber" existiert nicht —
+die vermeintlich einzige registerexakte Größe war die einzige, die es gar nicht gibt.
+
+Gewählt ist stattdessen die Zahl der Wahlberechtigten: 59.200.000, Deutsche ab 18 im Inland,
+Schätzung der Bundeswahlleiterin zur Bundestagswahl 2025. Amtlich, registerbasiert, datiert, zu
+jeder Bundestagswahl neu festgestellt — und sie liest sich neben dem Ergebnis wie das, womit sie
+verglichen werden soll.
+
+Ebenfalls falsch im Eintrag oben, wenn auch folgenlos: Die 34,9 % aktivierter eID wurden dort als
+bloße Umfrageschätzung geführt. Es gibt beides — eine gezählte Zahl (über 34 Mio aktivierte
+Ausweise, Ende 2025) und eine davon unabhängige Umfrage (rund 35 %). Für die Nennerwahl ändert das
+nichts, für die Beweisführung „gezählt statt geschätzt" schon.
+
+*Weiterhin offen:* die Veröffentlichungsschwelle aus § 8 Satz 2 — nicht als Rückstand, sondern als
+Widerspruch, siehe Version 23. Dazu Laufzeit und Auswertungsplan aus § 7 und der Zugangshinweis
+aus § 11.

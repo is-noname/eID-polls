@@ -11,7 +11,7 @@
 > Historie: [Kodex-Protokoll](/kodex/protokoll) · Begriffe: Glossar (projektintern) ·
 > These: EIP-RFC-20260726-001
 
-**Version 22 — 2026-08-01**
+**Version 23 — 2026-08-02**
 
 ---
 
@@ -393,8 +393,10 @@ hinzugefügte Untergruppen-Auswertungen, die vorher nicht geplant waren.
 
 **Status.** `bindend`, und der zweite Satz ist technisch erzwungen: Es gibt keinen Weg, Frage oder
 Optionen einer laufenden Umfrage zu ändern. Der **erste** ist `offen` — von den sechs Größen, die
-vor dem Start feststehen müssen, kennt die App nur zwei (Frage, Antwortoptionen). Laufzeit, Nenner,
-Veröffentlichungsschwelle und Auswertungsplan existieren im Datenmodell nicht (V-006) →
+vor dem Start feststehen müssen, kennt die App drei. Der **Nenner** steht seit dem 2026-08-02 fest
+und öffentlich (EIP-T-025, § 8); eine Veröffentlichungsschwelle ist bewusst abgewählt und deshalb
+kein Rückstand mehr, sondern der Widerspruch aus § 8 Satz 2. Laufzeit und Auswertungsplan
+existieren im Datenmodell nicht (V-006) →
 EIP-T-025, fällig vor Betriebsstufe `produktiv`. Ohne sie
 gibt es nichts, woran eine nachträgliche Änderung sich messen ließe — die Präregistrierung schützt
 dann eine Zusage, die nie gemacht wurde.
@@ -412,15 +414,22 @@ die wir angetreten sind.
 das Ergebnis. Veröffentlichung „nur intern" oder „nur für den Partner" unterhalb der Schwelle.
 Zwischenstände während der Laufzeit über den reinen Teilnahmezähler hinaus.
 
-**Status.** `bindend`. Eingelöst ist, was ohne Nenner einlösbar ist: Kein Prozentwert steht ohne
-seine absolute Zahl, die Bezugsgröße wird an Ort und Stelle benannt, und einen Zwischenstand über
-den Teilnahmezähler hinaus gibt es nicht (EIP-T-083). `offen` ist die Zusage selbst — es gibt weder
-eine Beteiligungsquote noch einen benannten Nenner noch eine Schwelle, unterhalb derer kein Ergebnis
-erscheint; der Prozentwert auf der Board-Seite bezieht das Ergebnis auf sich selbst (V-006) →
-EIP-T-025, fällig vor Betriebsstufe `produktiv`. Bis
-dahin sagt der Ergebnisblock selbst, dass ihm der Nenner fehlt: Eine Zahl ohne ihn ist nach dem
-*Warum* dieses Paragraphen genau die Sorte Zahl, gegen die das Projekt angetreten ist — auch in
-einer Vorführung.
+**Status.** `bindend`. Satz 1 ist seit dem 2026-08-02 eingelöst: Über dem Ergebnis steht
+*„N von 59.200.000 Wahlberechtigten"* mit Quote, Quelle und Datum — vor den Balken, nicht darunter
+(EIP-T-025). Der Nenner sind die Deutschen ab 18 im Inland nach der Schätzung der
+Bundeswahlleiterin zur Bundestagswahl 2025; er steht in `config.py`, nicht im Template, weil er
+vorab und dauerhaft feststehen muss. Ebenfalls eingelöst: Kein Prozentwert steht ohne seine
+absolute Zahl, die Bezugsgröße wird an Ort und Stelle benannt, und einen Zwischenstand über den
+Teilnahmezähler hinaus gibt es nicht (EIP-T-083).
+
+`offen` ist **Satz 2** — die Schwelle, unterhalb derer kein Ergebnis erscheint. Sie existiert
+nicht, und gegen sie ist am 2026-08-01 entschieden worden: Jedes Ergebnis erscheint mit seiner Quote, auch eine sehr kleine; was Dritte
+daraus machen, regelt Transparenz statt Zurückhaltung. Damit ist dies **kein Umsetzungsrückstand,
+sondern ein Widerspruch im Dokument selbst** (V-006, Nachtrag vom 2026-08-02) →
+EIP-T-025, fällig vor Betriebsstufe `produktiv`.
+Auflösen kann ihn nur eines von beidem: die Schwelle bauen, oder Satz 2
+nach § 17 streichen — versioniert, begründet, protokolliert. Bis dahin gilt der Satz, wie er
+dasteht; eine Zusage verschwindet nicht dadurch, dass man sie nicht mehr einlösen will.
 
 ### § 9 Sprachregeln
 
@@ -815,8 +824,8 @@ ein Dokument schreibt.
 | 4 | Ballot Stuffing bleibt Disziplin **während der Laufzeit** (Schlüssel liegt allein bei uns; nach Schließung vernichtet, EIP-T-069) | EIP-T-040 | `produktiv` | 2026-07-26 |
 | 5 | Eigener Eingangskanal für Behördenanfragen — Bauform entschieden (Postfach ohne Domain), Einrichtung offen | EIP-T-073 | `produktiv` | 2026-07-31 |
 | 6 | DSGVO-Kollision entschieden und begründet | EIP-T-061 | `produktiv` | 2026-07-26 |
-| 7 | Von den sechs Größen, die vor dem Start feststehen müssen, kennt die App zwei. Laufzeit, Nenner, Veröffentlichungsschwelle und Auswertungsplan gibt es im Datenmodell nicht. Verstoß V-006 | EIP-T-025 | `produktiv` | 2026-08-01 |
-| 8 | Keine Beteiligungsquote, kein benannter Nenner, keine Schwelle — der Prozentwert auf der Board-Seite bezieht das Ergebnis auf sich selbst. Verstoß V-006 | EIP-T-025 | `produktiv` | 2026-08-01 |
+| 7 | Von den sechs Größen, die vor dem Start feststehen müssen, kennt die App drei. Der Nenner steht seit dem 2026-08-02 (EIP-T-025); Laufzeit und Auswertungsplan gibt es im Datenmodell nicht. Verstoß V-006 | EIP-T-025 | `produktiv` | 2026-08-01 |
+| 8 | Beteiligungsquote und benannter Nenner stehen seit dem 2026-08-02 am Ergebnis (EIP-T-025). Offen ist allein Satz 2 der Regel — die Schwelle, unterhalb derer kein Ergebnis erscheint. Gegen sie ist inzwischen entschieden; solange der Paragraph sie verlangt, ist das kein Umsetzungsrückstand, sondern ein Widerspruch, den erst eine Änderung nach § 17 auflöst | EIP-T-025 | `produktiv` | 2026-08-01 |
 | 11 | eAT-Unterstützung, Barrierefreiheit | EIP-T-064 | `produktiv` | 2026-07-26 |
 | 11 | Hinweispflicht am Ergebnis: Die Ergebnisdarstellung nennt die eID-Verfügbarkeit als Zugangsvoraussetzung nicht. Verstoß V-006 | EIP-T-025 | `produktiv` | 2026-08-01 |
 | 12 | Übergabe der Fragehoheit an ein unabhängiges Gremium | EIP-T-022 | politische Relevanz, spät. `produktiv` | 2026-07-26 |
