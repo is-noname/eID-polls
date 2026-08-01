@@ -193,13 +193,19 @@ der Seite, und die Seite sagt das.
 Die Instanz zeigt vor allem eines: dass „anonym" und „nachprüfbar" sich nicht ausschließen.
 Ein Ablauf, der das trägt:
 
-1. **Startseite → Umfrage öffnen.** Nur der Teilnahmezähler ist sichtbar, kein Zwischenstand (§7).
+1. **Startseite → Umfrage öffnen.** Die Umfrageseite zeigt nur den Teilnahmezähler; die Verteilung
+   zeigt die App erst nach dem Schließen. Nicht sagen, es gebe keinen Zwischenstand — unter
+   *Nachweise* stehen die abgegebenen Stimmen samt gewählter Option, wer will, zählt ihn aus
+   (EIP-T-056).
 2. **Ausweisen** mit `testperson1`, **Stimmrecht abholen** — der aufklappbare Block zeigt, dass der
    Token im Browser entsteht und verblindet zum Server geht.
 3. **Abstimmen**, **Beleg sichern**, unter *Stimme prüfen* den eigenen Eintrag im Board finden.
 4. **Zweiter Versuch mit `testperson1`** — abgewiesen, obwohl der Server nicht weiß, wie diese
    Person gestimmt hat. Das ist der Kern des Verfahrens.
-5. **Board öffnen:** Batch-Kette, Ledger-Abrechnung, Auszählung aus dem geprüften Board.
+5. **Board öffnen:** Batch-Kette, Ledger-Abrechnung, Auszählung aus dem geprüften Board. Hier lässt
+   sich der Punkt aus Schritt 1 vorführen statt verschweigen: Die Einträge stehen offen da, der
+   Zwischenstand ist auszählbar, und die App sagt das auf der Startseite selbst. Dass sie ihn nicht
+   anzeigt, ist eine Anzeigeentscheidung — kein Schutz, und sie wird auch nicht als einer verkauft.
 6. Mit Admin-Token: unter *Admin* die Demo-Knöpfe **Eintrag verfälschen** und **Stimme
    einschleusen** — das Board meldet sofort eine gebrochene Batch-Kette bzw. eine Abrechnung, die nicht
    aufgeht. Der Nachweis, dass die Prüfung nicht dekorativ ist.

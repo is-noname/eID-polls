@@ -702,6 +702,40 @@ nachgeprüft — gegen die Instanz, nicht gegen den Arbeitsbaum:
 **V-001 ist damit vollständig geschlossen** — Behebung am 2026-07-28, Offenlegung am 2026-07-31. An
 der Betriebsstufe `öffentlich erreichbar` bleibt allein § 1 gerissen (V-002, EIP-T-041).
 
+**Nachtrag 2026-08-01: dieselbe Aussage stand noch in drei weiteren Dateien.** Kein Paragraph ändert
+sich dadurch, deshalb keine neue Kodex-Version — nur das Verstoßprotokoll wächst (§ 18).
+(EIP-T-083)
+
+Die erste Zeile der Tabelle oben — „niemand sieht die Verteilung" — wurde am 2026-07-28 dort
+korrigiert, wo sie aufgefallen war: auf der Startseite. Nicht korrigiert wurde sie in `DEPLOY.md`
+(„Nur der Teilnahmezähler ist sichtbar, kein Zwischenstand (§7)"), in `README.md` („ist nur der
+Teilnahmezähler sichtbar (§7)") und in `DOKU.md`, wo sie am weitesten ging: Dort bekam die
+Anzeigesperre eine Schutzbegründung („Zwischenstände beeinflussen laufende Abstimmungen und erlauben
+Timing-Rückschlüsse") und wurde damit vom Verhalten der Oberfläche zur Eigenschaft des Verfahrens
+befördert. Alle drei Dateien liegen im öffentlichen Repository. Alle drei riefen § 7 als Beleg auf,
+der das nicht deckt: § 7 regelt, was *wir* veröffentlichen, nicht, was sich aus dem Board ablesen
+lässt.
+
+**Wie es dazu kam.** V-001 wurde als Befund über *die Instanz* geführt und an den Seiten geprüft,
+die sie ausliefert. Die Betriebsdokumente wurden nicht mitgelesen, obwohl sie seit demselben Deploy
+öffentlich sind. Die Nachprüfung am 2026-07-31 lief gegen die laufende Instanz — richtig gegen den
+damaligen Befund, aber blind für denselben Satz in einer Datei, die keine Route hat.
+
+**Was daraus folgt.**
+
+1. Der Eintrag steht als Nachtrag zu V-001 und nicht als V-005. Es ist derselbe Verstoß in einer
+   Datei, die beim Aufräumen übersehen wurde — eine neue Nummer würde eine unvollständige Behebung
+   als neuen Befund ausgeben und die Lücke zwischen beiden verdecken.
+2. Eine Textkorrektur ist erst dann erledigt, wenn nach der Aussage gesucht wurde und nicht nach der
+   Stelle. Bei V-001 war es der umgekehrte Fall: vier bekannte Stellen abgearbeitet, nie `grep` auf
+   die Behauptung.
+3. Die Sache dahinter bleibt offen und wird hier nicht mitentschieden: ob der Zwischenstand
+   überhaupt verborgen sein soll (EIP-T-056). Dieser
+   Nachtrag stellt nur her, dass die Dokumente den heutigen Zustand beschreiben.
+4. Die Batch-Veröffentlichung (k = 10, 6 h) verzögert den ablesbaren Stand. Sie darf dafür nicht in
+   Anspruch genommen werden — sie ist gegen Verkettung gebaut, und ein Nebeneffekt als Schutz
+   ausgegeben ist genau die Bewegung, die § 4 verbietet.
+
 ### V-002 — Vollständige IP-Adressen im Zugriffslog der öffentlichen Instanz
 **Datum des Eintrags:** 2026-07-28 · **Paragraphen:** § 1, § 4, § 18 ·
 **Ticket:** EIP-T-041 · **Status:** behoben, Wirksamkeit auf der Instanz bestätigt am 2026-07-31
