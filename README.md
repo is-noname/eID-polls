@@ -29,7 +29,7 @@ Beenden über den Knopf oben rechts in der App — kein Terminal bleibt hängen.
 
 - URL: `http://127.0.0.1:8731/`
 - Admin-Token: `admin` (überschreibbar mit `EIDPOLL_ADMIN_TOKEN`)
-- Datenbank: `app/data/eidpoll.sqlite3` (überschreibbar mit `EIDPOLL_DB`)
+- Datenbanken: `app/data/eidpoll.sqlite3` (Board) und `app/data/eidpoll.berechtigung.sqlite3` (Eligibility-Ledger, Schlüssel) — Pfad überschreibbar mit `EIDPOLL_DB`, die zweite Datei liegt immer daneben
 
 ## Ablauf für Teilnehmende
 
@@ -57,6 +57,7 @@ Identität ebenfalls — die Abwehr greift auf beiden Ebenen (Pseudonym in Phase
 |---|---|
 | `auth.py` | `Authenticator.authenticate() -> pseudonym`. `CodeAuthenticator` aktiv (Zugangscode statt geprüftem Ausweis), `SamlEidAuthenticator` ist die leere Hülle für den echten Flow (§5). |
 | `blind.py` | RSA-Blindsignatur nach RFC 9474, Serverseite. Abweichung von §4 dokumentiert (siehe unten). |
+| `rfc9474_a4.json` | Der Testvektor aus RFC 9474 Anhang A.4, wörtlich übernommen. Beide Krypto-Seiten rechnen gegen dieselbe Datei — sonst prüfte jede Seite nur sich selbst. |
 | `static/blind.js` | Dieselbe Krypto im Browser. Muss dort liegen, sonst gibt es kein Wahlgeheimnis gegen den Betreiber. |
 | `static/ballot.js` | Der Stimmzettel-Flow: Token erzeugen, verblinden, signieren lassen, entblinden, abgeben — samt Zwischenstand nach Abbruch (EIP-ADR-20260725-002). Zusammen mit `blind.js` die vollständige Client-Strecke. |
 | `static/beleg.js` | Der Beleg: Kassenbon, QR-Code, Textdatei. Reine Darstellung, kein Krypto. |
@@ -71,9 +72,10 @@ Identität ebenfalls — die Abwehr greift auf beiden Ebenen (Pseudonym in Phase
 ## Was geprüft ist
 
 ```bash
-python3 app/blind.py         # Krypto-Roundtrip (RFC 9474)
+python3 app/blind.py         # RFC-9474-Testvektor A.4 und Roundtrip, Serverseite
+node app/blind_vektor.mjs    # derselbe Vektor gegen static/blind.js, Browserseite
 python3 app/smoke_test.py    # sieben Abnahmepunkte, beide Angriffe, Zugangsschutz,
-                             # zehn gleichzeitige Teilnahmen
+                             # zehn gleichzeitige Teilnahmen — ruft beide Vektorprüfungen mit auf
 node app/ballot_test.mjs     # Stimmzettel-Flow gegen einen gestellten Server,
                              # ohne Browser: Zwischenstand nach Abbruch (ADR-002)
 
@@ -105,13 +107,21 @@ gespeicherten Datensatz. Sichtbar ist der aktive Modus stattdessen unübersehbar
 Test-Ausweise; der echte SAML-SP bedient später dieselbe Schnittstelle, ohne dass Krypto oder
 Ledger sich ändern.
 
-**2. Blindsignatur ist selbst implementiert.** RFC 9474 (RSABSSA-SHA384-PSS-Deterministic), 2048
-Bit. Für Python existiert keine geprüfte Bibliothek dafür (PyPI-Suche 2026-07-25 unter
-`blind-rsa-signatures`, `blind_signatures`, `blindsig`, `rsa-blind-signatures`, `pyblindsig`:
-jeweils keine Distribution). Geprüft zugekauft sind SHA-384 und die PSS-Verifikation aus
-`cryptography`; selbst geschrieben sind EMSA-PSS-ENCODE, MGF1 und die Blinding-Arithmetik — auf
-beiden Seiten, Python und JavaScript. Das ist besser als der textbook-Chaum des Prototyps und
-ersetzt trotzdem keinen Audit. §4 bleibt für einen echten Betrieb offen.
+**2. Blindsignatur ist selbst implementiert.** RFC 9474, Variante
+`RSABSSA-SHA384-PSSZERO-Deterministic`, 3072 Bit. Für Python existiert keine geprüfte Bibliothek
+dafür (PyPI-Suche **2026-08-01** unter `blind-rsa-signatures`, `blind_signatures`, `blindsig`,
+`rsa-blind-signatures`, `pyblindsig`, `rsabssa`, `blind-signature`, `pyblind-rsa`, `blindrsa`,
+`py-blind-rsa`, `rfc9474`: jeweils keine Distribution). Geprüft zugekauft sind SHA-384 und die
+PSS-Verifikation aus `cryptography`; selbst geschrieben sind EMSA-PSS-ENCODE, MGF1 und die
+Blinding-Arithmetik — auf beiden Seiten, Python und JavaScript.
+
+Seit EIP-T-008 rechnen **beide** Seiten gegen den Testvektor aus RFC 9474 Anhang A.4 nach
+(`app/rfc9474_a4.json`, wörtlich aus dem RFC): Python in `blind.testvektor()`, JavaScript in
+`node app/blind_vektor.mjs`, beides läuft in `smoke_test.py` mit. Jeder selbst geschriebene
+Schritt wird einzeln geprüft, nicht nur der Roundtrip — ein Roundtrip wäre auch dann grün, wenn
+Verblinden und Entblinden denselben Fehler machen. Das ist der stärkste Korrektheitsnachweis ohne
+Audit, aber es ist einer über Korrektheit, nicht über Seitenkanäle. §4 bleibt für einen echten
+Betrieb offen.
 
 **3. Der Betreiber-Schutz ist unvollständig — wie im RFC beschrieben:**
 - Die Batch-Kette entlarvt nur den Angreifer, der die Wurzeln stehen lässt. Wer Schreibzugriff hat,

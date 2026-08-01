@@ -74,7 +74,7 @@ def _signaturschluessel(service: PollService, poll_id: str) -> rsa.RSAPrivateKey
     laeuft. Genau das ist die Grenze, die die Demo vorfuehrt: Nach dem
     Schliessen findet auch der Betreiber hier nichts mehr.
     """
-    pem = service.store.get_config(POLL_KEY + poll_id)
+    pem = service.berechtigung.get_config(POLL_KEY + poll_id)
     if not pem:
         raise Rejected(
             f"Kein Signaturschluessel fuer '{poll_id}' in der Datenbank - die Umfrage ist "
@@ -101,8 +101,9 @@ def stuff_ballot(service: PollService, poll_id: str, choice: str) -> None:
     key = _signaturschluessel(service, poll_id)
     n = key.public_key().public_numbers().n
     token = secrets.token_bytes(32)
-    blinded, inv = blind.blind(token, n, key.public_key().public_numbers().e)
-    sig = blind.finalize(blind.blind_sign(blinded, n, key.private_numbers().d), inv, n)
+    e = key.public_key().public_numbers().e
+    blinded, inv = blind.blind(token, n, e)
+    sig = blind.finalize(blind.blind_sign(blinded, n, key.private_numbers().d, e), inv, n)
     service.cast_vote(poll_id, token, sig, [choice])
     log.error("demo", "Betreiber-Stimme ohne Berechtigung eingeschleust (Demo).", poll=poll_id)
 
@@ -132,7 +133,7 @@ def tamper_board(service: PollService, poll_id: str, leaf_prefix: str, new_choic
         raise Rejected(f"Eintrag {entry.leaf_hash[:16]}... ist keine Stimme.")
     umgeschrieben = board_eintrag.vote(gestimmt.poll, gestimmt.token, gestimmt.sig, [new_choice])
 
-    with _direktzugriff(service.store.path) as conn:
+    with _direktzugriff(service.board_store.path) as conn:
         conn.execute(
             "UPDATE board SET payload = ? WHERE poll_id = ? AND leaf_hash = ?",
             (canonical(umgeschrieben), poll_id, entry.leaf_hash),
@@ -160,7 +161,7 @@ def reset_eligibility(service: PollService, poll_id: str, pseudonym: str) -> boo
             "Eligibility-Eintrag vernichtet."
         )
     key = service.voter_key(pseudonym, poll_id)
-    with _direktzugriff(service.store.path) as conn:
+    with _direktzugriff(service.berechtigung.path) as conn:
         cur = conn.execute(
             "DELETE FROM eligibility WHERE poll_id = ? AND voter_key = ?", (poll_id, key)
         )

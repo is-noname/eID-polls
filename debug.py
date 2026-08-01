@@ -27,6 +27,16 @@ Ausgenommen bleiben ``error`` und ``inconsistency``: Ein Fehler ist ein *nicht*
 zustandegekommener Vorgang und verkettet nichts, was das Board zeigt, und eine
 gemeldete Inkonsistenz zeigt eine Verkettung an, die bereits passiert ist - die
 muss genau und sofort auffindbar sein, sonst meldet sie nichts.
+
+**Drei getrennte Logs statt einem** (EIP-T-033, Baustein G): ``log_berechtigung``
+haelt die Berechtigungsseite (eID-Anmeldung, Token-Ausgabe, Umfrage-Schluessel),
+``log_board`` die Board-Seite (Stimmabgabe, Batches, Beleg-Schluessel), ``log``
+den Betrieb (Anlegen/Schliessen, System, Konsistenzpruefung). Die Trennlinie ist
+dieselbe wie bei den Datenbanken: Kein einzelnes Log haelt beide Phasen, und wer
+beide Seiten nebeneinander sehen will, muss sie ausdruecklich zusammenfuehren
+(/debug tut das - als bewusste Betreiberhandlung, nicht als Datenlage). Die
+Konsistenzpruefung bleibt im Betriebs-Log: Sie *ist* der bewusste Blick ueber
+die Linie und gehoert keiner Seite.
 """
 
 from __future__ import annotations
@@ -86,7 +96,8 @@ class Zaehlstand:
 
 
 class DebugLog:
-    def __init__(self, maxlen: int = MAX_EVENTS) -> None:
+    def __init__(self, name: str = "betrieb", maxlen: int = MAX_EVENTS) -> None:
+        self.name = name
         self._events: deque[Event] = deque(maxlen=maxlen)
         self._lock = threading.Lock()
         self._counts: dict[str, int] = {"info": 0, "reject": 0, "error": 0, "inconsistency": 0}
@@ -181,4 +192,58 @@ class DebugLog:
             self._counts = {k: 0 for k in self._counts}
 
 
-log = DebugLog()
+log = DebugLog("betrieb")
+log_berechtigung = DebugLog("berechtigung")
+log_board = DebugLog("board")
+
+# Kategorie -> Log. Was hier nicht steht, ist Betrieb. Die Zuordnung folgt der
+# Speicher-Trennlinie (Baustein G): Berechtigungsseite kennt das Pseudonym,
+# Board-Seite Token und Stimme - und die Logs entsprechend.
+_KATEGORIE_LOG = {
+    "auth": "berechtigung",
+    "phase-a": "berechtigung",
+    "phase-b": "board",
+    "batch": "board",
+    "unverkettbarkeit": "board",
+    "verifikation": "board",
+}
+
+
+def log_fuer(kategorie: str) -> DebugLog:
+    """Das Log der Seite, zu der eine Kategorie gehoert."""
+    return {"berechtigung": log_berechtigung, "board": log_board}.get(
+        _KATEGORIE_LOG.get(kategorie, "betrieb"), log
+    )
+
+
+ALLE_LOGS = (log, log_berechtigung, log_board)
+
+
+def events_gesamt(level: str | None = None) -> list[Event]:
+    """Alle drei Logs in einer Sicht - der bewusste Blick ueber die Trennlinie.
+
+    Sortiert nach Uhrzeit (absteigend wie die Einzel-Logs). Die Zusammenfuehrung
+    passiert erst hier, beim Anzeigen: gehalten werden die Ereignisse getrennt.
+    """
+    zusammen = [e for l in ALLE_LOGS for e in l.events(level)]
+    zusammen.sort(key=lambda e: e.ts, reverse=True)
+    return zusammen
+
+
+def teilnahme_gesamt() -> list[Zaehlstand]:
+    staende = [z for l in ALLE_LOGS for z in l.teilnahme()]
+    staende.sort(key=lambda z: (z.stunde, z.category, z.level, z.message))
+    return staende
+
+
+def counts_gesamt() -> dict[str, int]:
+    gesamt: dict[str, int] = {"info": 0, "reject": 0, "error": 0, "inconsistency": 0}
+    for l in ALLE_LOGS:
+        for k, v in l.counts().items():
+            gesamt[k] += v
+    return gesamt
+
+
+def clear_alle() -> None:
+    for l in ALLE_LOGS:
+        l.clear()

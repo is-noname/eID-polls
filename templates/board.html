@@ -62,11 +62,27 @@
 
 <p class="faint small" style="margin-top:12px">
   Einträge erscheinen hier nicht sofort, sondern gebündelt: veröffentlicht wird, sobald mindestens
-  {{ batch_k }} neue Einträge vorliegen, spätestens nach {{ batch_deckel_h }} Stunden, in jedem Fall
-  beim Ende der Umfrage. Innerhalb eines Bündels gibt es keine Reihenfolge — so lässt sich aus dem
-  Board nicht ablesen, wann eine einzelne Stimme eintraf. Dein Beleg bindet uns trotzdem sofort:
-  Fehlt dein Eintrag im zugesagten Batch, ist der Beleg der Nachweis dafür.
+  {{ batch_k }} neue <strong>Stimmen</strong> vorliegen, spätestens nach {{ batch_deckel_h }} Stunden,
+  in jedem Fall beim Ende der Umfrage. Innerhalb eines Bündels gibt es keine Reihenfolge — so lässt
+  sich aus dem Board nicht ablesen, wann eine einzelne Stimme eintraf. Dein Beleg bindet uns trotzdem
+  sofort: Fehlt dein Eintrag im zugesagten Batch, ist der Beleg der Nachweis dafür.
 </p>
+
+{% if kleinste_menge is not none %}
+  <p class="faint small" style="margin-top:12px">
+    Wie groß die Bündel tatsächlich geworden sind, steht weiter unten an jedem Batch — gemessen an
+    diesem Board, nicht zugesagt. Maßgeblich ist das kleinste: In ihm
+    {{ 'liegt' if kleinste_menge == 1 else 'liegen' }}
+    <strong>{{ kleinste_menge }} Stimme{{ '' if kleinste_menge == 1 else 'n' }}</strong> — mehr
+    Deckung gibt es dort nicht.
+    {% if kleinste_menge < batch_k %}
+      Das ist <strong>weniger als die zugesagten {{ batch_k }}</strong> — so weit trägt die Zusage
+      hier also nicht. Es passiert, wenn der Zeitdeckel ausläuft oder die Umfrage endet, bevor genug
+      Stimmen zusammenkommen; bei geringer Beteiligung ist das der Normalfall und durch keine
+      Einstellung zu beheben.
+    {% endif %}
+  </p>
+{% endif %}
 
 <p class="faint small" style="margin-top:12px">
   Was diese Prüfungen nicht abdecken: Die Signatur belegt, dass eine Berechtigung mit dem Schlüssel
@@ -111,7 +127,7 @@
       <div class="row-title">Hast du selbst abgestimmt?</div>
       <div class="muted small">Mit dem Stimm-Token aus deinem Beleg findest du deine eigene Stimme wieder.</div>
     </div>
-    <a href="/verify?poll={{ poll.poll_id }}"><button class="ghost">Stimme prüfen</button></a>
+    <a href="/verify#poll={{ poll.poll_id }}"><button class="ghost">Stimme prüfen</button></a>
   </div>
 </div>
 
@@ -126,6 +142,7 @@
     {% for batch in batches %}
       <p class="mono small" style="margin:14px 0 4px">
         Batch {{ batch.n }} · {{ batch.entries | length }} Einträge ·
+        {{ stimmen_je_batch[batch.n] }} Stimme{{ '' if stimmen_je_batch[batch.n] == 1 else 'n' }} ·
         root {{ batch.merkle_root[:12] }}… · Kette {{ batch.batch_root[:12] }}…
       </p>
       <div class="table-wrap">
@@ -153,7 +170,7 @@
   <div class="explain-body">
     <p>
       Mit diesem öffentlichen Schlüssel lässt sich jede Stimme unabhängig prüfen: RSASSA-PSS über
-      SHA-384 mit Salt-Länge 0 (RFC 9474, RSABSSA-SHA384-PSS-Deterministic). Das Board rechnet sich
+      SHA-384 mit Salt-Länge 0 (RFC 9474, RSABSSA-SHA384-PSSZERO-Deterministic). Das Board rechnet sich
       nach über Blatt-Hashes <code>sha256(0x00‖payload)</code>, je Batch einen Merkle-Baum über die
       aufsteigend sortierten Blätter (<code>sha256(0x01‖links‖rechts)</code>, ungerade Knoten werden
       durchgereicht) und die Kette <code>batch_root = sha256(0x02‖merkle_root‖vorherige_root)</code>.
@@ -199,6 +216,62 @@ python3 verifikation.py board.json</div>
       oder anderswo notiert hat, übergibt ihn mit <code>--belegkey</code>.
     </p>
     <div class="receipt">{{ beleg_public_key }}</div>
+  </div>
+</details>
+
+<details class="explain">
+  <summary>Läuft in meinem Browser der veröffentlichte Code?</summary>
+  <div class="explain-body">
+    <p>
+      Die Frage ist keine Nebensache: Das Unkenntlichmachen deiner Berechtigung passiert im
+      Browser, nicht auf dem Server — und damit ist der ausgelieferte Code die Stelle, an der das
+      Wahlgeheimnis unbemerkt abgeschaltet werden könnte. „Unser Code ist offen" ist eine Aussage
+      über ein Repository, nicht über die Seite, die du gerade benutzt.
+    </p>
+    <p>
+      Diese Instanz liefert allen Client-Code als unveränderte Dateien aus — nichts wird gebündelt,
+      minifiziert oder in die Seite hineingeschrieben. Dadurch lässt er sich Byte für Byte gegen
+      das öffentliche Repository halten, <strong>ohne uns dabei zu glauben</strong>: Du rufst die
+      Datei selbst ab, hashst sie selbst und vergleichst mit dem Repository. Keine der beiden
+      Größen kommt von dieser Seite.
+    </p>
+    <div class="receipt">curl -s {{ request.url.scheme }}://{{ request.url.netloc }}/static/blind.js | sha256sum
+{{ client.dateien['static/blind.js'] }}  erwartet</div>
+    <p>
+      Für alle Dateien auf einmal — links das Repository (im Ordner <code>app/</code>), rechts diese
+      Instanz:
+    </p>
+    <div class="receipt">LC_ALL=C sh -c 'find static -type f | sort | xargs sha256sum | sha256sum'
+curl -s {{ request.url.scheme }}://{{ request.url.netloc }}/version | python3 -c 'import json,sys; print(json.load(sys.stdin)["client"]["clienthash"])'</div>
+    <p class="mono small">Ausgeliefert wird derzeit {{ client.clienthash }}</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Datei</th><th>sha256</th></tr></thead>
+        <tbody>
+          {% for pfad, digest in client.dateien.items() %}
+            <tr>
+              <td class="mono"><a href="/{{ pfad }}">{{ pfad }}</a></td>
+              <td class="mono hash">{{ digest }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if client.luecken %}
+      <div class="banner err">
+        Es läuft Code im Browser, der in dieser Liste fehlt — die Liste sagt damit weniger, als sie
+        aussieht.
+        <small>{{ client.luecken | join(' ') }}</small>
+      </div>
+    {% endif %}
+    <p>
+      <strong>Was das nicht leistet.</strong> Der Vergleich entlarvt eine Auslieferung, die vom
+      veröffentlichten Stand abweicht — für alle sichtbar. Er entlarvt nicht einen Server, der
+      ausgerechnet dir anderen Code schickt als allen anderen. Dagegen hilft nur, dass mehrere
+      unabhängig voneinander abrufen und vergleichen. Und niemand ist dazu verpflichtet: Wer nicht
+      nachrechnet, gewinnt hier nichts. Vollständig gelöst wäre das erst mit signierter App oder
+      Erweiterung statt Web-Code.
+    </p>
   </div>
 </details>
 {% endblock %}

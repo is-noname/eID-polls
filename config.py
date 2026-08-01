@@ -58,6 +58,11 @@ class Settings:
     # Batch-Veroeffentlichung (EIP-ADR-20260728-001, E3): Mindestmenge k und
     # Zeitdeckel. Beide Werte sind nach aussen zu nennen - wer einen Beleg
     # bekommt, muss wissen, wovon die Sichtbarkeit abhaengt.
+    #
+    # ``batch_k`` zaehlt seit EIP-T-076 **Stimmen** im Puffer, nicht Eintraege.
+    # Vorher war es die Eintragszahl, und weil jede Teilnahme zwei Eintraege
+    # erzeugt, war die zugesagte Menge in Wahrheit rund die Haelfte
+    # (EIP-RPT-20260731-001). 10 heisst jetzt 10 Stimmen.
     batch_k: int = 10
     batch_deckel_h: float = 6.0
     # Mindest-Antwortzeit der Phasen-Routen /api/token und /api/vote in
@@ -138,8 +143,8 @@ class Settings:
             "Angriffsdemos (§9): " + ("verdrahtet" if self.demos else "nicht verdrahtet")
         )
         lines.append(
-            f"Batch-Veroeffentlichung: k={self.batch_k}, Zeitdeckel {self.batch_deckel_h} h "
-            "(EIP-ADR-20260728-001)"
+            f"Batch-Veroeffentlichung: k={self.batch_k} Stimmen, Zeitdeckel "
+            f"{self.batch_deckel_h} h (EIP-ADR-20260728-001, EIP-T-076)"
         )
         lines.append(
             "Wiederhol-Puffer der Token-Ausgabe: "

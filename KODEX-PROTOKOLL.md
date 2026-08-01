@@ -15,6 +15,137 @@
 
 ## Änderungsprotokoll
 
+### Version 16 — 2026-08-01
+
+**§ 2 löst zwei seiner drei Vermerke ein: Speichertrennung und die Token-Suche auf `/verify`**
+(EIP-T-033, Bausteine F und G).
+
+**Was umgesetzt ist.** Eligibility-Ledger, Wiederhol-Puffer und alle Pseudonym-Schlüssel liegen
+jetzt in einer eigenen Datenbankdatei (`berechtigung_store.py`), getrennt von Board, Batches und
+Vote-Ledger (`store.py`) — ein Join über beide Seiten ist eine bewusste Handlung über zwei
+Verbindungen, kein `SELECT` über zwei Tabellen derselben Datei. Das Debug-Modul führt drei
+getrennte Logs (Berechtigung, Board, Betrieb); kein einzelnes Log hält beide Phasen, `/debug`
+führt sie erst beim Anzeigen zusammen. Und die Token-Suche auf `/verify` läuft im Browser über
+den Board-Export: Das Token steht im URL-Fragment, das der Browser nie mitsendet — der Fall
+„angemeldet geprüft, Pseudonym und Token im selben Request" ist damit strukturell weg, nicht nur
+unterlassen.
+
+**Was die Trennung kostet, offen gesagt.** Die Token-Ausgabe war vorher eine Transaktion
+(Anspruch + Board-Eintrag); über zwei Dateien gibt es die nicht mehr. Der Ausgleichspfad nimmt
+einen Anspruch zurück, dessen Board-Eintrag scheitert, und das verbleibende Fenster macht die
+Konsistenzprüfung sichtbar statt eine Transaktion es zu verdecken. Unter Last kann sie deshalb
+einen Durchlauf lang eine Abweichung zeigen, die beim nächsten verschwindet — die Leserichtung
+ist so gewählt, dass daraus nie ein falscher *Überschuss* wird (die Richtung, die § 9 anzeigt).
+
+**Was die Trennung nicht leistet.** Beide Seiten laufen weiter in einem Prozess bei einem
+Betreiber. Wer beide Nachrichten empfängt, kann sie im Empfangsfenster zeitlich zuordnen — das
+bleibt die Grenze des Einzelbetreibers (EIP-T-037) und der
+Netzwerkebene (EIP-T-034). Die Trennung macht
+versehentliche Verkettung im Code unmöglich und legt die Trennlinie dorthin, wo später die
+Betreibergrenze verlaufen soll — sie ersetzt sie nicht.
+
+**Die Zahl bleibt bei 11 von 20, Grenze 8, der Baustopp gilt weiter** — § 2 trägt noch den
+Anker-Vermerk (EIP-T-006). Zum vierten Mal in Folge steht die Kennzahl still, während sich etwas
+bewegt.
+
+### Version 15 — 2026-08-01
+
+**Die Mindestmenge aus § 2 gibt es jetzt.** Bis heute zählte k *Einträge*, und weil jede Teilnahme
+zwei erzeugt (Ausgabe + Stimme), war die zugesagte Menge in Wahrheit die Hälfte. Seit
+EIP-T-076 zählt sie **Stimmen**: k = 10 heißt zehn Stimmen, der
+Zeitdeckel bleibt bei 6 Stunden.
+
+**Warum das kein Tausch ist.** Der Befund kam aus einer Messung
+(EIP-RPT-20260731-001 Anonymitaetsmenge-Batch-Simulation), und dieselbe Messung zeigt, dass die
+Bindung an Stimmen nichts kostet: Der Anteil der Stimmen, die in einem Batch mit weniger als fünf
+anderen liegen, fällt unter Andrang von 23,6 % auf 0,0 % — bei gleicher Batchgröße und gleicher
+Wartezeit. Es gibt keinen Parameter, gegen den hier getauscht worden wäre; die alte Zählweise war
+schlicht die falsche Größe. Die Simulation ist mitgezogen und läuft weiter gegen die Implementierung
+(`scripts/sim_anonymitaetsmenge.py --gegenprobe`) — ein Modell, das neben dem Betrieb herläuft, misst
+sonst irgendwann etwas anderes als der Betrieb.
+
+**Was die Regel weiterhin nicht deckt, und was jetzt darüber gesagt wird.** Löst der Zeitdeckel aus
+oder endet die Umfrage, wird auch unter k veröffentlicht — bei geringer Beteiligung ist das der
+Normalfall und durch keine Parameterwahl zu beheben (bei 25 Teilnehmenden über sieben Tage steht
+jede fünfte Stimme allein in ihrem Batch). Neu ist, dass diese Fälle nicht mehr nur im Kleingedruckten
+stehen: Das Board nennt für jeden Batch die tatsächliche Stimmenzahl und hebt die kleinste hervor,
+und der Betreiber bekommt jeden Batch unter k als Befund ins Debug-Modul, während die Umfrage läuft.
+Eine Zusage, die man nur im Nachhinein prüfen kann, ist nach § 4 keine.
+
+**Die Zahl bleibt bei 11 von 20, Grenze 8, der Baustopp gilt weiter** — § 2 trägt noch zwei
+Vermerke. Zum dritten Mal in Folge steht die Kennzahl still, während sich etwas bewegt; die
+Begründung steht bei der Schuldenübersicht.
+
+### Version 14 — 2026-08-01
+
+**§ 20 löst seine Schuld ein — und offenbart dabei eine ältere.** Der Client ist ab sofort
+nachrechenbar, ohne diese Instanz zu fragen (EIP-T-007). Beim Nachsehen, was
+der Paragraph eigentlich verlangt, fiel auf, dass sein **erster Satz** nie erfüllt war: Es gibt keine
+Lizenz. Als Verstoß V-004 protokolliert.
+
+**Was gebaut wurde, und warum es mehr ist als ein Hash.** Ein Hash über `static/` hätte sich an einem
+Nachmittag veröffentlichen lassen — und wäre eine Aussage über einen Teil gewesen, die wie eine über
+das Ganze aussieht: Die Verdrahtung der Umfrageseite stand **inline** in den Templates. Inline-Code
+läuft im Browser, steckt aber in der gerenderten Seite und ist mit keiner Repo-Datei mehr
+vergleichbar. Er ist deshalb in eigene Dateien gewandert (`static/poll.js`, `admin.js`, `debug.js`,
+`theme.js`); die umfragespezifischen Werte kommen jetzt als JSON-Datenblock, also als Daten statt als
+eingesetzter Quelltext. Ein Rückfall meldet sich selbst als Inkonsistenz im Debug-Modul, statt still
+den Geltungsbereich des Hashs zu verkleinern.
+
+**Der Unterschied zu EIP-T-074, und warum er der eigentliche Punkt ist.** Der `treehash` unter
+`/version` ist eine Selbstauskunft: Wer den ausgelieferten Code ändert, ändert diese Antwort mit. Der
+Client-Vergleich braucht sie nicht — abgerufene Datei gegen öffentliches Repository, zwei Größen aus
+zwei Quellen, keine davon eine Behauptung dieser App. Damit ist der Satz aus § 20 eingelöst, der bis
+heute der schwerste war: *Was im Browser läuft, muss aus dem veröffentlichten Stand reproduzierbar
+sein.* Ein Build-Schritt, der dabei reproduziert werden müsste, existiert gar nicht — nichts wird
+gebündelt oder minifiziert, und genau das ist die Bedingung, unter der die Prüfung ohne unser
+Werkzeug funktioniert.
+
+**Was der Paragraph nun ehrlicher sagt.** Der Vergleich entlarvt eine Auslieferung, die für alle
+abweicht, nicht eine, die einem einzelnen Besucher anderen Code schickt — dieselbe Struktur wie
+Split-View beim Board (§ 2). Und er hilft niemandem, der nicht nachrechnet. Beides steht jetzt im
+Statusteil, nicht als Fußnote.
+
+**Die Zahl bleibt bei 11 von 20, Grenze 8, der Baustopp gilt weiter** — zum zweiten Mal in Folge aus
+einem Grund, den die Zahl verschweigt. Diesmal umgekehrt zu Version 13: Dort trug ein neuer Text
+nichts ab, hier trägt gebaute Arbeit etwas ab, und der Paragraph bleibt trotzdem belastet, weil eine
+zweite, ältere Schuld darunter zum Vorschein kam. **Die Lehre daran gilt über § 20 hinaus:** Ein Satz
+auf `bindend` steht in keiner Schuldenübersicht und wird deshalb auch nie geprüft — er gilt als
+erledigt, weil ihn nie jemand als offen markiert hat. V-004 lag über einen Monat offen im hellsten
+Licht des Projekts, im ersten Satz des Paragraphen über Offenheit.
+
+### Version 13 — 2026-08-01
+
+**§ 16 bekommt sein Instrument — und die ehrliche Beschreibung davon.** Die
+Nutzungsbedingungen für Einbetter liegen vor (EIP-T-062): Verbot
+bindender Abstimmungen, Nennerpflicht, unveränderte Frage, erkennbare Herkunft, dazu die Rechtsfolge
+(Entzug der Einbettungserlaubnis, Offenlegung im [Transparenzbericht](/transparenz)bericht, keine Vertragsstrafe) und
+eine Aufstellung, welche der vier Zusagen technisch abgesichert ist. Ergebnis dieser Aufstellung:
+zwei ja, eine halb, und ausgerechnet das Wahlverbot gar nicht.
+
+Deshalb ändert sich auch die **Regel** von § 16. Sie sagte „Wir setzen das über Nutzungsbedingungen
+durch, nicht nur als Bekenntnis" und ließ offen, was Durchsetzung hier heißt. Sie sagt jetzt, dass
+es ein Entzugsrecht im Nachhinein ist und keine technische Verhinderung — wir sehen nicht, wozu
+jemand ein Ergebnis verwendet. Das ist keine Abschwächung, sondern § 4 auf den eigenen Paragraphen
+angewandt: Die alte Formulierung war die stärkere Behauptung, aber nicht die wahre.
+
+**Der Vermerk wandert, statt zu verschwinden.** Er lautete „Durchsetzung über Nutzungsbedingungen"
+und zeigte auf EIP-T-062; er lautet jetzt „Vergabe und Entzug der Einbettungserlaubnis" und zeigt
+auf EIP-T-023. Grund: Was fehlt, ist nicht mehr der Text, sondern
+der Zugang, den ein Verstoß kosten könnte. Ohne Einbettung gibt es keinen. Der Entzug ist damit die
+einzige Folge, die überhaupt in unserer Hand liegt, und heute liegt sie es nicht.
+
+**Grund für die Reihenfolge.** Die Bedingungen entstehen vor dem ersten Einbetter, obwohl niemand sie
+verlangt hat und niemand sie liest. Eine Regel, die erst mit ihrem ersten Fall entsteht, entsteht
+unter dessen Druck — und der erste Einbetter wird eine Redaktion mit Reichweite sein, nicht ein
+Zufallsgast. Umgekehrt gilt § 4 b: Das Widget zu bauen, um den Paragraphen zu räumen, wäre unter dem
+Baustopp nicht erlaubt und wäre auch die falsche Reihenfolge.
+
+**Die Zahl bleibt bei 11 von 20, Grenze 8, der Baustopp gilt weiter.** § 16 war belastet und bleibt
+es. Das ist das gewollte Ergebnis: Wer einen Paragraphen dadurch freikauft, dass er ein Dokument
+schreibt, hat die Kennzahl bedient und nichts abgetragen. Ein Hinweis darauf steht jetzt über der
+Schuldenübersicht.
+
 ### Version 12 — 2026-07-31
 
 **§ 2 verliert seine Mindestmenge.** Die Regel verlangt, dass „vor der Veröffentlichung eines Boards
@@ -616,3 +747,41 @@ Sicherungskopien, Dateisystem-Snapshots und die Blockverwaltung einer SSD bleibe
 was ein Programm überschreiben kann — das steht unverändert im Docstring und ist keine Formalie: Die
 Backup-Regel dazu ist offen und gehört zu EIP-T-041 (Akzeptanzkriterium 3). Bis sie steht, ist die
 öffentliche Zusage für *diese eine Datei samt WAL* eingelöst und für alles daneben nicht.
+
+### V-004 — Öffentlicher Code ohne Lizenz: Weiterbetrieb rechtlich nicht erlaubt
+**Datum des Eintrags:** 2026-08-01 · **Paragraphen:** § 20, § 14, § 18 ·
+**Ticket:** EIP-T-078 · **Status:** offen. Die Behebung
+ist eine Lizenzwahl und damit eine Entscheidung des Betreibers, keine Umsetzungsaufgabe
+
+**Was geschah.** § 20 Satz 1 lautet seit Version 1: *„Der Quellcode ist öffentlich, unter einer
+Lizenz, die Prüfung und Weiterbetrieb erlaubt."* Status: `bindend`, ohne Vorbehalt und ohne
+Fälligkeitsdatum. Das Repository <https://github.com/is-noname/eID-polls> enthält keine
+Lizenzdatei und keine Lizenzangabe in `README.md`, `DOKU.md` oder `DEPLOY.md`. Ohne solche Angabe
+gilt der gesetzliche Normalfall: alle Rechte vorbehalten. Lesen und Prüfen bleibt möglich, der
+**Weiterbetrieb nicht** — also genau die Hälfte der Zusage, die der Paragraph gibt.
+
+Betroffen ist der Zeitraum seit der Veröffentlichung des Repositorys, jedenfalls seit dem Deploy der
+öffentlichen Instanz am 2026-07-27, ab dem die Betriebsstufe `öffentlich erreichbar` läuft.
+
+**Wie es dazu kam.** Der Satz stand nie in der Schuldenübersicht — er war `bindend`, und `bindend`
+heißt in diesem Kodex „gilt", nicht „ist eingelöst". Geprüft wird aber nur, was als `offen` oder
+`Disziplin` vermerkt ist: `scripts/check_kodex.py` verlangt für jeden solchen Vermerk ein Ticket und
+ein Ereignis. Ein bindender Satz ohne Vermerk kommt in dieser Prüfung gar nicht vor. Aufgefallen ist
+es beim Räumen der *anderen* § 20-Schuld (EIP-T-007), also nur deshalb, weil
+jemand denselben Paragraphen aus einem anderen Grund von vorn gelesen hat.
+
+**Was daraus folgt.**
+
+1. Der Verstoß wird ab dem Deploy-Datum gezählt, nicht ab heute — dieselbe Regel wie bei V-002: Ein
+   Befund wird nicht dadurch jünger, dass er spät bemerkt wurde.
+2. § 20 bleibt in der Schuldenübersicht, obwohl die Schuld, die dort stand, eingelöst ist. Der
+   Vermerk wird ausgetauscht, nicht gestrichen — dasselbe Muster wie bei § 16 in Version 13, hier
+   allerdings aus einem schwereren Grund: Dort verschob sich eine offene Aufgabe, hier trat ein
+   Bruch an ihre Stelle.
+3. **Der Kodex prüft seine bindenden Sätze nicht.** V-004 ist ein Befund über den Kodex selbst, nicht
+   nur über das Repository: Solange nur Vermerke geprüft werden, ist jeder Satz auf `bindend` ein
+   blinder Fleck. Ob daraus eine Prüfpflicht folgt (etwa ein regelmäßiger Durchgang durch alle 20
+   Paragraphen mit der Frage „woran sähe man, dass dieser Satz eingelöst ist?"), ist eine
+   Kodex-Änderung und gehört nicht in dieses Ticket — festgehalten ist sie hier.
+4. Bis zur Lizenz darf nach außen nicht behauptet werden, der Code lasse sich weiterbetreiben. Was
+   heute stimmt: Er ist einsehbar und prüfbar.

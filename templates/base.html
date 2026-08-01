@@ -4,14 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}eID-Umfrage{% endblock %}</title>
-  {# Theme vor dem ersten Paint setzen, sonst blitzt beim Umschalter Hell auf. #}
-  <script>
-    try {
-      if (localStorage.getItem("eidpoll:theme") === "dark") {
-        document.documentElement.setAttribute("data-theme", "dark");
-      }
-    } catch (e) { /* localStorage gesperrt - dann eben hell */ }
-  </script>
+  {# Theme vor dem ersten Paint setzen, sonst blitzt beim Umschalter Hell auf.
+     Klassisches, blockierendes Skript - und eine eigene Datei, weil nur
+     /static-Dateien von aussen gegen das Repository gehalten werden koennen
+     (Paragraf 20, EIP-T-007). #}
+  <script src="/static/theme.js"></script>
   <link rel="stylesheet" href="/static/app.css">
 </head>
 {# Betreiberseiten laufen kompakt weiter (.dense), Teilnehmerseiten luftig. #}

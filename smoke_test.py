@@ -9,8 +9,10 @@ der echte Durchlauf im Browser (die PSS-Pruefung schlaegt sonst zu).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
 from datetime import datetime, timedelta
@@ -146,7 +148,7 @@ def parallel_participation(n: int = 10) -> None:
     # Alles zusammen: der Eroeffnungseintrag der Umfrage plus beide Phasen.
     check("Parallel: keine zusaetzlichen Board-Eintraege",
           len(entries) == 1 + 2 * n, f"{len(entries)} statt {1 + 2 * n}")
-    chain_ok, broken_at = verify_batches(service.store.veroeffentlichte_batches(poll))
+    chain_ok, broken_at = verify_batches(service.board_store.veroeffentlichte_batches(poll))
     check("Parallel: Batch-Kette unter Nebenlaeufigkeit intakt",
           chain_ok, f"Bruch in Batch {broken_at}")
     acc = service.accounting(poll)
@@ -155,16 +157,16 @@ def parallel_participation(n: int = 10) -> None:
     check("Parallel: Konsistenzpruefung meldet nichts fuer diese Umfrage",
           not service.check_all().get(poll), str(service.check_all().get(poll)))
 
-    from debug import log as debug_log
+    import debug as debug_modul
 
     # Gezaehlt statt gestromt (EIP-T-041): Die Stimmen muessen vollstaendig
     # erfasst sein, aber ohne Uhrzeit und Reihenfolge.
-    phase_b = [z for z in debug_log.teilnahme()
+    phase_b = [z for z in debug_modul.teilnahme_gesamt()
                if z.detail.get("poll") == poll and z.category == "phase-b"]
     check("Parallel: Debug-Modul hat jede Stimme erfasst, nichts verloren",
           sum(z.anzahl for z in phase_b) == n, f"{sum(z.anzahl for z in phase_b)} von {n}")
     check("Parallel: keine Stimme im Ereignisstrom (waere korrelierbar)",
-          not [e for e in debug_log.events("all") if e.category in ("phase-a", "phase-b")])
+          not [e for e in debug_modul.events_gesamt("all") if e.category in ("phase-a", "phase-b")])
 
 
 def anspruch_atomar(n: int = 8) -> None:
@@ -220,8 +222,12 @@ def anspruch_atomar(n: int = 8) -> None:
     codes = gleichzeitig(hole_token, n)
     check(f"Wettlauf: von {n} gleichzeitigen Abholungen desselben Ausweises genau eine",
           codes.count(200) == 1, f"{codes.count(200)} mal 200, Codes {sorted(codes)}")
-    check("Wettlauf: genau eine Token-Ausgabe im Board",
-          len([e for e in service.board(poll) if e.kind == "TOKEN_ISSUED"]) == 1)
+    # Puffer mitgezaehlt: Seit EIP-T-076 loest k nur bei *Stimmen* aus, eine
+    # blosse Tokenausgabe wartet also auf den naechsten Batch. Geprueft ist hier
+    # die Atomizitaet der Ausgabe, nicht der Zeitpunkt ihrer Veroeffentlichung.
+    ausgaben = [e for e in service.board(poll) + service.board_store.pending(poll)
+                if e.kind == "TOKEN_ISSUED"]
+    check("Wettlauf: genau eine Token-Ausgabe im Board", len(ausgaben) == 1, str(len(ausgaben)))
 
     if not tokens:
         check("Wettlauf: Token fuer den zweiten Teil vorhanden", False)
@@ -250,12 +256,12 @@ def anspruch_atomar(n: int = 8) -> None:
 
     # Abweisungen muessen im Debug-Modul stehen - sonst faellt ein Wettlauf,
     # der schiefgeht, im Betrieb niemandem auf (§9).
-    from debug import log as debug_log
+    import debug as debug_modul
 
     # Abweisungen aus Phase A und B stehen in der Zaehlung, nicht im Strom
     # (EIP-T-041) - sichtbar bleiben sie trotzdem, sonst waere der Umbau ein
     # Verlust an Aufsicht statt ein Gewinn an Unverkettbarkeit.
-    abweisungen = sum(z.anzahl for z in debug_log.teilnahme()
+    abweisungen = sum(z.anzahl for z in debug_modul.teilnahme_gesamt()
                       if z.level == "reject" and poll in str(z.detail.get("pfad", "")))
     check("Wettlauf: jede Abweisung im Debug-Modul sichtbar",
           abweisungen == 2 * (n - 1), f"{abweisungen} statt {2 * (n - 1)}")
@@ -297,7 +303,7 @@ def abbruch_nach_signatur() -> None:
     erste = client.post(f"/api/token/{poll}", json={"blinded": blinded.hex()})
     check("Abbruch: erste Anfrage wird signiert", erste.status_code == 200)
     check("Abbruch: Berechtigung gilt danach als verbraucht",
-          svc.store.ledger_stand(poll)[0] == 1)
+          svc.ledger_stand(poll)[0] == 1)
 
     # 2) Dieselbe verblindete Anfrage noch einmal - der Nutzer laedt neu.
     zweite = client.post(f"/api/token/{poll}", json={"blinded": blinded.hex()})
@@ -306,9 +312,12 @@ def abbruch_nach_signatur() -> None:
     check("Abbruch: dieselbe Blindsignatur, keine neue Ausgabe",
           zweite.status_code == 200
           and zweite.json().get("blind_sig") == erste.json()["blind_sig"])
+    # Board und Puffer zusammen: Die Tokenausgabe allein loest keinen Batch aus
+    # (k zaehlt Stimmen, EIP-T-076); doppelt vorhanden waere sie trotzdem hier.
     check("Abbruch: kein zweiter Ledger-Eintrag, kein zweiter Board-Eintrag",
-          svc.store.ledger_stand(poll)[0] == 1
-          and len([x for x in svc.board(poll) if x.kind == "TOKEN_ISSUED"]) == 1)
+          svc.ledger_stand(poll)[0] == 1
+          and len([x for x in svc.board(poll) + svc.board_store.pending(poll)
+                   if x.kind == "TOKEN_ISSUED"]) == 1)
 
     # Und die wiederholte Signatur taugt wirklich zum Abstimmen.
     sig = blind.finalize(bytes.fromhex(zweite.json()["blind_sig"]), inv, n)
@@ -323,28 +332,28 @@ def abbruch_nach_signatur() -> None:
     check("Abbruch: abweichende Anfrage desselben Ausweises abgewiesen",
           dritte.status_code == 400, str(dritte.json())[:80])
 
-    from debug import log as debug_log
+    import debug as debug_modul
 
     sichtbar = any(z.level == "reject" and poll in str(z.detail.get("pfad", ""))
-                   for z in debug_log.teilnahme())
+                   for z in debug_modul.teilnahme_gesamt())
     check("Abbruch: die Abweisung steht im Debug-Modul", sichtbar)
 
     # 4) Ablauf: nach der Lebensdauer ist der Puffer leer und die Wiederholung
     #    endet wie jede andere zweite Anfrage.
     check("Abbruch: Puffer haelt genau einen Eintrag",
-          svc.store.wiederhol_puffer_stand() == 1)
+          svc.berechtigung.wiederhol_puffer_stand() == 1)
     # Der Eintrag traegt die angebrochene Stunde, nicht den Zeitpunkt (keine
     # feinen Zeitstempel neben den Ledgern). Ein Ablauf laesst sich deshalb
     # nicht durch Warten pruefen, sondern nur, indem die Ablaufgrenze in die
     # Zukunft gelegt wird - geprueft ist damit der Loeschweg, nicht die Uhr.
-    svc.store.verwirf_wiederhol_puffer(aelter_als=datetime.now() + timedelta(hours=1))
-    check("Abbruch: abgelaufene Eintraege verschwinden", svc.store.wiederhol_puffer_stand() == 0)
+    svc.berechtigung.verwirf_wiederhol_puffer(aelter_als=datetime.now() + timedelta(hours=1))
+    check("Abbruch: abgelaufene Eintraege verschwinden", svc.berechtigung.wiederhol_puffer_stand() == 0)
 
     client2 = TestClient(retry_app)
     client2.post("/api/auth", json={"credential": "testperson71"})
     blinded2, _ = blind.blind(sec.token_bytes(32), n, e)
     client2.post(f"/api/token/{poll}", json={"blinded": blinded2.hex()})
-    svc.store.verwirf_wiederhol_puffer(aelter_als=datetime.now() + timedelta(hours=1))
+    svc.berechtigung.verwirf_wiederhol_puffer(aelter_als=datetime.now() + timedelta(hours=1))
     nach_ablauf = client2.post(f"/api/token/{poll}", json={"blinded": blinded2.hex()})
     check("Abbruch: nach Ablauf keine Wiederholung mehr", nach_ablauf.status_code == 400)
 
@@ -354,10 +363,10 @@ def abbruch_nach_signatur() -> None:
     client3.post("/api/auth", json={"credential": "testperson72"})
     blinded3, _ = blind.blind(sec.token_bytes(32), n, e)
     client3.post(f"/api/token/{poll}", json={"blinded": blinded3.hex()})
-    check("Abbruch: Puffer gefuellt vor dem Schliessen", svc.store.wiederhol_puffer_stand() >= 1)
+    check("Abbruch: Puffer gefuellt vor dem Schliessen", svc.berechtigung.wiederhol_puffer_stand() >= 1)
     client.post(f"/api/admin/close/{poll}")
     check("Abbruch: Schliessen loescht den Puffer der Umfrage",
-          svc.store.wiederhol_puffer_stand() == 0)
+          svc.berechtigung.wiederhol_puffer_stand() == 0)
 
 
 def puffer_abschaltbar() -> None:
@@ -380,7 +389,7 @@ def puffer_abschaltbar() -> None:
     zweite = client.post(f"/api/token/{poll}", json={"blinded": blinded.hex()})
     check("Puffer aus: auch die identische Wiederholung wird abgewiesen",
           zweite.status_code == 400, str(zweite.json())[:80])
-    check("Puffer aus: nichts gespeichert", svc.store.wiederhol_puffer_stand() == 0)
+    check("Puffer aus: nichts gespeichert", svc.berechtigung.wiederhol_puffer_stand() == 0)
 
 
 def umfrage_schluessel() -> None:
@@ -400,7 +409,7 @@ def umfrage_schluessel() -> None:
                    json={"poll_id": poll, "question": "Und?", "options": ["Ja", "Nein"]})
 
     check("Umfrage-Schluessel: beim Anlegen erzeugt",
-          service.store.get_config(POLL_SECRET + "schluessel-a") is not None)
+          service.berechtigung.get_config(POLL_SECRET + "schluessel-a") is not None)
 
     # Dasselbe Pseudonym, zwei Umfragen - zwei unabhaengige Schluessel. Ohne das
     # waere ein Meinungsprofil ueber Umfragen hinweg bildbar (§6).
@@ -420,7 +429,7 @@ def umfrage_schluessel() -> None:
     admin.post("/api/admin/close/schluessel-a")
 
     check("Umfrage-Schluessel: beim Schliessen vernichtet",
-          service.store.get_config(POLL_SECRET + "schluessel-a") is None)
+          service.berechtigung.get_config(POLL_SECRET + "schluessel-a") is None)
 
     # Der eigentliche Punkt von D: Der Server *kann* nicht mehr zuordnen.
     try:
@@ -432,10 +441,10 @@ def umfrage_schluessel() -> None:
           not rueckrechenbar)
 
     check("Umfrage-Schluessel: Eligibility-Eintrag bleibt bestehen (Abrechnung nach §9)",
-          service.store.ledger_stand("schluessel-a")[0] == 1)
+          service.ledger_stand("schluessel-a")[0] == 1)
 
     check("Umfrage-Schluessel: der Schluessel der anderen Umfrage ist unberuehrt",
-          service.store.get_config(POLL_SECRET + "schluessel-b") is not None)
+          service.berechtigung.get_config(POLL_SECRET + "schluessel-b") is not None)
 
     # Debug-Modul: beide Richtungen des Lebenszyklus sind Befunde. Hier der
     # Normalfall - geschlossen und vernichtet ist *kein* Befund.
@@ -444,7 +453,7 @@ def umfrage_schluessel() -> None:
           not any("Schluessel" in f for f in findings), detail=str(findings))
 
     # Und der Stoerfall: Schluessel ueberlebt das Schliessen -> sichtbar.
-    service.store.set_config(POLL_SECRET + "schluessel-a", "00" * 32)
+    service.berechtigung.set_config(POLL_SECRET + "schluessel-a", "00" * 32)
     findings = service.check_consistency("schluessel-a")
     check("Debug-Modul: Schluessel, der eine geschlossene Umfrage ueberlebt, wird gemeldet",
           any("geschlossen" in f and "Schluessel" in f for f in findings), detail=str(findings))
@@ -461,7 +470,7 @@ def umfrage_schluessel() -> None:
     check("Umfrage-Schluessel: ohne Schluessel wird abgewiesen statt neu abgeleitet",
           get_token(verirrt, "schluessel-b") is None)
     check("Umfrage-Schluessel: die Abweisung erzeugt keinen Eligibility-Eintrag",
-          service.store.ledger_stand("schluessel-b")[0] == 0)
+          service.ledger_stand("schluessel-b")[0] == 0)
 
 
 def signaturschluessel() -> None:
@@ -487,7 +496,7 @@ def signaturschluessel() -> None:
                          "options": ["Ja", "Nein"]})
 
     check("Signaturschluessel: beim Anlegen erzeugt",
-          service.store.get_config(POLL_KEY + "sig-a") is not None)
+          service.berechtigung.get_config(POLL_KEY + "sig-a") is not None)
 
     # Der oeffentliche Teil steht im Board, nicht in der Datenbankkonfiguration:
     # Nur dort ueberlebt er die Vernichtung des privaten Teils, und nur dort
@@ -528,9 +537,9 @@ def signaturschluessel() -> None:
     # Vernichtung beim Schliessen - und was danach noch geht und was nicht.
     admin.post("/api/admin/close/sig-a")
     check("Signaturschluessel: beim Schliessen vernichtet",
-          service.store.get_config(POLL_KEY + "sig-a") is None)
+          service.berechtigung.get_config(POLL_KEY + "sig-a") is None)
     check("Signaturschluessel: der Schluessel der anderen Umfrage ist unberuehrt",
-          service.store.get_config(POLL_KEY + "sig-b") is not None)
+          service.berechtigung.get_config(POLL_KEY + "sig-b") is not None)
 
     # Der oeffentliche Teil ueberlebt - sonst waere die Auszaehlung nach dem
     # Schliessen nicht mehr nachpruefbar, und die Vernichtung haette die
@@ -567,7 +576,7 @@ def signaturschluessel() -> None:
     fremdes_pem = blind.generate_key(1024).private_bytes(
         _ser.Encoding.PEM, _ser.PrivateFormat.PKCS8, _ser.NoEncryption()
     ).decode()
-    service.store.set_config(POLL_KEY + "sig-a", fremdes_pem)
+    service.berechtigung.set_config(POLL_KEY + "sig-a", fremdes_pem)
     findings = service.check_consistency("sig-a")
     check("Debug-Modul: Signaturschluessel, der eine geschlossene Umfrage ueberlebt, wird gemeldet",
           any("geschlossen" in f and "Signaturschluessel" in f for f in findings), str(findings))
@@ -578,7 +587,7 @@ def signaturschluessel() -> None:
     # halb eingespielte Sicherung). Er muss als Befund erscheinen und darf die
     # Konsistenzpruefung nicht mitreissen - sie ist das Werkzeug, mit dem man
     # ihn findet.
-    service.store.set_config(POLL_KEY + "sig-a", "kein-schluessel")
+    service.berechtigung.set_config(POLL_KEY + "sig-a", "kein-schluessel")
     findings = service.check_consistency("sig-a")
     check("Debug-Modul: unlesbarer Signaturschluessel wird gemeldet, ohne die Pruefung zu werfen",
           any("nicht lesbar" in f for f in findings), str(findings))
@@ -616,6 +625,38 @@ def signaturschluessel() -> None:
     except Rejected:
         ausgezaehlt = False
     check("Signaturschluessel: ohne Schluessel kein Ergebnis", not ausgezaehlt)
+
+
+def rfc9474_testvektor() -> None:
+    """Beide Blindsignatur-Seiten gegen RFC 9474 Anhang A.4 (EIP-T-008).
+
+    Die Blindsignatur ist selbst geschrieben - das ist die dokumentierte
+    Abweichung von RFC §4. Ein Roundtrip-Test wuerde daran nichts aendern: er
+    ist auch dann gruen, wenn Verblinden und Entblinden denselben Fehler machen
+    und sich gegenseitig aufheben. Der RFC-Vektor kommt von aussen und ist
+    deshalb der einzige Korrektheitsnachweis, den es ohne Audit gibt.
+
+    Die JS-Seite laeuft ueber node, weil sie im Browser lebt. Fehlt node, faellt
+    der Prueffall nicht aus, sondern meldet sich als Luecke - eine stumm
+    uebersprungene Kryptopruefung waere schlimmer als gar keine.
+    """
+    abweichungen = blind.testvektor()
+    check("Krypto: blind.py trifft den RFC-9474-Vektor A.4 in jedem Schritt",
+          not abweichungen, ", ".join(abweichungen))
+    check(f"Krypto: geprueft wird die Variante, die auch benutzt wird ({blind.VARIANTE})",
+          blind.VARIANTE == json.loads(
+              (Path(__file__).parent / "rfc9474_a4.json").read_text())["variante"])
+
+    node = shutil.which("node")
+    if node is None:
+        check("Krypto: static/blind.js gegen denselben Vektor geprueft", False,
+              "node nicht gefunden - die Browser-Seite ist ungeprueft")
+        return
+    lauf = subprocess.run([node, "blind_vektor.mjs"], cwd=Path(__file__).parent,
+                          capture_output=True, text=True)
+    zeilen = (lauf.stdout + lauf.stderr).strip().splitlines()
+    check("Krypto: static/blind.js trifft denselben RFC-9474-Vektor",
+          lauf.returncode == 0, zeilen[-1][:110] if zeilen else "")
 
 
 def eintragsformat() -> None:
@@ -797,7 +838,7 @@ def pruefung_ohne_datenbank() -> None:
     def signiertes_token() -> tuple[bytes, bytes]:
         token = secrets.token_bytes(32)
         blinded, inv = blind.blind(token, n, e)
-        sig = blind.finalize(blind.blind_sign(blinded, n, d), inv, n)
+        sig = blind.finalize(blind.blind_sign(blinded, n, d, e), inv, n)
         return token, sig
 
     def board(batch_payloads: list[list[dict]]) -> list[Batch]:
@@ -903,7 +944,7 @@ def laufende_pruefung() -> None:
     dieselben Zahlen wie die Vollpruefung, und eine gebrochene Kette faellt
     weiterhin beim Abstimmen auf.
     """
-    from debug import log as debug_log
+    import debug as debug_modul
     from verifikation import pruefe, pruefe_weiter
 
     poll = "laufend"
@@ -926,7 +967,7 @@ def laufende_pruefung() -> None:
     # Nach fuenf Stimmen steht ein fortgeschriebener Bericht im Service. Er muss
     # dasselbe sagen wie ein Bericht, der bei null anfaengt.
     laufend = service.laufender_bericht(poll)
-    voll = pruefe(service.store.veroeffentlichte_batches(poll),
+    voll = pruefe(service.board_store.veroeffentlichte_batches(poll),
                   service.poll(poll).options)
     check("Laufende Pruefung: fortgeschrieben wie voll geprueft",
           (laufend.counts, laufend.accounting, laufend.votes, laufend.chain)
@@ -936,8 +977,8 @@ def laufende_pruefung() -> None:
     # Passt der Vorbericht nicht zum Board, faellt pruefe_weiter auf die
     # Vollpruefung zurueck - sonst wuerde ein ausgetauschtes Board mit den
     # Zahlen des alten weitergerechnet.
-    fremd = pruefe(service.store.veroeffentlichte_batches("parallel"), ["Ja", "Nein"])
-    zurueckgefallen = pruefe_weiter(fremd, service.store.veroeffentlichte_batches(poll),
+    fremd = pruefe(service.board_store.veroeffentlichte_batches("parallel"), ["Ja", "Nein"])
+    zurueckgefallen = pruefe_weiter(fremd, service.board_store.veroeffentlichte_batches(poll),
                                     service.poll(poll).options)
     check("Laufende Pruefung: fremder Vorbericht faellt auf die Vollpruefung zurueck",
           zurueckgefallen.accounting == voll.accounting and zurueckgefallen.counts == voll.counts,
@@ -949,7 +990,7 @@ def laufende_pruefung() -> None:
     # bliebe der Payload gleich und es gaebe nichts zu entdecken.
     vote_leaf = next(e.leaf_hash for e in service.board(poll) if e.kind == "VOTE")
     demo.tamper_board(service, poll, vote_leaf, "Ja")
-    vor_der_stimme = len(debug_log.events("inconsistency"))
+    vor_der_stimme = len(debug_modul.events_gesamt("inconsistency"))
 
     client = TestClient(app)
     client.post("/api/auth", json={"credential": "testperson35"})
@@ -963,7 +1004,7 @@ def laufende_pruefung() -> None:
     # events() liefert das Neueste zuerst (appendleft). Die neuen Ereignisse
     # stehen also *vorn*, nicht hinten - ein Slice ab `vor_der_stimme` liefert
     # die aeltesten und findet den frischen Befund nur zufaellig.
-    jetzt = debug_log.events("inconsistency")
+    jetzt = debug_modul.events_gesamt("inconsistency")
     neu = [e for e in jetzt[: len(jetzt) - vor_der_stimme] if "gebrochen" in e.message]
     check("Laufende Pruefung: gebrochene Kette faellt beim Abstimmen auf",
           antwort.status_code == 200 and bool(neu),
@@ -994,7 +1035,7 @@ def pruefwerkzeug_auf_der_kommandozeile(client: TestClient) -> None:
     from poll_service import POLL_SECRET
 
     offen = "parallel"
-    geheim = service.store.get_config(POLL_SECRET + offen)
+    geheim = service.berechtigung.get_config(POLL_SECRET + offen)
     offener_export = client.get(f"/api/board/{offen}").text
     check("Export: der Umfrage-Schluessel einer laufenden Umfrage steht nicht im Export",
           geheim is not None and geheim not in offener_export)
@@ -1040,10 +1081,12 @@ def pruefwerkzeug_auf_der_kommandozeile(client: TestClient) -> None:
 def batch_veroeffentlichung() -> None:
     """Puffer, Beleg und Batch-Veroeffentlichung (EIP-ADR-20260728-001, A/B/C).
 
-    Eigene Instanz mit k=4: Eintraege duerfen erst erscheinen, wenn die
-    Mindestmenge erreicht ist; der Beleg muss sofort da, offline pruefbar und
-    nach der Veroeffentlichung eingeloest sein; beim Schliessen wird der Puffer
-    vollstaendig veroeffentlicht.
+    Eigene Instanz mit k=2 **Stimmen** (EIP-T-076 - k zaehlt keine Eintraege
+    mehr): Eintraege duerfen erst erscheinen, wenn die Mindestmenge erreicht
+    ist; der Beleg muss sofort da, offline pruefbar und nach der
+    Veroeffentlichung eingeloest sein; beim Schliessen wird der Puffer
+    vollstaendig veroeffentlicht, und ein Batch unter der Mindestmenge muss dem
+    Betreiber auffallen.
     """
     import json
 
@@ -1052,7 +1095,7 @@ def batch_veroeffentlichung() -> None:
 
     batch_app = create_app(
         store_path=Path(tempfile.mkdtemp()) / "batch.sqlite3",
-        settings=Settings(admin_token="admin", batch_k=4, antwort_floor_s=0),
+        settings=Settings(admin_token="admin", batch_k=2, antwort_floor_s=0),
     )
     svc = batch_app.state.deps.service
     client = TestClient(batch_app)
@@ -1061,7 +1104,7 @@ def batch_veroeffentlichung() -> None:
     client.post("/api/admin/create",
                 json={"poll_id": poll, "question": "Gebuendelt?", "options": ["Ja", "Nein"]})
     check("Batch: POLL_OPEN sofort veroeffentlicht (Betreiberhandlung)",
-          len(svc.store.veroeffentlichte_batches(poll)) == 1)
+          len(svc.board_store.veroeffentlichte_batches(poll)) == 1)
 
     client.post("/api/auth", json={"credential": "testperson60"})
     import secrets as sec
@@ -1072,9 +1115,13 @@ def batch_veroeffentlichung() -> None:
     voted = client.post(f"/api/vote/{poll}",
                         json={"token": token.hex(), "sig": sig.hex(), "choices": ["Ja"]}).json()
 
-    check("Batch: Stimme unter k bleibt im Puffer, Board zeigt sie noch nicht",
+    # Zwei Eintraege (TOKEN_ISSUED + VOTE), aber erst eine Stimme: Unter der
+    # alten Zaehlweise waere hier bereits veroeffentlicht worden - genau der
+    # Fehler aus EIP-RPT-20260731-001.
+    check("Batch: eine Stimme unter k bleibt im Puffer, auch bei k Eintraegen",
           svc.lookup(poll, token.hex()) is None
-          and svc.store.pending_stand(poll)[0] == 2)
+          and svc.board_store.pending_stand(poll)[0] == 2
+          and len(svc.board_store.veroeffentlichte_batches(poll)) == 1)
     check("Batch: oeffentlicher Teilnahmezaehler zaehlt nur Veroeffentlichtes",
           svc.participation(poll) == 0, str(svc.participation(poll)))
     check("Batch: Antwort traegt den Beleg (Blatt, Batch-Zusage, Signatur)",
@@ -1097,7 +1144,7 @@ def batch_veroeffentlichung() -> None:
     check("Batch: Konsistenzpruefung kennt den Puffer",
           not svc.check_consistency(poll), str(svc.check_consistency(poll)))
 
-    # k erreichen: zweite Person liefert Eintraege 3 und 4 -> Veroeffentlichung.
+    # k erreichen: die zweite Person liefert die zweite Stimme -> Veroeffentlichung.
     client2 = TestClient(batch_app)
     client2.post("/api/auth", json={"credential": "testperson61"})
     token2 = sec.token_bytes(32)
@@ -1108,8 +1155,8 @@ def batch_veroeffentlichung() -> None:
                  json={"token": token2.hex(), "sig": sig2.hex(), "choices": ["Nein"]})
 
     check("Batch: bei Erreichen von k wird veroeffentlicht",
-          svc.store.pending_stand(poll)[0] == 0
-          and len(svc.store.veroeffentlichte_batches(poll)) == 2)
+          svc.board_store.pending_stand(poll)[0] == 0
+          and len(svc.board_store.veroeffentlichte_batches(poll)) == 2)
     check("Batch: Beleg eingeloest - Blatt steht im zugesagten Batch",
           any(e.leaf_hash == voted["leaf_hash"] and e.batch == voted["batch"]
               for e in svc.board(poll)))
@@ -1127,22 +1174,40 @@ def batch_veroeffentlichung() -> None:
     client3.post(f"/api/vote/{poll}",
                  json={"token": token3.hex(), "sig": sig3.hex(), "choices": ["Ja"]})
     check("Batch: unter k bleibt der Puffer bestehen",
-          svc.store.pending_stand(poll)[0] == 2)
+          svc.board_store.pending_stand(poll)[0] == 2)
+
+    import debug as debug_modul
+    vor_dem_schliessen = len(debug_modul.events_gesamt("inconsistency"))
 
     client.post(f"/api/admin/close/{poll}")
     check("Batch: Schliessen veroeffentlicht den Puffer vollstaendig",
-          svc.store.pending_stand(poll)[0] == 0)
+          svc.board_store.pending_stand(poll)[0] == 0)
     check("Batch: Ergebnis nach Schliessen vollstaendig",
           svc.tally(poll) == {"Ja": 2, "Nein": 1}, str(svc.tally(poll)))
     bericht = svc.pruefbericht(poll)
     check("Batch: Batch-Kette nach allem intakt",
           bericht.chain.sound and bericht.accounting.ok)
 
+    # Der letzte Batch traegt eine Stimme statt k - zulaessig, aber eine
+    # Abweichung von der Zusage aus KODEX §2. Sie muss dem Betreiber auffallen,
+    # nicht nur im Ergebnis stecken (EIP-T-076).
+    jetzt = debug_modul.events_gesamt("inconsistency")
+    neue = jetzt[: len(jetzt) - vor_dem_schliessen]
+    check("Batch: Batch unter der Mindestmenge wird als Befund gemeldet",
+          any("Anonymitaetsmenge" in e.message and poll in e.message for e in neue),
+          str([e.message[:60] for e in neue]))
+
+    # Die tatsaechliche Stimmenzahl je Batch ist ein Messwert am Board, den auch
+    # ein Dritter aus dem Export nachrechnet: POLL_OPEN allein, dann zwei
+    # Stimmen, dann der Rest beim Schliessen.
+    check("Batch: Stimmen je Batch am Board messbar",
+          list(bericht.stimmen_je_batch) == [0, 2, 1], str(bericht.stimmen_je_batch))
+
     # Export enthaelt die Batch-Parameter - wer den Beleg bekommt, muss wissen,
     # wovon die Sichtbarkeit abhaengt (ADR E3).
     export = client.get(f"/api/board/{poll}").json()
     check("Batch: Export nennt k und Zeitdeckel",
-          export.get("batch_k") == 4 and export.get("batch_deckel_s") == 6 * 3600,
+          export.get("batch_k") == 2 and export.get("batch_deckel_s") == 6 * 3600,
           json.dumps({k: export.get(k) for k in ("batch_k", "batch_deckel_s")}))
 
 
@@ -1160,7 +1225,7 @@ def sitzungstrennung() -> None:
     import secrets as sec
     import time as zeit
 
-    from debug import log as debug_log
+    import debug as debug_modul
 
     floor = 0.2
     eigen = create_app(
@@ -1188,7 +1253,7 @@ def sitzungstrennung() -> None:
     # Regulaerer Weg: Phase A angemeldet, Phase B auf einem Client ohne
     # Cookie-Speicher - das Gegenstueck zu credentials "omit" in ballot.js.
     _, token, sig, dauer_a = hole_token("testperson70")
-    vorher = debug_log.counts()["inconsistency"]
+    vorher = debug_modul.counts_gesamt()["inconsistency"]
     anon = TestClient(eigen)
     start = zeit.monotonic()
     voted = anon.post(f"/api/vote/{poll}",
@@ -1197,7 +1262,7 @@ def sitzungstrennung() -> None:
     check("Sitzungstrennung: Stimme ohne Sitzungskontext angenommen",
           voted.status_code == 200, str(voted.json())[:80])
     check("Sitzungstrennung: sauberer Abstimm-Request erzeugt keinen Befund",
-          debug_log.counts()["inconsistency"] == vorher)
+          debug_modul.counts_gesamt()["inconsistency"] == vorher)
     check("Sitzungstrennung: Abstimm-Antwort setzt kein Cookie",
           "set-cookie" not in voted.headers)
     board = anon.get(f"/board/{poll}")
@@ -1214,7 +1279,7 @@ def sitzungstrennung() -> None:
     client2, token2, sig2, _ = hole_token("testperson71")
     voted2 = client2.post(f"/api/vote/{poll}",
                           json={"token": token2.hex(), "sig": sig2.hex(), "choices": ["Nein"]})
-    befunde = [e for e in debug_log.events("inconsistency")
+    befunde = [e for e in debug_modul.events_gesamt("inconsistency")
                if e.category == "unverkettbarkeit" and e.detail.get("poll") == poll]
     check("Sitzungstrennung: mitgesandtes Session-Cookie wird als Befund gemeldet",
           voted2.status_code == 200 and len(befunde) == 1,
@@ -1261,7 +1326,7 @@ def datenabzug_nach_schluss() -> None:
 
     from auth import STUB_PREFIX
     from debug import TEILNAHME
-    from debug import log as debug_log
+    import debug as debug_modul
     from poll_service import POLL_KEY, POLL_SECRET
 
     pfad = Path(tempfile.mkdtemp()) / "abzug.sqlite3"
@@ -1279,8 +1344,8 @@ def datenabzug_nach_schluss() -> None:
     codes = ["testperson50", "testperson51", "testperson52"]
     pseudonyme = [eigen.state.deps.authenticator.authenticate(c) for c in codes]
     voter_keys = [svc.voter_key(p, poll) for p in pseudonyme]
-    geheim = svc.store.get_config(POLL_SECRET + poll) or ""
-    signierschluessel = svc.store.get_config(POLL_KEY + poll) or ""
+    geheim = svc.berechtigung.get_config(POLL_SECRET + poll) or ""
+    signierschluessel = svc.berechtigung.get_config(POLL_KEY + poll) or ""
 
     for i, code in enumerate(codes):
         client = TestClient(eigen)
@@ -1302,15 +1367,21 @@ def datenabzug_nach_schluss() -> None:
     admin.post(f"/api/admin/close/{poll}")
 
     # -- Der Abzug ---------------------------------------------------------
-    zweite = sqlite3.connect(pfad)
-    sql_abzug = "\n".join(zweite.iterdump())
-    zweite.close()
+    # Beide Dateien (Baustein G): Wer das Datenverzeichnis mitnimmt, hat Board-
+    # und Berechtigungsseite - der Abzug muss also ueber beide gehen, sonst
+    # pruefte er nur die halbe Beute.
+    sql_teile = []
+    for db in (pfad, svc.berechtigung.path):
+        zweite = sqlite3.connect(db)
+        sql_teile.append("\n".join(zweite.iterdump()))
+        zweite.close()
+    sql_abzug = "\n".join(sql_teile)
     roh = _verzeichnis_bytes(pfad.parent)
     debug_abzug = "\n".join(
-        f"{e.ts} {e.level} {e.category} {e.message} {e.detail}" for e in debug_log.events("all")
+        f"{e.ts} {e.level} {e.category} {e.message} {e.detail}" for e in debug_modul.events_gesamt("all")
     ) + "\n" + "\n".join(
         f"{z.stunde} {z.level} {z.category} {z.message} {z.detail} {z.anzahl}"
-        for z in debug_log.teilnahme()
+        for z in debug_modul.teilnahme_gesamt()
     )
 
     # -- Identitaet: darf nirgends stehen ----------------------------------
@@ -1349,13 +1420,13 @@ def datenabzug_nach_schluss() -> None:
     # Der eigentliche Fund von EIP-T-041. Vorher lagen Token-Ausgabe und
     # Stimmabgabe sekundengenau untereinander im Debug-Modul; wer die Seite
     # offen hatte, konnte beides ueber die Zeit zusammenbringen.
-    im_strom = [e for e in debug_log.events("all") if e.category in TEILNAHME]
+    im_strom = [e for e in debug_modul.events_gesamt("all") if e.category in TEILNAHME]
     check("Abzug: kein Teilnahmevorgang im Ereignisstrom",
           not im_strom, im_strom[0].message[:80] if im_strom else "")
     check("Abzug: Teilnahmezaehler nur stundengenau",
-          all(z.stunde.endswith(":00") for z in debug_log.teilnahme()))
+          all(z.stunde.endswith(":00") for z in debug_modul.teilnahme_gesamt()))
     check("Abzug: Teilnahmezaehler haben die Vorgaenge trotzdem erfasst",
-          sum(z.anzahl for z in debug_log.teilnahme()
+          sum(z.anzahl for z in debug_modul.teilnahme_gesamt()
               if z.category == "phase-b" and z.detail.get("poll") == poll) == len(codes))
 
     # -- Zeit in der Datenbank: nur der Batch, nicht der Eintrag ------------
@@ -1431,51 +1502,58 @@ def sicherungskopie_ohne_geheimnisse() -> None:
                 json={"token": token.hex(), "sig": sig.hex(), "choices": ["Ja"]})
 
     geheimnisse = {
-        "poll_secret": svc.store.get_config(POLL_SECRET + poll) or "",
-        "poll_key": svc.store.get_config(POLL_KEY + poll) or "",
-        "cookie_secret": svc.store.get_config("cookie_secret") or "",
-        "beleg_key": svc.store.get_config("beleg_key_pem") or "",
+        "poll_secret": svc.berechtigung.get_config(POLL_SECRET + poll) or "",
+        "poll_key": svc.berechtigung.get_config(POLL_KEY + poll) or "",
+        "cookie_secret": svc.berechtigung.get_config("cookie_secret") or "",
+        "beleg_key": svc.board_store.get_config("beleg_key_pem") or "",
     }
     check("Kopie: die Quelle fuehrt die Schluessel wirklich (sonst prueft der Test nichts)",
           all(geheimnisse.values()), str({k: bool(v) for k, v in geheimnisse.items()}))
 
+    # Seit Baustein G sind es zwei Dateien - beide Kopien in dasselbe
+    # Verzeichnis, wie backup.py es tut.
     ziel_verzeichnis = Path(tempfile.mkdtemp()) / "backup"
-    ziel = ziel_verzeichnis / "ohne-geheimnisse.sqlite3"
-    entfernt = svc.store.kopiere_ohne_geheimnisse(ziel)
+    ziel_board = ziel_verzeichnis / "board-ohne-geheimnisse.sqlite3"
+    ziel_berechtigung = ziel_verzeichnis / "berechtigung-ohne-geheimnisse.sqlite3"
+    entfernt_board = svc.board_store.kopiere_ohne_geheimnisse(ziel_board)
+    entfernt_berechtigung = svc.berechtigung.kopiere_ohne_geheimnisse(ziel_berechtigung)
 
-    check("Kopie: nennt die entfernten Konfigurationswerte",
-          set(entfernt) >= {POLL_SECRET + poll, POLL_KEY + poll, "cookie_secret",
-                            "beleg_key_pem"},
-          str(entfernt))
+    check("Kopie: nennt die entfernten Konfigurationswerte (je Seite)",
+          set(entfernt_berechtigung) >= {POLL_SECRET + poll, POLL_KEY + poll, "cookie_secret"}
+          and "beleg_key_pem" in entfernt_board,
+          f"board={entfernt_board} berechtigung={entfernt_berechtigung}")
 
     # Der Abzug wieder als rohe Bytes ueber das ganze Verzeichnis, nicht ueber
     # die Tabelle: ein DELETE gaebe die Seite nur frei (V-003).
     roh = _verzeichnis_bytes(ziel_verzeichnis)
     for name, wert in geheimnisse.items():
-        check(f"Kopie: kein {name} in der Kopie", wert.encode() not in roh)
+        check(f"Kopie: kein {name} in den Kopien", wert.encode() not in roh)
 
-    check("Kopie: kein WAL neben der Kopie liegengeblieben",
-          [p.name for p in ziel_verzeichnis.iterdir()] == [ziel.name],
+    check("Kopie: kein WAL neben den Kopien liegengeblieben",
+          sorted(p.name for p in ziel_verzeichnis.iterdir())
+          == sorted([ziel_board.name, ziel_berechtigung.name]),
           str(sorted(p.name for p in ziel_verzeichnis.iterdir())))
 
     # ... und trotzdem brauchbar: die Kopie ist der Grund, sie zu haben.
-    kopie = sqlite3.connect(ziel)
-    zeilen = {
-        t: kopie.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
-        for t in ("eligibility", "spent", "board", "batches", "polls")
-    }
-    kopie.close()
-    original = {
-        t: sqlite3.connect(pfad).execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
-        for t in ("eligibility", "spent", "board", "batches", "polls")
-    }
+    def _zeilen(db: Path, tabellen: tuple[str, ...]) -> dict[str, int]:
+        conn = sqlite3.connect(db)
+        try:
+            return {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tabellen}
+        finally:
+            conn.close()
+
+    board_tabellen = ("spent", "board", "batches", "polls")
+    zeilen = _zeilen(ziel_board, board_tabellen)
+    zeilen["eligibility"] = _zeilen(ziel_berechtigung, ("eligibility",))["eligibility"]
+    original = _zeilen(pfad, board_tabellen)
+    original["eligibility"] = _zeilen(svc.berechtigung.path, ("eligibility",))["eligibility"]
     check("Kopie: Ledger, Board und Batches sind vollstaendig",
           zeilen == original and zeilen["board"] > 0, f"{zeilen} vs {original}")
 
     # Eine bestehende Datei wird nicht ueberschrieben - sonst bliebe ihr alter
     # Inhalt im Freispeicher stehen, und die Kopie waere schlechter als keine.
     try:
-        svc.store.kopiere_ohne_geheimnisse(ziel)
+        svc.board_store.kopiere_ohne_geheimnisse(ziel_board)
         check("Kopie: bestehende Datei wird nicht ueberschrieben", False)
     except FileExistsError as exc:
         check("Kopie: bestehende Datei wird nicht ueberschrieben", True, str(exc)[:60])
@@ -1607,6 +1685,80 @@ def ausgelieferter_stand() -> None:
     stand_modul._zuletzt_gemeldet = None
 
 
+def nachrechenbarer_client() -> None:
+    """Der Code im Browser laesst sich gegen das Repository halten (EIP-T-007).
+
+    Der Unterschied zu ``ausgelieferter_stand`` ist der, auf den es bei
+    Paragraf 20 ankommt: Dort beantwortet der Server eine Frage ueber sich
+    selbst, hier gibt er eine Liste heraus, die man gegen etwas halten kann,
+    das nicht von ihm stammt. Geprueft wird deshalb nicht, dass die Antwort
+    plausibel aussieht, sondern dass der gemeldete Hash der Hash dessen ist,
+    was die Instanz tatsaechlich ueber die Leitung schickt - und dass kein
+    ausfuehrbarer Client-Code an der Liste vorbei laeuft.
+    """
+    import stand as stand_modul
+
+    besucher = TestClient(app)  # ohne Login: wer prueft, hat kein Admin-Token
+    daten = besucher.get("/version").json().get("client", {})
+    check("Client: /version listet die ausgelieferten Client-Dateien einzeln",
+          daten.get("clienthash", "").startswith("sha256:") and len(daten.get("dateien", {})) > 1,
+          str(list(daten.get("dateien", {})))[:80])
+    check("Client: die Nachrechenvorschrift kommt ohne unser Werkzeug aus",
+          "sha256sum" in daten.get("nachrechnen", "") and "curl" in daten.get("nachrechnen", ""))
+    check("Client: die Antwort nennt ihre Grenze statt Unversehrtheit zu behaupten",
+          "anderen Code schickt" in daten.get("grenze", ""))
+
+    # Der Kern: gemeldeter Hash gegen den Hash der tatsaechlichen Auslieferung.
+    # Faellt das auseinander, ist die Liste eine Behauptung ueber Dateien im
+    # Repo, nicht ueber die Seite, die jemand gerade benutzt.
+    abweichungen = []
+    for pfad, digest in daten.get("dateien", {}).items():
+        antwort = besucher.get(f"/{pfad}")
+        if antwort.status_code != 200 or hashlib.sha256(antwort.content).hexdigest() != digest:
+            abweichungen.append(pfad)
+    check("Client: jede gemeldete Datei kommt so ueber die Leitung, wie sie gehasht ist",
+          not abweichungen, ", ".join(abweichungen)[:90])
+
+    check("Client: blind.js und ballot.js stehen in der Liste",
+          {"static/blind.js", "static/ballot.js"} <= set(daten.get("dateien", {})))
+
+    # Vollstaendigkeit: Inline-Code in einer Seite liefe im Browser, stuende
+    # aber in keiner Datei - der Hash sagte dann weniger, als er aussieht.
+    check("Client: kein ausfuehrbarer Inline-Code in den Seiten",
+          not stand_modul.client_luecken(), str(stand_modul.client_luecken())[:120])
+
+    verzeichnis = Path(tempfile.mkdtemp())
+    (verzeichnis / "templates").mkdir()
+    (verzeichnis / "static").mkdir()
+    (verzeichnis / "static" / "blind.js").write_text("// Blinding\n")
+    vorher = stand_modul.clienthash(verzeichnis)
+    (verzeichnis / "templates" / "poll.html").write_text(
+        '<script type="module" src="/static/blind.js"></script>\n'
+        '<script type="application/json" id="poll-params">{"poll_id": "x"}</script>\n'
+    )
+    check("Client: geladene Dateien und JSON-Daten gelten nicht als Luecke",
+          not stand_modul.client_luecken(verzeichnis), str(stand_modul.client_luecken(verzeichnis))[:120])
+    (verzeichnis / "templates" / "poll.html").write_text(
+        '<script type="module">\n  const POLL = "x";\n</script>\n'
+    )
+    check("Client: ein Rueckfall zu Inline-Code wird gemeldet",
+          any("Inline-Code" in b for b in stand_modul.client_luecken(verzeichnis)))
+    check("Client: die Luecke erscheint im Debug-Modul als Befund, nicht als Hinweis",
+          any("Inline-Code" in b for b in stand_modul.abgleich(verzeichnis).befunde))
+
+    (verzeichnis / "static" / "blind.js").write_text("// Blinding, aber anders\n")
+    check("Client: geaenderter Client-Code bewegt den Client-Hash",
+          stand_modul.clienthash(verzeichnis) != vorher)
+
+    # Und die Stelle, an der geprueft wird, zeigt es auch - eine Auskunft, die
+    # nur unter /version steht, findet niemand, der nicht schon sucht.
+    board = besucher.get(f"/board/{POLL}").text
+    check("Client: die Nachweis-Seite nennt den Hash und den Weg, ihn nachzurechnen",
+          daten["clienthash"] in board and "sha256sum" in board)
+    check("Client: die Nachweis-Seite benennt die Grenze der Massnahme",
+          "anderen Code schickt als allen anderen" in board)
+
+
 def demo_schalter() -> None:
     """Angriffsdemos haengen an EIDPOLL_DEMOS, nicht an der Anwendung (EIP-T-050).
 
@@ -1646,6 +1798,7 @@ def demo_schalter() -> None:
 def main() -> int:
     client = TestClient(app)
 
+    rfc9474_testvektor()
     eintragsformat()
     pruefung_ohne_datenbank()
     umfrage_schluessel()
@@ -1737,6 +1890,7 @@ def main() -> int:
     sicherungskopie_ohne_geheimnisse()
     offenlegungsseiten()
     ausgelieferter_stand()
+    nachrechenbarer_client()
     demo_schalter()
 
     # Angriff 1 - Ballot-Stuffing wird von der Abrechnung entlarvt
@@ -1762,10 +1916,10 @@ def main() -> int:
 
     pruefwerkzeug_auf_der_kommandozeile(client)
 
-    # Debug-Modul hat alles mitbekommen
-    from debug import log
+    # Debug-Modul hat alles mitbekommen - ueber alle drei Logs (Baustein G)
+    import debug as debug_modul
 
-    counts = log.counts()
+    counts = debug_modul.counts_gesamt()
     check("Debug-Modul: Abweisungen und Inkonsistenzen erfasst",
           counts["reject"] >= 3 and counts["inconsistency"] >= 2, str(counts))
 
@@ -1785,7 +1939,8 @@ def main() -> int:
     # Die Abweisung selbst wird geloggt, reject steigt also - entscheidend ist,
     # dass nichts geloescht wurde.
     check("Zugang: Log nach abgewiesenem Leeren nicht geleert",
-          log.counts()["info"] == counts["info"] and log.counts()["reject"] > counts["reject"])
+          debug_modul.counts_gesamt()["info"] == counts["info"]
+          and debug_modul.counts_gesamt()["reject"] > counts["reject"])
     admin_anon = anon.get("/admin")
     check("Zugang: /admin ohne Anmeldung zeigt nur die Anmeldung",
           "login-button" in admin_anon.text and "Angriffsdemos" not in admin_anon.text)
@@ -1801,7 +1956,7 @@ def main() -> int:
     check("Zugang: fremdes Geraet sieht keinen Beenden-Knopf",
           'id="quit-button"' not in nav_anon.text)
     check("Wahlgeheimnis: kein voter_key im Debug-Log",
-          not any("voter_key" in str(e.detail) for e in log.events("all")))
+          not any("voter_key" in str(e.detail) for e in debug_modul.events_gesamt("all")))
 
     print()
     if failures:

@@ -221,10 +221,12 @@ with sync_playwright() as p:
     check("Punkt 6b: eigenes Token im Board wiederfindbar", token.group(1) in content)
     page.screenshot(path=f"{SHOTS}/04_board.png", full_page=True)
 
-    page.goto(f"{BASE}/verify?poll={POLL}&token={token.group(1)}")
-    page.wait_for_load_state("networkidle")
-    check("Punkt 4b: Verifikationsseite findet die eigene Stimme",
-          "Token gefunden" in page.content() and "Ja" in page.inner_text(".banner.ok"))
+    # Token im Fragment (#), nicht in den Query-Parametern: Das Fragment sendet
+    # der Browser nie mit - die Suche laeuft client-seitig (EIP-T-033, F).
+    page.goto(f"{BASE}/verify#poll={POLL}&token={token.group(1)}")
+    page.wait_for_selector("#verify-result.ok", timeout=10_000)
+    check("Punkt 4b: Verifikationsseite findet die eigene Stimme (im Browser)",
+          "Token gefunden" in page.content() and "Ja" in page.inner_text("#verify-result"))
     page.screenshot(path=f"{SHOTS}/05_verify.png", full_page=True)
 
     # --- Punkt 7: Abrechnung und Kettenpruefung als oeffentliche Seite

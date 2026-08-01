@@ -102,15 +102,17 @@
     <div class="banner ok" id="receipt-head">
       Deine Stimme ist angenommen — der Beleg bindet uns ab sofort beweisbar.
       <small>
-        Öffentlich sichtbar wird dein Eintrag mit dem nächsten Batch — spätestens nach ein paar
-        Stunden, in jedem Fall beim Ende der Umfrage. Fehlt er dann, ist dein Beleg der Nachweis
-        dafür.
+        Öffentlich sichtbar wird dein Eintrag mit dem nächsten Batch — der wird veröffentlicht,
+        sobald {{ batch_k }} Stimmen beisammen sind, spätestens nach {{ batch_deckel_h }} Stunden und
+        in jedem Fall beim Ende der Umfrage. Deine Stimme liegt dann unter diesen {{ batch_k }};
+        löst der Zeitdeckel oder das Ende der Umfrage aus, können es auch weniger sein — das Board
+        nennt die tatsächliche Zahl. Fehlt dein Eintrag, ist dein Beleg der Nachweis dafür.
       </small>
     </div>
     <div class="receipt" id="receipt-body"></div>
     <div class="button-row" style="margin-top:16px">
       <button id="receipt-download">Beleg speichern</button>
-      <a href="/verify?poll={{ poll.poll_id }}" id="receipt-verify"><button class="ghost">Stimme jetzt prüfen</button></a>
+      <a href="/verify#poll={{ poll.poll_id }}" id="receipt-verify"><button class="ghost">Stimme jetzt prüfen</button></a>
     </div>
     <details class="explain" style="margin-top:20px">
       <summary>Wer diesen Beleg hat, sieht meine Stimme</summary>
@@ -128,116 +130,11 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module">
-  // Nur Verdrahtung: Der Stimmzettel-Flow steht in /static/ballot.js, die
-  // Belegdarstellung in /static/beleg.js, die Krypto in /static/blind.js.
-  import { postJSON, toast, download } from "/static/app.js";
-  import { castBallot, loadState, pendingBallot, heldBallot } from "/static/ballot.js";
-  import { receiptPaper, receiptText, verifyUrl } from "/static/beleg.js";
-
-  const POLL_ID = {{ poll.poll_id | tojson }};
-  const N_HEX = {{ n | tojson }};
-  const E_HEX = {{ e | tojson }};
-
-  const stepVote = document.getElementById("step-vote");
-  const stepReceipt = document.getElementById("step-receipt");
-  const voteButton = document.getElementById("vote-button");
-
-  function render() {
-    const state = loadState(POLL_ID);
-    if (!state) return;
-    pendingBallot(POLL_ID); // Berechtigung aus einem abgebrochenen Versuch uebernehmen
-    if (state.voted) {
-      stepVote.classList.add("done");
-      voteButton.disabled = false; // zweiter Versuch muss moeglich sein und abgewiesen werden
-      showReceipt(state);
-    }
-  }
-
-  /** Ergaenzt den gespeicherten Beleg um das Token der laufenden Sitzung, falls vorhanden. */
-  function withToken(state) {
-    if (state.token) return state;
-    const held = heldBallot();
-    return held ? { ...state, token: held.token } : state;
-  }
-
-  function showReceipt(state) {
-    const full = withToken(state);
-    stepReceipt.classList.remove("hidden");
-    document.getElementById("receipt-body").replaceChildren(receiptPaper(POLL_ID, full));
-    const verifyLink = document.getElementById("receipt-verify");
-    if (full.token) {
-      verifyLink.href = verifyUrl(POLL_ID, full.token);
-      verifyLink.classList.remove("hidden");
-    } else {
-      verifyLink.classList.add("hidden");
-    }
-  }
-
-  const authOpenButton = document.getElementById("auth-open-button");
-  if (authOpenButton) {
-    const modalBackdrop = document.getElementById("auth-modal-backdrop");
-    const credentialInput = document.getElementById("credential");
-    const modalError = document.getElementById("auth-modal-error");
-    const cancelButton = document.getElementById("auth-cancel-button");
-    const confirmButton = document.getElementById("auth-confirm-button");
-
-    function openModal() {
-      modalError.textContent = "";
-      credentialInput.value = "";
-      modalBackdrop.classList.remove("hidden");
-      credentialInput.focus();
-    }
-    function closeModal() { modalBackdrop.classList.add("hidden"); }
-
-    authOpenButton.addEventListener("click", openModal);
-
-    cancelButton.addEventListener("click", async () => {
-      closeModal();
-      try { await postJSON("/api/auth/abort"); } catch (_) { /* Abbruch selbst darf nicht scheitern */ }
-    });
-
-    const submit = async () => {
-      try {
-        await postJSON("/api/auth", { credential: credentialInput.value });
-        closeModal();
-        location.reload();
-      } catch (err) {
-        modalError.textContent = err.message;
-        toast(err.message, "err");
-      }
-    };
-    confirmButton.addEventListener("click", submit);
-    credentialInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") submit();
-      if (e.key === "Escape") cancelButton.click();
-    });
-  }
-
-  voteButton.addEventListener("click", async () => {
-    const choices = [...document.querySelectorAll("input[name=choice]:checked")].map((c) => c.value);
-    if (!choices.length) { toast("Bitte mindestens eine Option wählen.", "err"); return; }
-
-    voteButton.disabled = true;
-    try {
-      const receipt = await castBallot(POLL_ID, N_HEX, E_HEX, choices);
-      showReceipt(receipt);
-      document.getElementById("participation").textContent = receipt.participation;
-      toast("Stimme abgegeben.", "ok");
-      stepVote.classList.add("done");
-    } catch (err) {
-      toast(err.message, "err");
-    } finally {
-      voteButton.disabled = false; // zweiter Versuch muss moeglich sein und abgewiesen werden
-    }
-  });
-
-  document.getElementById("receipt-download").addEventListener("click", () => {
-    const state = loadState(POLL_ID);
-    if (!state || !state.voted) return;
-    download(`beleg_${POLL_ID}.txt`, receiptText(POLL_ID, withToken(state)));
-  });
-
-  render();
+{# Daten, kein Code: Was die Seite der Verdrahtung mitgibt, steht als JSON in
+   der Seite - damit bleibt /static/poll.js Byte fuer Byte das, was im
+   Repository steht (Paragraf 20, EIP-T-007). #}
+<script type="application/json" id="poll-params">
+  {"poll_id": {{ poll.poll_id | tojson }}, "n": {{ n | tojson }}, "e": {{ e | tojson }}}
 </script>
+<script type="module" src="/static/poll.js"></script>
 {% endblock %}

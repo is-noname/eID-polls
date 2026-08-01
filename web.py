@@ -34,7 +34,8 @@ from fastapi.templating import Jinja2Templates
 import stand as stand_modul
 from auth import AuthError, Authenticator, CodeAuthenticator
 from config import Settings
-from debug import kategorie_fuer_pfad, log
+import debug
+from debug import kategorie_fuer_pfad, log, log_berechtigung, log_board, log_fuer
 from poll_service import PollService, Rejected
 
 BASE_DIR = Path(__file__).parent
@@ -253,8 +254,10 @@ async def _rejected_handler(request: Request, exc: Exception) -> HTMLResponse | 
     # Abweisungen aus Phase A und B laufen unter ihrer Phasen-Kategorie und
     # werden dadurch gezaehlt statt gestromt (debug.TEILNAHME, EIP-T-041): Eine
     # abgewiesene Stimmabgabe um 16:00:41 neben einer Token-Ausgabe um 16:00:03
-    # verkettet genauso wie zwei erfolgreiche Vorgaenge.
-    log.reject(kategorie_fuer_pfad(request.url.path, "abgewiesen"), str(exc), pfad=request.url.path)
+    # verkettet genauso wie zwei erfolgreiche Vorgaenge. Und sie laufen ins Log
+    # ihrer Seite (EIP-T-033, G): kein einzelnes Log haelt beide Phasen.
+    kategorie = kategorie_fuer_pfad(request.url.path, "abgewiesen")
+    log_fuer(kategorie).reject(kategorie, str(exc), pfad=request.url.path)
     if request.url.path.startswith("/api/"):
         return JSONResponse({"error": str(exc)}, status_code=400)
     status = getattr(exc, "status_code", 400)
@@ -262,7 +265,7 @@ async def _rejected_handler(request: Request, exc: Exception) -> HTMLResponse | 
 
 
 async def _auth_handler(request: Request, exc: Exception) -> JSONResponse:
-    log.reject("auth", str(exc), pfad=request.url.path)
+    log_berechtigung.reject("auth", str(exc), pfad=request.url.path)
     return JSONResponse({"error": str(exc)}, status_code=400)
 
 
@@ -280,7 +283,7 @@ def page(request: Request, template: str, status_code: int = 200, **context: Any
     context.setdefault("pseudonym", current_pseudonym(request))
     context.setdefault("admin", is_admin(request))
     context.setdefault("authenticator", d.authenticator)
-    context.setdefault("debug_counts", log.counts())
+    context.setdefault("debug_counts", debug.counts_gesamt())
     context.setdefault("is_local", is_local(request))
     context.setdefault("public", d.settings.public)
     context.setdefault("demos", d.settings.demos)
@@ -323,6 +326,8 @@ async def poll_page(request: Request, poll_id: str) -> HTMLResponse:
         participation=service.participation(poll_id),
         n=hex(n)[2:],
         e=hex(e)[2:],
+        batch_k=service.batch_k,
+        batch_deckel_h=service.batch_deckel_s // 3600,
     )
 
 
@@ -347,6 +352,11 @@ async def board_page(request: Request, poll_id: str) -> HTMLResponse:
         poll=poll,
         batches=bericht.batches,
         n_entries=bericht.n_entries,
+        # Gemessen am veroeffentlichten Board, nicht die Zusage k: Die Zusage
+        # kann der Zeitdeckel und das Schliessen unterschreiten, und wer sich
+        # auf die Menge verlaesst, muss die kleinste sehen (EIP-T-076).
+        stimmen_je_batch=bericht.stimmen_je_batch,
+        kleinste_menge=min((s for s in bericht.stimmen_je_batch if s), default=None),
         status=status,
         accounting=accounting,
         result=result,
@@ -355,29 +365,26 @@ async def board_page(request: Request, poll_id: str) -> HTMLResponse:
         beleg_public_key=service.beleg_public_key_pem,
         batch_k=service.batch_k,
         batch_deckel_h=service.batch_deckel_s // 3600,
+        # Der ausgelieferte Client, Datei fuer Datei: Die Nachweis-Seite ist die
+        # Stelle, an der geprueft wird - und der Code im Browser gehoert zu dem,
+        # was zu pruefen ist (Paragraf 20, EIP-T-007).
+        client=stand_modul.client(),
     )
 
 
 @router.get("/verify", response_class=HTMLResponse)
-async def verify_page(request: Request, poll: str = "", token: str = "") -> HTMLResponse:
-    service = deps(request).service
-    found: list[str] | None = None
-    searched = bool(poll and token)
-    if searched:
-        found = service.lookup(poll, token)
-        if found is None:
-            log.reject("verifikation", "Token nicht im Board gefunden.", poll=poll)
-    return page(
-        request,
-        "verify.html",
-        polls=service.polls(),
-        sel_poll=poll,
-        token=token,
-        found=found,
-        searched=searched,
-        batch_k=service.batch_k,
-        batch_deckel_h=service.batch_deckel_s // 3600,
-    )
+async def verify_page(request: Request) -> HTMLResponse:
+    """Die Pruefseite - die Suche selbst laeuft im Browser (static/verify.js).
+
+    Bewusst ohne Token-Parameter (EIP-T-033, Baustein F): Bis hierher nahm die
+    Route das Token als GET-Parameter entgegen, und weil das Session-Cookie
+    (path=/) an derselben Route mitfaehrt, lieferte, wer nach der Abstimmung
+    angemeldet pruefte, dem Server Pseudonym und Token in einem Request. Jetzt
+    steht das Token im URL-Fragment, das der Browser nie mitsendet, und die
+    Suche laeuft ueber den Board-Export - der Server sieht nur noch, dass
+    jemand das Board laedt, nicht wonach er sucht.
+    """
+    return page(request, "verify.html", polls=deps(request).service.polls())
 
 
 @router.get("/version")
@@ -404,12 +411,15 @@ async def debug_page(request: Request, level: str = "all") -> HTMLResponse:
     require_admin(request)
     service = deps(request).service
     findings = service.check_all()
+    # Drei getrennte Logs, eine Sicht (EIP-T-033, G): Die Zusammenfuehrung
+    # passiert erst hier, beim Anzeigen an den angemeldeten Betreiber - das
+    # ist der bewusste Blick ueber die Trennlinie, keine Datenlage.
     return page(
         request,
         "debug.html",
-        events=log.events(level),
-        teilnahme=log.teilnahme(),
-        counts=log.counts(),
+        events=debug.events_gesamt(level),
+        teilnahme=debug.teilnahme_gesamt(),
+        counts=debug.counts_gesamt(),
         level=level,
         findings={k: v for k, v in findings.items() if v},
         polls=service.polls(),
@@ -534,7 +544,7 @@ async def admin_page(request: Request) -> HTMLResponse:
 async def api_auth(request: Request, payload: dict) -> JSONResponse:
     d = deps(request)
     pseudonym = d.authenticator.authenticate(str(payload.get("credential", "")))
-    log.info("auth", f"Authentifiziert ueber: {d.authenticator.name}")
+    log_berechtigung.info("auth", f"Authentifiziert ueber: {d.authenticator.name}")
     response = JSONResponse({"ok": True, "real_identity": d.authenticator.is_real_identity})
     response.set_cookie(
         SESSION_COOKIE,
@@ -548,7 +558,7 @@ async def api_auth(request: Request, payload: dict) -> JSONResponse:
 
 @router.post("/api/auth/abort")
 async def api_auth_abort() -> JSONResponse:
-    log.reject("auth", "Dialog 'Ausweis auslesen' abgebrochen.")
+    log_berechtigung.reject("auth", "Dialog 'Ausweis auslesen' abgebrochen.")
     return JSONResponse({"ok": True})
 
 
@@ -594,7 +604,7 @@ async def api_vote(request: Request, poll_id: str, payload: dict) -> JSONRespons
     if request.headers.get("referer"):
         mitgesandt.append("referer")
     if mitgesandt:
-        log.inconsistency(
+        log_board.inconsistency(
             "unverkettbarkeit",
             "Abstimm-Request traegt Sitzungskontext aus Phase A - "
             "Identitaet und Stimme im selben Request (EIP-T-033 F).",
@@ -713,7 +723,7 @@ async def api_debug_clear(request: Request) -> JSONResponse:
     # Das Log ist die Stelle, an der Manipulation auffaellt - Leeren darf nicht
     # jedes Netzgeraet koennen (EIP-T-018).
     require_admin(request)
-    log.clear()
+    debug.clear_alle()
     return JSONResponse({"ok": True})
 
 

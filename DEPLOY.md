@@ -72,8 +72,27 @@ verglichen wird deshalb der Hash.
 Und: Das ist die Selbstauskunft des Servers, den man gerade prüft. Sie deckt ein Versehen auf — den
 Fall aus Verstoß V-001, wo Korrekturen uncommittet liegen blieben, während die öffentliche Instanz
 die falschen Aussagen weiter anzeigte. Sie deckt **keinen Betreiber auf, der lügt**: Wer den Code
-ändert, kann diese Antwort mit ändern. Dagegen hilft erst ein reproduzierbarer, von Dritten
-nachgerechneter Build — der steht aus (§ 20, `EIP-T-007`).
+ändert, kann diese Antwort mit ändern.
+
+### Der Client, ohne die Instanz zu fragen (§ 20)
+
+Für den Teil, auf den es beim Wahlgeheimnis ankommt — den Code im Browser — geht es ohne
+Selbstauskunft. Aller Client-Code liegt unverändert unter `/static/`, ohne Bündelung und ohne
+Minifizierung; ausführbaren Inline-Code in den Seiten gibt es seit `EIP-T-007` nicht mehr. Der
+Vergleich holt seine beiden Werte damit aus zwei verschiedenen Quellen:
+
+```bash
+# Auslieferung:
+curl -s https://eid-poll.onrender.com/static/blind.js | sha256sum
+# Veröffentlichter Stand, im Klon, Ordner app/:
+sha256sum static/blind.js
+# Alle Client-Dateien auf einmal, gegen client.clienthash aus /version:
+LC_ALL=C sh -c 'find static -type f | sort | xargs sha256sum | sha256sum'
+```
+
+Was auch das nicht ausschließt: eine Auslieferung, die einzelnen Besuchern anderen Code schickt als
+allen anderen. Dagegen hilft nur, dass mehrere unabhängig voneinander abrufen — dieselbe Struktur
+wie beim Split-View-Problem des Boards (§ 2).
 
 **Während eines Deploys ist die Frage nicht eindeutig beantwortbar.** Render lässt alten und neuen
 Container kurz parallel laufen; zwei aufeinanderfolgende Abrufe lieferten am 2026-07-31 nachweislich
@@ -150,7 +169,7 @@ denkt (`config.py`):
 |---|---|---|
 | `EIDPOLL_PUBLIC` | leer | `1` = öffentlicher Betrieb (siehe oben) |
 | `EIDPOLL_ADMIN_TOKEN` | zufällig erzeugt | Zugang zu `/admin` und `/debug` |
-| `EIDPOLL_DB` | `data/eidpoll.sqlite3` | Pfad der Datenbank (für persistente Platte) |
+| `EIDPOLL_DB` | `data/eidpoll.sqlite3` | Pfad der Board-Datenbank; die Berechtigungs-Datenbank liegt daneben (`EIP-T-033` G) |
 | `EIDPOLL_ACCESS_CODES` | `testperson1…100` | Gültige Zugangscodes, kommagetrennt |
 | `EIDPOLL_ACCESS_CODES_FILE` | leer | Codes stattdessen aus einer Datei, eine Zeile je Code |
 | `EIDPOLL_DEMOS` | an, außer bei `PUBLIC` | Angriffsdemos (`demo.py`) einhängen: Board umschreiben, Stimme einschleusen, Testzugang zurücksetzen |

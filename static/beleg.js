@@ -11,9 +11,14 @@
 
 import { qrSvg } from "./qr.js";
 
-/** Direktlink auf die Pruefseite, Token schon eingesetzt. */
+/** Direktlink auf die Pruefseite, Token schon eingesetzt.
+ *
+ * Das Token steht im URL-Fragment (#), nicht in den Query-Parametern: Das
+ * Fragment verlaesst den Browser nie - der Server bekommt beim Oeffnen des
+ * Links nur /verify zu sehen, nicht das Token (EIP-T-033, Baustein F).
+ */
 export function verifyUrl(pollId, token, origin = location.origin) {
-  return `${origin}/verify?poll=${encodeURIComponent(pollId)}&token=${encodeURIComponent(token)}`;
+  return `${origin}/verify#poll=${encodeURIComponent(pollId)}&token=${encodeURIComponent(token)}`;
 }
 
 /** Beleg als Text - Inhalt identisch zum Kassenbon. */

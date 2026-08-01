@@ -50,8 +50,8 @@ sondern unmöglich, weil je Umfrage ein eigener Schlüssel gilt und keiner davon
 Die Grenze dazu, ehrlich: Die Zusage gilt für die Datenbankdatei. Wer Sicherungskopien anlegt, muss
 sie in dieselbe Regel einbeziehen — sonst lebt der Schlüssel dort weiter. Genau das ist einmal
 passiert (eine liegengebliebene Kopie mit einem längst vernichteten Schlüssel), deshalb gibt es
-seither eine Regel dazu und einen Befehl, der sie befolgbar macht: `python3 app/backup.py <ziel>`
-schreibt eine Kopie ohne jeden Schlüssel. Nicht abgedeckt bleiben Dateisystem-Snapshots und andere
+seither eine Regel dazu und einen Befehl, der sie befolgbar macht: `python3 app/backup.py
+<zielverzeichnis>` schreibt Kopien beider Datenbankdateien ohne jeden Schlüssel. Nicht abgedeckt bleiben Dateisystem-Snapshots und andere
 Datenträger. Solange eine Umfrage
 **läuft**, existiert ihr Schlüssel notwendigerweise; die Zuordnung ist in diesem Zeitraum für den
 Betreiber möglich. Vernichtet wird beim Schließen, nicht vorher (`EIP-T-033`, Baustein D).
@@ -64,14 +64,25 @@ verkettet, sodass Löschen und nachträgliches Ändern auffallen. Hier stehen di
 öffentlich einsehbar ist, wäre die öffentliche Prüfung wertlos. Genau dieser Fehler steckte im
 Prototyp (`PROTOTYPE_two-ledger/NOTES.md`, Fund 1).
 
-Veröffentlicht wird, sobald mindestens **k** neue Einträge warten (Voreinstellung 10, ein Wert und
-seine Grenzen: `EIP-ADR-20260728-001` E3), spätestens nach dem **Zeitdeckel** (6 Stunden), in jedem
-Fall beim Schließen der Umfrage. Der Sinn: Erschiene jeder Eintrag sofort, könnte jeder Beobachter
-des Boards den Eintragszeitpunkt sehen — genau die Timing-Korrelation, die das Verfahren
-verhindern will. Die Batch-Größe ist die Anonymitätsmenge, und bei niedriger Beteiligung ist sie
-ehrlicherweise klein. Bis zur Veröffentlichung trägt der **signierte Beleg** (Ed25519, eigener
-Schlüssel) die Zusage: Blatt-Hash und Batch-Nummer, offline prüfbar. Fehlt der Eintrag im
-zugesagten Batch, ist der Beleg der Nachweis.
+Veröffentlicht wird, sobald mindestens **k Stimmen** im Puffer warten (Voreinstellung 10, ein Wert
+und seine Grenzen: `EIP-ADR-20260728-001` E3), spätestens nach dem **Zeitdeckel** (6 Stunden), in
+jedem Fall beim Schließen der Umfrage. Der Sinn: Erschiene jeder Eintrag sofort, könnte jeder
+Beobachter des Boards den Eintragszeitpunkt sehen — genau die Timing-Korrelation, die das Verfahren
+verhindern will.
+
+**Gezählt werden Stimmen, nicht Einträge** (`EIP-T-076`). Bis dahin zählte k alle Einträge, und weil
+jede Teilnahme zwei erzeugt (Ausgabe + Stimme), war die zugesagte Menge in Wahrheit rund die Hälfte;
+unter Andrang lag fast jede vierte Stimme in einem Batch mit weniger als 5 anderen
+(`EIP-RPT-20260731-001`, gemessen). An Stimmen gebunden fällt dieser Anteil auf 0, bei gleicher
+Batchgröße und gleicher Wartezeit.
+
+Die Zahl der Stimmen in einem Batch ist die Anonymitätsmenge, und bei niedriger Beteiligung ist sie
+ehrlicherweise klein: Löst der Zeitdeckel aus oder endet die Umfrage, kann ein Batch k
+unterschreiten — die Board-Seite nennt für jeden Batch die **tatsächliche** Zahl (Messwert, keine
+Zusage), und der Betreiber bekommt jeden solchen Batch als Befund ins Debug-Modul. Bis zur
+Veröffentlichung trägt der **signierte Beleg** (Ed25519, eigener Schlüssel) die Zusage: Blatt-Hash
+und Batch-Nummer, offline prüfbar. Fehlt der Eintrag im zugesagten Batch, ist der Beleg der
+Nachweis.
 
 ---
 
@@ -166,6 +177,11 @@ verhindert.
 
 Beide Zahlen der Abrechnung stammen aus dem Board — also aus dem, was jeder Dritte sieht.
 
+Jeder Batch nennt außerdem, wie viele **Stimmen** er enthält, und die Seite hebt die kleinste dieser
+Zahlen hervor: Sie ist die Anonymitätsmenge, die für die dort liegenden Stimmen tatsächlich gilt.
+Liegt sie unter k, sagt die Seite das (`EIP-T-076`). Auch das ist nachrechenbar — das Prüfwerkzeug
+gibt dieselben Zahlen aus dem Export aus.
+
 Unten stehen der **öffentliche Token-Schlüssel** und der **Beleg-Schlüssel**. Damit lässt sich
 jede Stimme unabhängig prüfen (RSASSA-PSS über SHA-384, Salt-Länge 0) und jeder Beleg verifizieren.
 Das Board rechnet sich nach über `leaf = sha256(0x00‖payload)`, je Batch einen Merkle-Baum über
@@ -251,7 +267,9 @@ steht kein Hinweis darauf, *wer* ein Token abgeholt hat (EIP-T-018). Vier Ereign
 - `inconsistency` — **die wichtigste Kategorie**: gebrochene Batch-Kette, ungültige Signatur im
   Board, schiefe Ledger-Abrechnung (auch inklusive Puffer), Board gegen Vote-Ledger
   auseinandergelaufen, hängender Batch-Puffer (Zeitdeckel überschritten oder Puffer trotz
-  geschlossener Umfrage nicht leer)
+  geschlossener Umfrage nicht leer), veröffentlichter Batch **unter der Mindestmenge k**
+  (`EIP-T-076` — zulässig, aber eine Abweichung von der Zusage aus KODEX § 2, und die muss während
+  der Laufzeit sichtbar sein, nicht erst hinterher)
 
 Darüber läuft bei jedem Aufruf eine frisch gerechnete Konsistenzprüfung über alle Umfragen. Bei
 diesem Projekt ist das kein Komfort-Feature, sondern die Stelle, an der Manipulation auffällt.
@@ -330,8 +348,43 @@ selbst nicht sehen kann. Genau so entstand Verstoß V-001 (EIP-T-074).
 
 **Was das nicht leistet.** Es ist die Selbstauskunft des Servers, den man gerade prüft. Gegen ein
 Versehen hilft sie, gegen einen Betreiber, der lügt, nicht: Wer den Code ändert, kann diese Antwort
-mit ändern. Dagegen hilft erst ein reproduzierbarer, von Dritten nachgerechneter Build — der steht
-aus (Kodex § 20, EIP-T-007).
+mit ändern. Wer nicht *uns* prüfen will, sondern den Code in seinem Browser, nimmt den Abschnitt
+darunter.
+
+### Läuft in meinem Browser der veröffentlichte Code?
+
+Das ist die Frage, um die es § 20 eigentlich geht: Das Verblinden passiert im Browser, und damit ist
+der ausgelieferte Client die Stelle, an der das Wahlgeheimnis unbemerkt abgeschaltet werden könnte.
+
+Die App liefert allen Client-Code als **unveränderte Dateien** unter `/static/` aus — nichts wird
+gebündelt, minifiziert oder in die Seite hineingeschrieben. Ein Build-Schritt, der reproduzierbar
+sein müsste, existiert deshalb gar nicht: Was im Repository steht, geht Byte für Byte über die
+Leitung. Prüfen lässt sich das **ohne diesen Server zu fragen**:
+
+```bash
+# Was liefert die Instanz aus:
+curl -s https://eid-poll.onrender.com/static/blind.js | sha256sum
+# Was ist veröffentlicht — im Klon, Ordner app/:
+sha256sum static/blind.js
+# Alle Client-Dateien auf einmal:
+LC_ALL=C sh -c 'find static -type f | sort | xargs sha256sum | sha256sum'
+```
+
+Beide Größen stammen aus verschiedenen Quellen, keine aus einer Behauptung der App. `/version`
+nennt unter `client` denselben Gesamthash und jede Datei einzeln, die Nachweis-Seite jeder Umfrage
+zeigt Liste und Prüfbefehl — bequem, aber nicht nötig: Wer selbst abruft und selbst hasht, braucht
+die Auskunft nicht.
+
+Damit die Liste nicht *weniger* deckt, als sie aussieht, gibt es keinen ausführbaren Inline-Code
+mehr in den Seiten (EIP-T-007; die Verdrahtung liegt in `static/poll.js`, `admin.js`, `debug.js`,
+`theme.js`, umfragespezifische Werte kommen als JSON-Datenblock). Fällt jemand dahinter zurück,
+meldet `stand.client_luecken()` das als Inkonsistenz im Debug-Modul.
+
+**Was das nicht leistet.** Der Vergleich entlarvt eine Auslieferung, die für alle vom
+veröffentlichten Stand abweicht. Er entlarvt **nicht** einen Server, der ausgerechnet einem
+einzelnen Besucher anderen Code schickt — dagegen hilft nur, dass mehrere unabhängig abrufen und
+vergleichen. Und er hilft niemandem, der nicht nachrechnet. Vollständig gelöst wäre das Problem erst
+mit signierter App oder Browser-Erweiterung statt Web-Code (RFC § 12).
 
 Der Inhalt kommt aus Markdown-Dateien im App-Ordner, die außerhalb erzeugt werden
 (`scripts/sync_public_docs.py`). Eine handgepflegte Zweitfassung im Template wäre nach § 20 selbst
@@ -356,17 +409,19 @@ static/ballot.js (+ blind.js)            web.py          HTTP, Cookies
 | Datei | Rolle |
 |---|---|
 | `auth.py` | `authenticate() -> pseudonym`. `CodeAuthenticator` aktiv (Zugangscode statt geprüftem Ausweis); `SamlEidAuthenticator` ist die Hülle für den echten eID-Flow. |
-| `blind.py` | Blindsignatur, Serverseite (RFC 9474, RSABSSA-SHA384-PSS-Deterministic, 2048 Bit). |
+| `blind.py` | Blindsignatur, Serverseite (RFC 9474, `RSABSSA-SHA384-PSSZERO-Deterministic`, 3072 Bit). `testvektor()` rechnet Anhang A.4 des RFC nach. |
+| `rfc9474_a4.json` | Der Testvektor aus RFC 9474 Anhang A.4, wörtlich übernommen. Python und JavaScript prüfen gegen dieselbe Datei — zwei getrennte Kopien könnten getrennt falsch werden. |
 | `static/blind.js` | Dieselbe Krypto im Browser. Beide Seiten müssen bitgenau gleich rechnen. |
 | `static/ballot.js` | Der Weg einer Stimme im Browser: Token erzeugen, verblinden, signieren lassen, entblinden, abgeben — plus der Zwischenstand, wenn die Abgabe danach abbricht (EIP-ADR-20260725-002). `blind.js` rechnet, `ballot.js` führt. `templates/poll.html` enthält nur noch die DOM-Verdrahtung. |
 | `static/beleg.js` | Der Beleg: Kassenbon, QR-Code, Textdatei. Reine Darstellung — kein Krypto, kein Netz, kein Speicher. |
-| `store.py` | SQLite: `polls`, `eligibility`, `spent`, `board`, `batches` und der kurzlebige `issue_retry` (EIP-T-070) — ohne Eingangsreihenfolge (`WITHOUT ROWID`, EIP-T-033 E). Puffert Einträge und veröffentlicht sie als Batch. Alle Zugriffe — auch lesende — laufen über ein `RLock`, weil sich alle Threads eine Verbindung teilen (EIP-T-019). |
+| `store.py` | SQLite der **Board-Seite**: `polls`, `spent`, `board`, `batches` — ohne Eingangsreihenfolge (`WITHOUT ROWID`, EIP-T-033 E). Puffert Einträge und veröffentlicht sie als Batch. Enthält auch die gemeinsame Basis beider Speicher (`SqliteStore`: config, `vernichte_config`, `kopiere_ohne_geheimnisse`). Alle Zugriffe — auch lesende — laufen über ein `RLock`, weil sich alle Threads eine Verbindung teilen (EIP-T-019). |
+| `berechtigung_store.py` | SQLite der **Berechtigungsseite** (EIP-T-033, Baustein G): `eligibility`, der kurzlebige `issue_retry` (EIP-T-070) und alle Schlüssel, die mit dem Pseudonym zu tun haben (`poll_secret`, `poll_key`, `cookie_secret`). Eigene Datei neben der Board-Datenbank — ein Join über beide Seiten ist damit eine bewusste Handlung über zwei Verbindungen, kein `SELECT` über zwei Tabellen derselben Datei. Die Trennlinie ist die künftige Betreibergrenze aus Stufe 2. |
 | `board_eintrag.py` | Das Eintragsformat: kanonisches JSON, Blatt-Hash, Merkle-Baum, Batch-Kette, Konstruktoren (`vote`, `token_issued`, `poll_open` — trägt den öffentlichen Token-Schlüssel der Umfrage —, `poll_closed`) und `parse(entry) -> Vote \| TokenIssued \| PollOpen \| PollClosed \| Unlesbar`. Rohe Dicts baut und liest niemand mehr selbst. Ein Eintrag, den `parse` nicht deuten kann, wird zu `Unlesbar` — er zählt nirgends mit und macht das Ergebnis unbelastbar, statt still zu verschwinden. |
 | `verifikation.py` | Die gesamte Prüfung über das veröffentlichte Board: `pruefe(batches, options) -> Pruefbericht` — Merkle-Wurzeln, Batch-Kette, Signaturen, Abrechnung, Auszählung. Den öffentlichen Schlüssel holt sie sich aus dem Board selbst (`schluessel_aus_board`); ein unabhängig mitgegebener wird dagegen gehalten. Ohne Datenbank, ohne privaten Schlüssel, auch als Kommandozeilen-Werkzeug für Dritte lauffähig. |
 | `auditor.py` | Die unabhängige Gegenprobe (EIP-T-071): eine Datei, kein Import aus dem Projekt, rechnet Struktur, Signaturen, Token-Eindeutigkeit, Abrechnung und Auszählung allein aus dem Board-Export nach und hält sie gegen `/api/status`. Prüft mit `--beleg` auch Beleg-Signatur und Inklusionspfad. Gehört bewusst **nicht** zum Kern — sie darf nichts von ihm wissen. |
 | `poll_service.py` | Phasenlogik, Regeln, Konsistenzprüfung. Die Auszählung selbst delegiert es an `verifikation.py` und übersetzt Befunde in Abweisungen. Hält den Lebenszyklus beider Umfrage-Schlüssel: erzeugen beim Anlegen, `vernichte_poll_secret()` und `vernichte_poll_key()` beim Schließen. Den privaten Signaturschlüssel liest es bewusst **ohne Zwischenspeicher** aus der Datenbank — ein Cache im Prozess hielte ihn über seine Vernichtung hinaus am Leben. |
 | `demo.py` | Die Angriffsdemos aus §9 — außerhalb des Kerns (EIP-T-050). Sie benutzen `PollService` von außen und schreiben an der Anwendung vorbei direkt in die Datenbank, weil genau das das Angreifermodell ist: Wer die Platte hat, braucht keine API. Verdrahtet nur bei `Settings.demos` (`EIDPOLL_DEMOS`, lokal an, öffentlich aus). |
-| `debug.py` | Ringpuffer im Prozessspeicher (500 Ereignisse), bewusst keine zweite Wahrheit. |
+| `debug.py` | Ringpuffer im Prozessspeicher (500 Ereignisse je Log), bewusst keine zweite Wahrheit. Drei getrennte Logs — Berechtigung, Board, Betrieb (EIP-T-033 G); `/debug` führt sie erst beim Anzeigen zusammen. |
 | `stand.py` | Welcher Stand hier läuft (`/version`) und ob er vom veröffentlichten abweicht (EIP-T-074, Kodex § 20). Der Dateihash ist so definiert, dass ihn ein Dritter mit `git ls-files` und `sha256sum` nachrechnen kann — eine Definition für Instanz, Prüfskript und Außenstehende. Bildet die `.gitignore` in Python nach, weil der Container kein git hat. |
 | `web.py` | Seiten und JSON-API. Gebaut wird eine Instanz von `create_app(store_path, authenticator, settings)`: Datenbankpfad, Authentifizierung und Betriebsmodus stehen in der Signatur, nicht im Modul. Den echten eID-Flow einzusetzen heißt deshalb, `SamlEidAuthenticator` zu übergeben — ohne Änderung an `web.py`. Für uvicorn bleibt `web:app` der Einstieg (aus der Umgebung, erst beim Zugriff gebaut). |
 
@@ -404,12 +459,30 @@ keine Konstante — dauert die Bearbeitung länger als der Floor, ist die Dauer 
 gegen Korrelation über IP-Adresse und Uhrzeit auf Netzwerkebene hilft beides nicht (Abschnitt 5;
 der anonyme Zustellkanal ist EIP-T-034).
 
+Auch die **Prüfseite** gehört zur Sitzungstrennung: `/verify` nahm das Token früher als
+GET-Parameter entgegen — wer nach der Abstimmung angemeldet prüfte, lieferte dem Server Pseudonym
+(Session-Cookie) und Token in einem Request. Die Suche läuft deshalb jetzt im Browser
+(`static/verify.js`): Der Server liefert das Board als Datei aus, gesucht wird lokal, und das Token
+steht im URL-Fragment (`#`), das der Browser nie mitsendet. Der Server erfährt nur, dass jemand das
+Board dieser Umfrage geladen hat.
+
+**Getrennte Speicher und getrennte Logs (EIP-T-033, Baustein G):** Eligibility-Ledger und Board
+liegen in zwei Datenbankdateien (`store.py` / `berechtigung_store.py`, der Pfad der zweiten wird aus
+`EIDPOLL_DB` abgeleitet), und das Debug-Modul führt drei getrennte Logs — Berechtigungsseite
+(eID-Anmeldung, Token-Ausgabe, Umfrage-Schlüssel), Board-Seite (Stimmabgabe, Batches) und Betrieb.
+`/debug` führt sie erst beim Anzeigen zusammen. Ehrlich dazu: Beide Seiten laufen weiter in
+**einem** Prozess bei **einem** Betreiber — die Trennung macht versehentliche Verkettung im Code
+unmöglich und bereitet die Betreiber-Trennung aus Stufe 2 vor, sie ersetzt sie nicht. Und weil die
+beiden Ledger-Zahlen nicht mehr aus einer Transaktion kommen, kann die Konsistenzprüfung unter Last
+einen Durchlauf lang eine Abweichung zeigen, die beim nächsten Durchlauf verschwindet — eine
+bleibende Meldung ist ein Befund, eine verschwindende war der Schnappschuss-Effekt der zwei Dateien.
+
 ### Einstellungen
 
 | Variable | Voreinstellung | Zweck |
 |---|---|---|
 | `EIDPOLL_PORT` | `8731` | Port (nur `start.sh`) |
-| `EIDPOLL_DB` | `app/data/eidpoll.sqlite3` | Datenbankdatei |
+| `EIDPOLL_DB` | `app/data/eidpoll.sqlite3` | Board-Datenbank; die Berechtigungs-Datenbank liegt daneben (`<name>.berechtigung.sqlite3`, EIP-T-033 G) |
 | `EIDPOLL_ADMIN_TOKEN` | `admin` | Admin-Zugang |
 | `EIDPOLL_ANTWORT_FLOOR_S` | `0.3` | Mindest-Antwortzeit der Phasen-Routen in Sekunden, `0` schaltet ab (EIP-T-033 F) |
 | `EIDPOLL_RETRY_CACHE_H` | `24` | Lebensdauer des Wiederhol-Puffers der Token-Ausgabe in Stunden, `0` schaltet ab (EIP-T-070) |
@@ -420,7 +493,7 @@ Schließen vernichtet:
 
 | Schlüssel | Wozu | Wann weg |
 |---|---|---|
-| `poll_key:{id}` | signiert die Stimm-Token dieser Umfrage (RSA 2048, RFC 9474) | beim Schließen |
+| `poll_key:{id}` | signiert die Stimm-Token dieser Umfrage (RSA 3072, RFC 9474) | beim Schließen |
 | `poll_secret:{id}` | leitet den Wahlberechtigungs-Schlüssel aus dem Pseudonym ab | beim Schließen |
 
 Der *öffentliche* Teil des Token-Schlüssels steht im Board (`POLL_OPEN`) und überlebt dort — sonst
@@ -432,9 +505,11 @@ Beleg-Schlüssel (Ed25519) und der Cookie-Schlüssel; beide signieren nichts, wa
 ### Tests
 
 ```bash
-python3 app/blind.py         # Krypto-Roundtrip
+python3 app/blind.py         # RFC-9474-Testvektor A.4 und Roundtrip, Serverseite
+node app/blind_vektor.mjs    # derselbe Vektor gegen static/blind.js, Browserseite
 python3 app/smoke_test.py    # sieben Abnahmepunkte serverseitig, plus beide Angriffe
-                             # darin: Board-Prüfung ohne SQLite und ohne TestClient
+                             # darin: Board-Prüfung ohne SQLite und ohne TestClient,
+                             # und beide Vektorprüfungen (die JS-Seite über node)
 node app/ballot_test.mjs     # Stimmzettel-Flow ohne Browser: Abbruch zwischen Signatur
                              # und Abgabe, Wiederverwendung derselben Berechtigung
 
@@ -442,10 +517,19 @@ cd app && EIDPOLL_DB=/tmp/bt.sqlite3 python3 -m uvicorn web:app --port 8899 &
 python3 app/browser_test.py  # derselbe Durchlauf im echten Browser
 ```
 
-`browser_test.py` ist der wichtigste: nur dort zeigt sich, ob `blind.js` bitgleich zu `blind.py`
-rechnet. Weicht es ab, weist der Server die Stimme als „Token-Signatur ungültig" ab.
-`ballot_test.mjs` prüft das ausdrücklich nicht — dort ist der Server gestellt und die Signatur
-eine Attrappe; geprüft wird allein der Zustandsverlauf um EIP-ADR-20260725-002.
+Die drei Krypto-Tests prüfen verschiedene Dinge und ersetzen einander nicht:
+
+- **`blind.py` und `blind_vektor.mjs`** halten je eine Seite gegen den RFC. Sie beantworten die
+  Frage, ob die Implementierung rechnet, was der Standard meint — mit Zahlen, die nicht aus diesem
+  Projekt stammen. Ohne sie könnten beide Seiten denselben Fehler machen und sich deshalb einig sein.
+- **`browser_test.py`** hält beide Seiten gegeneinander, im echten Browser gegen den echten Server.
+  Nur dort zeigt sich, ob `blind.js` und `blind.py` *miteinander* bitgleich rechnen; weicht es ab,
+  weist der Server die Stimme als „Token-Signatur ungültig" ab.
+- **`ballot_test.mjs`** prüft die Krypto ausdrücklich nicht — dort ist der Server gestellt und die
+  Signatur eine Attrappe; geprüft wird allein der Zustandsverlauf um EIP-ADR-20260725-002.
+
+Fehlt `node`, meldet `smoke_test.py` die Browser-Seite als ungeprüfte Lücke statt den Prüffall
+stillschweigend zu überspringen.
 
 ---
 
@@ -465,11 +549,55 @@ Test-Ausweise; nichts davon liegt derzeit vor. Auszutauschen ist dann genau eine
 und Ledger bleiben unberührt.
 
 **Keine auditierte Krypto-Bibliothek.** RFC 9474 ist hier selbst implementiert, weil es für Python
-keine geprüfte Umsetzung gibt (PyPI-Suche 2026-07-25: keine Distribution unter
-`blind-rsa-signatures`, `blind_signatures`, `blindsig`, `rsa-blind-signatures`, `pyblindsig`).
+keine geprüfte Umsetzung gibt (PyPI-Suche **2026-08-01**: keine Distribution unter
+`blind-rsa-signatures`, `blind_signatures`, `blindsig`, `rsa-blind-signatures`, `pyblindsig`,
+`rsabssa`, `blind-signature`, `pyblind-rsa`, `blindrsa`, `py-blind-rsa`, `rfc9474`).
 Geprüft zugekauft sind SHA-384 und die PSS-Verifikation aus `cryptography`; selbst geschrieben sind
 EMSA-PSS-ENCODE, MGF1 und die Blinding-Arithmetik — in Python und in JavaScript. Deutlich besser
 als der textbook-Chaum des Prototyps, aber kein Ersatz für einen Audit.
+
+Was seit EIP-T-008 dazugekommen ist und was nicht: Beide Seiten rechnen den **Testvektor aus
+RFC 9474 Anhang A.4** nach, Schritt für Schritt und mit dem Blendfaktor aus dem RFC statt einem
+eigenen (Abschnitt „Tests"). Das schließt die Klasse von Fehlern aus, bei denen die Implementierung
+in sich stimmig ist und trotzdem nicht das rechnet, was der Standard meint — genau die Klasse, die
+ein Roundtrip-Test nicht sieht. Es schließt *nicht* aus, was ein Audit sähe: Seitenkanäle,
+Zeitverhalten, Speicherbehandlung von Schlüsselmaterial. Der Vektor sagt „richtig gerechnet", nicht
+„sicher implementiert".
+
+**Für die Browser-Seite gibt es inzwischen eine Bibliothek, sie ist aber nicht eingebaut.**
+`@cloudflare/blindrsa-ts` (0.4.6, Stand 2026-08-01) setzt RFC 9474 um und wird von Cloudflare für
+Privacy Pass gepflegt. Der Einbau zieht eine npm-/Bundler-Toolchain in eine App, die heute nacktes
+ES-Modul ausliefert und jede Client-Datei einzeln hashbar hält (§ 20, EIP-T-007) — das ist eine
+Architekturentscheidung und keine Abhängigkeitspflege → EIP-T-079. Für Python gibt es weiterhin
+nichts.
+
+**Der Browser prüft die entblindete Signatur nicht selbst.** RFC 9474 §4.4 Schritt 5 sieht vor,
+dass der Client sein Ergebnis vor der Weitergabe verifiziert; `static/blind.js` reicht es
+ungeprüft an `ballot.js` weiter, die Prüfung passiert erst serverseitig bei der Stimmabgabe.
+Sicherheitslücke ist das nicht — der Server nimmt eine ungültige Signatur ohnehin nicht an, und der
+§7.3-Angriff, gegen den die Prüfung mit schützt, greift hier nicht (siehe unten). Es kostet
+Diagnosefähigkeit: eine kaputte Serverantwort sieht für Teilnehmende aus wie ein abgewiesener
+Stimmzettel. `blind.py:finalize()` kann seit EIP-T-008 auf Wunsch prüfen, die Browser-Seite
+noch nicht → EIP-T-080.
+
+**Warum PSSZERO-Deterministic vertretbar ist.** RFC 9474 §5 empfiehlt die *Randomized*-Varianten
+und knüpft die deterministische an eine Bedingung, die §7.3 nennt: Ein Signierender mit bösartig
+erzeugtem Schlüssel kann aus dem Blinding Rückschlüsse auf die Eingabe ziehen, wenn er sie erraten
+kann. Hier ist die Eingabe das Stimm-Token: 32 Byte aus `crypto.getRandomValues`, im Browser
+erzeugt, lange nachdem der Schlüssel feststand. Bedingung (2) aus §7.3 ist damit erfüllt. Das ist
+kein Nebensatz, denn der Betreiber erzeugt den Signaturschlüssel allein — der Fall aus §7.3 *ist*
+das Angreifermodell dieser App, und er trägt allein wegen dieser Entropie nicht. Deterministisch
+gebraucht wird die Variante, weil ein Token sich im Board unter genau einer Signatur wiederfinden
+lassen muss.
+
+**Schlüssellänge: 3072 Bit, entschieden am 2026-08-01.** Vorher 2048. Ausschlaggebend war nicht
+akute Schwäche von 2048, sondern Konsistenz nach außen: Die Basisidee setzt 3072 an, BSI TR-02102-1
+empfiehlt für RSA mindestens 3000 Bit, und `EIP-RFC-20260726-002` beruft sich auf BSI-Vorgaben —
+darunter zu liegen wäre im Pitch angreifbar gewesen. Gegen den Wechsel sprach nichts Messbares:
+Schlüsselerzeugung ~0,2 s, Blinding 1,3 ms, Signieren und Entblinden 82 ms statt 24 ms; im Browser
+bleibt es billig, weil der öffentliche Exponent 65537 nur 17 Bit hat. Der Wert gilt für neu
+angelegte Umfragen — bereits laufende behalten ihren 2048-Bit-Schlüssel und funktionieren weiter,
+weil der Modulus aus dem Schlüssel kommt und nicht aus der Konstanten.
 
 **Keine Nötigungsresistenz.** Der Beleg ist eine Quittung. Bewusst so entschieden.
 
@@ -479,7 +607,9 @@ Krypto hier wirkungslos ist (§13, Risiko-Knoten 1) — und eine vom Betreiber s
 Anonymisierung schützt nicht gegen ihn.
 
 **Kein geprüfter Client-Code.** Der Browser-Krypto-Code kommt vom Betreiber (§10, Helios-Problem).
-Ein reproduzierbarer Build-Hash zum Abgleich ist nicht eingerichtet.
+Abgleichbar ist er seit dem 2026-08-01 (Abschnitt oben) — geprüft ist er damit nicht: Der Vergleich
+zeigt, dass ausgeliefert wird, was veröffentlicht ist, nicht dass der veröffentlichte Code richtig
+rechnet. Und er entlarvt keine Auslieferung, die einzelne Besucher gezielt anders bedient.
 
 **Nicht gebaut** (§12): verteilte Schwellensignatur, externer Merkle-Anker, Produktiv-Berechtigungs-
 zertifikat, eIDAS-Ausland, Multi-Tenant, mehrere Fragen oder Ranking. Die Oberfläche verspricht

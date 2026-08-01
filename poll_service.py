@@ -13,6 +13,15 @@ rechnet ueber die verifizierte Kette - sonst prueft die Oeffentlichkeit eine
 Struktur, die fuer das veroeffentlichte Ergebnis nicht massgeblich ist
 (§7, Prototyp-Fund 1).
 
+Seit EIP-T-033 (Baustein G) haelt dieser Kern **zwei Speicher** mit getrennten
+Zugriffspfaden: ``berechtigung`` (Eligibility-Ledger, Wiederhol-Puffer, alle
+Schluessel der Pseudonym-Seite) und ``board_store`` (Umfragen, Board, Batches,
+Vote-Ledger, Beleg-Schluessel). Die Trennlinie ist die kuenftige
+Betreibergrenze aus Stufe 2 (EIP-T-037/T-040): Dienst A kennt das Pseudonym,
+Dienst B Token und Stimme. Jede Stelle, die beide Seiten liest, tut das
+ausdruecklich und steht unter ``ledger_stand`` oder ``check_consistency`` -
+das ist der bewusste Join, den Baustein G verlangt.
+
 Die Auszaehlung selbst steht seit EIP-T-045 nicht mehr hier, sondern in
 verifikation.py: eine reine Funktion ueber Board-Eintraege und den
 *oeffentlichen* Schluessel, die jeder Dritte ohne diese Datenbank ausfuehren
@@ -28,14 +37,16 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Sequence
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 
 import blind
 import board_eintrag
+from berechtigung_store import BerechtigungsStore
 from board_eintrag import BoardEntry, TokenIssued, Vote, canonical, parse
-from debug import log
+from debug import log, log_berechtigung, log_board
 from store import PollRow, Store
 from verifikation import (
     Accounting,
@@ -63,8 +74,8 @@ class Rejected(Exception):
 
 __all__ = ["Accounting", "Beleg", "ChainStatus", "PollService", "Pruefbericht", "Rejected"]
 
-# Praefix der Umfrage-Schluessel in der config-Tabelle. Beide je Umfrage, beide
-# vernichtet beim Schliessen:
+# Praefix der Umfrage-Schluessel in der config-Tabelle der Berechtigungsseite.
+# Beide je Umfrage, beide vernichtet beim Schliessen:
 #   POLL_SECRET  HMAC-Schluessel der Pseudonym-Ableitung (EIP-T-033, Baustein D)
 #   POLL_KEY     privater Token-Signaturschluessel (EIP-T-069)
 # Der *oeffentliche* Teil des Token-Schluessels steht nicht hier, sondern im
@@ -72,6 +83,16 @@ __all__ = ["Accounting", "Beleg", "ChainStatus", "PollService", "Pruefbericht", 
 # die Auszaehlung nach dem Schliessen nicht mehr nachpruefbar.
 POLL_SECRET = "poll_secret:"
 POLL_KEY = "poll_key:"
+
+
+def berechtigungs_pfad(board_pfad: Path) -> Path:
+    """Der Pfad der Berechtigungs-Datenbank neben der Board-Datenbank.
+
+    Abgeleitet statt konfigurierbar: Zwei getrennt konfigurierbare Pfade waeren
+    zwei Gelegenheiten, sie versehentlich auf dieselbe Datei zu setzen - und
+    genau das soll Baustein G strukturell ausschliessen.
+    """
+    return board_pfad.with_name(board_pfad.stem + ".berechtigung" + board_pfad.suffix)
 
 
 @dataclass(frozen=True)
@@ -102,11 +123,17 @@ class PollService:
     ) -> None:
         """``batch_k`` und ``batch_deckel_s`` sind die Parameter aus ADR E3:
         Mindest-Anonymitaetsmenge je Batch und Zeitdeckel, beide nach aussen zu
-        nennen (Board-Seite, Beleg-Erklaertext).
+        nennen (Board-Seite, Beleg-Erklaertext). ``batch_k`` zaehlt seit
+        EIP-T-076 **Stimmen**, nicht Eintraege - die Zahl ist damit die Menge,
+        unter der sich eine Stimme tatsaechlich verbirgt.
+
+        ``db_path`` ist der Pfad der Board-Datenbank; die Berechtigungs-
+        Datenbank liegt daneben (berechtigungs_pfad, Baustein G).
 
         ``retry_cache_s`` ist die Lebensdauer des Wiederhol-Puffers der
         Token-Ausgabe (EIP-T-070); 0 schaltet ihn ab."""
-        self.store = Store(db_path)
+        self.board_store = Store(db_path)
+        self.berechtigung = BerechtigungsStore(berechtigungs_pfad(db_path))
         self.batch_k = max(1, int(batch_k))
         self.batch_deckel_s = max(60, int(batch_deckel_s))
         self.retry_cache_s = max(0, int(retry_cache_s))
@@ -114,7 +141,7 @@ class PollService:
             # Abgeschaltet heisst auch: kein Rest von vorher. Sonst liefe die
             # Wiederholung nach einem Neustart mit anderer Einstellung weiter,
             # ohne dass jemand sie eingeschaltet haette.
-            self.store.verwirf_wiederhol_puffer()
+            self.berechtigung.verwirf_wiederhol_puffer()
         # Letzter Bericht je Umfrage, damit der Abstimmpfad nicht bei jeder
         # Stimme jede fruehere Signatur neu prueft (EIP-T-051). Nur eine
         # Abkuerzung fuer den laufenden Betrieb: pruefbericht() prueft ohne
@@ -138,31 +165,20 @@ class PollService:
         auch fuer alle Umfragen gleichzeitig. Wer die Datenbank hatte, hatte die
         Teilnahmehistorie je Ausweis.
 
-        Das Secret hat seit der Umstellung keinen Zweck mehr, also darf es nicht
-        liegenbleiben: Solange es da ist, bleiben die Eligibility-Zeilen alter
-        Umfragen auf ihr Pseudonym zurueckrechenbar. Die Vernichtung *ist* der
-        Migrationspfad - sie stellt fuer Altbestaende genau die Eigenschaft her,
-        die D fuer neue Umfragen zusagt.
-
-        Was das fuer eine bereits laufende Umfrage bedeutet, steht bei
-        ``_poll_secret``: Sie kann keine Token mehr ausgeben. Das ist gewollt
-        und faellt sofort auf, statt still eine Doppelabstimmung zu erlauben.
-
-        Fuer ``token_key_pem`` gilt dasselbe eine Ebene hoeher (EIP-T-069): Ein
-        globaler Signaturschluessel, der nie vernichtet wird, laesst sich nach
-        dem Ende jeder Umfrage weiterbenutzen - der Betreiber koennte auch Jahre
-        spaeter gueltige Token nachproduzieren, und ein Token aus Umfrage A
-        gaelte in Umfrage B. Beides faellt mit Schluesseln je Umfrage weg, aber
-        nur, wenn der alte nicht liegenbleibt.
+        Seit der Speicher-Trennung (Baustein G) weist der Board-Store die alte
+        kombinierte Datei ohnehin beim Start ab - praktisch koennen diese
+        Schluessel hier also nicht mehr auftauchen. Die Vernichtung bleibt
+        trotzdem stehen: Sie kostet zwei Lookups und haelt die Zusage auch
+        dann, wenn jemand einen Altbestand von Hand in die neue Datei traegt.
         """
-        if self.store.vernichte_config("server_secret"):
-            log.info(
+        if self.berechtigung.vernichte_config("server_secret"):
+            log_berechtigung.info(
                 "keys",
                 "Altes globales server_secret vernichtet - Voter-Keys laufen jetzt ueber "
                 "Umfrage-Schluessel (EIP-T-033, D).",
             )
-        if self.store.vernichte_config("token_key_pem"):
-            log.info(
+        if self.berechtigung.vernichte_config("token_key_pem"):
+            log_berechtigung.info(
                 "keys",
                 "Alter globaler Token-Signaturschluessel vernichtet - Tokens werden jetzt je "
                 "Umfrage signiert und der Schluessel beim Schliessen vernichtet (EIP-T-069).",
@@ -177,24 +193,28 @@ class PollService:
         heisst: wer den einen austauschen will (etwa um alle Sitzungen zu
         entwerten), trifft den anderen mit. ``voter_key`` dient deshalb nur noch
         der Pseudonym-Ableitung.
+
+        Liegt auf der Berechtigungsseite (Baustein G): Die Sitzung *ist* die
+        eID-Identitaet, und die Board-Datei soll nichts halten, was mit ihr zu
+        tun hat.
         """
-        stored = self.store.get_config("cookie_secret")
+        stored = self.berechtigung.get_config("cookie_secret")
         if stored:
             return bytes.fromhex(stored)
         secret = secrets.token_bytes(32)
-        self.store.set_config("cookie_secret", secret.hex())
+        self.berechtigung.set_config("cookie_secret", secret.hex())
         return secret
 
     # -- Token-Signaturschluessel je Umfrage (EIP-T-069) --------------------
     def _erzeuge_poll_key(self, poll_id: str) -> str:
         """Erzeugt das Schluesselpaar dieser Umfrage. Rueckgabe: das oeffentliche PEM.
 
-        Der private Teil geht in die config-Tabelle und wird beim Schliessen
-        vernichtet; der oeffentliche wandert vom Aufrufer in den
-        POLL_OPEN-Eintrag des Boards und ueberlebt dort.
+        Der private Teil geht in die config-Tabelle der Berechtigungsseite und
+        wird beim Schliessen vernichtet; der oeffentliche wandert vom Aufrufer
+        in den POLL_OPEN-Eintrag des Boards und ueberlebt dort.
         """
         key = blind.generate_key()
-        self.store.set_config(
+        self.berechtigung.set_config(
             POLL_KEY + poll_id,
             key.private_bytes(
                 serialization.Encoding.PEM,
@@ -202,9 +222,10 @@ class PollService:
                 serialization.NoEncryption(),
             ).decode(),
         )
-        log.info(
+        log_berechtigung.info(
             "keys",
-            f"Token-Signaturschluessel fuer '{poll_id}' erzeugt (2048 Bit, RFC 9474) - gilt "
+            f"Token-Signaturschluessel fuer '{poll_id}' erzeugt "
+            f"({key.key_size} Bit, RFC 9474 {blind.VARIANTE}) - gilt "
             "nur fuer diese Umfrage und wird beim Schliessen vernichtet.",
             poll=poll_id,
         )
@@ -224,7 +245,7 @@ class PollService:
         genau die Zusage aushebeln, um derentwillen er vernichtet wird. Die
         Kosten sind ein PEM-Parse je Token-Ausgabe, also einmal pro Person.
         """
-        pem = self.store.get_config(POLL_KEY + poll_id)
+        pem = self.berechtigung.get_config(POLL_KEY + poll_id)
         if pem is None:
             raise Rejected(
                 "Fuer diese Umfrage gibt es keinen Signaturschluessel mehr. Entweder ist sie "
@@ -259,7 +280,7 @@ class PollService:
         Batch-Kette, ist also weder austauschbar noch verlierbar - und ein
         Dritter liest ihn aus derselben Quelle (verifikation.schluessel_aus_board).
         """
-        key, _, fehler = schluessel_aus_board(self.store.veroeffentlichte_batches(poll_id))
+        key, _, fehler = schluessel_aus_board(self.board_store.veroeffentlichte_batches(poll_id))
         if key is None:
             raise Rejected(
                 f"Der Token-Schluessel der Umfrage '{poll_id}' ist im Board nicht auffindbar "
@@ -268,7 +289,7 @@ class PollService:
         return key
 
     def poll_pubkey_pem(self, poll_id: str) -> str:
-        _, pem, _ = schluessel_aus_board(self.store.veroeffentlichte_batches(poll_id))
+        _, pem, _ = schluessel_aus_board(self.board_store.veroeffentlichte_batches(poll_id))
         return pem or ""
 
     def poll_params(self, poll_id: str) -> tuple[int, int]:
@@ -282,14 +303,18 @@ class PollService:
         Punkt 4): ein Schluessel, ein Zweck (Muster EIP-T-048). Der Token-
         Schluessel signiert Berechtigungen, dieser hier die Zusage, dass ein
         Blatt veroeffentlicht wird - wer den einen tauscht, darf den anderen
-        nicht mit entwerten."""
-        pem = self.store.get_config("beleg_key_pem")
+        nicht mit entwerten.
+
+        Liegt auf der Board-Seite (Baustein G): Der Beleg gehoert zur Stimme,
+        nicht zur Identitaet - in Stufe 2 signiert ihn Dienst B.
+        """
+        pem = self.board_store.get_config("beleg_key_pem")
         if pem:
             key = serialization.load_pem_private_key(pem.encode(), password=None)
             assert isinstance(key, ed25519.Ed25519PrivateKey)
             return key
         key = ed25519.Ed25519PrivateKey.generate()
-        self.store.set_config(
+        self.board_store.set_config(
             "beleg_key_pem",
             key.private_bytes(
                 serialization.Encoding.PEM,
@@ -297,7 +322,7 @@ class PollService:
                 serialization.NoEncryption(),
             ).decode(),
         )
-        log.info("keys", "Neuer Beleg-Signaturschluessel erzeugt (Ed25519).")
+        log_board.info("keys", "Neuer Beleg-Signaturschluessel erzeugt (Ed25519).")
         return key
 
     @property
@@ -320,10 +345,10 @@ class PollService:
     # -- Pseudonym-Ableitung (§6: keine umfrageuebergreifende Verkettung) ---
     def _erzeuge_poll_secret(self, poll_id: str) -> None:
         """Legt den Umfrage-Schluessel an. Genau einmal, beim Anlegen der Umfrage."""
-        self.store.set_config(POLL_SECRET + poll_id, secrets.token_bytes(32).hex())
+        self.berechtigung.set_config(POLL_SECRET + poll_id, secrets.token_bytes(32).hex())
 
     def _poll_secret(self, poll_id: str) -> bytes:
-        stored = self.store.get_config(POLL_SECRET + poll_id)
+        stored = self.berechtigung.get_config(POLL_SECRET + poll_id)
         if stored is None:
             # Bewusst *nicht* stillschweigend einen neuen Schluessel erzeugen.
             # Ein neuer Schluessel hiesse: alle bisherigen Eligibility-Zeilen
@@ -348,16 +373,16 @@ class PollService:
         Umfragen hinweg ist ein Meinungsprofil damit strukturell unmoeglich und
         nicht nur unerwuenscht.
 
-        Die Grenze der Zusage steht bei ``Store.vernichte_config``: sie gilt fuer
-        die Datenbankdatei. Fuer Sicherungskopien gilt seit EIP-T-067 die Regel
-        aus EIP-RPT-20260731-002 §3.3 - keine Kopie, die diese Vernichtung
-        ueberdauert, und wenn eine angelegt wird, dann ueber
-        ``Store.kopiere_ohne_geheimnisse``. Die Zusage ist damit eine ueber
-        einen Bestand und nicht mehr nur ueber eine Datei.
+        Die Grenze der Zusage steht bei ``SqliteStore.vernichte_config``: sie
+        gilt fuer die Datenbankdatei. Fuer Sicherungskopien gilt seit EIP-T-067
+        die Regel aus EIP-RPT-20260731-002 §3.3 - keine Kopie, die diese
+        Vernichtung ueberdauert, und wenn eine angelegt wird, dann ueber
+        ``kopiere_ohne_geheimnisse``. Die Zusage ist damit eine ueber einen
+        Bestand und nicht mehr nur ueber eine Datei.
         """
-        vernichtet = self.store.vernichte_config(POLL_SECRET + poll_id)
+        vernichtet = self.berechtigung.vernichte_config(POLL_SECRET + poll_id)
         if vernichtet:
-            log.info(
+            log_berechtigung.info(
                 "keys",
                 f"Umfrage-Schluessel fuer '{poll_id}' vernichtet - die Eligibility-Eintraege "
                 "dieser Umfrage sind ab jetzt auf kein Pseudonym mehr zurueckrechenbar.",
@@ -377,12 +402,12 @@ class PollService:
         ersetzt sie nicht.
 
         Der oeffentliche Teil bleibt im Board und damit pruefbar; die Grenze der
-        Loeschzusage steht bei ``Store.vernichte_config``, die Regel fuer
+        Loeschzusage steht bei ``SqliteStore.vernichte_config``, die Regel fuer
         Sicherungskopien bei ``vernichte_poll_secret`` (EIP-T-067).
         """
-        vernichtet = self.store.vernichte_config(POLL_KEY + poll_id)
+        vernichtet = self.berechtigung.vernichte_config(POLL_KEY + poll_id)
         if vernichtet:
-            log.info(
+            log_berechtigung.info(
                 "keys",
                 f"Signaturschluessel fuer '{poll_id}' vernichtet - es koennen keine gueltigen "
                 "Stimm-Token fuer diese Umfrage mehr hergestellt werden, auch nicht von uns. "
@@ -403,7 +428,7 @@ class PollService:
 
     # -- Umfragen ----------------------------------------------------------
     def poll(self, poll_id: str) -> PollRow:
-        poll = self.store.poll(poll_id)
+        poll = self.board_store.poll(poll_id)
         if poll is None:
             raise Rejected(
                 f"Die Umfrage '{poll_id}' gibt es nicht. Bitte den Link oder die Umfrage-ID "
@@ -412,7 +437,7 @@ class PollService:
         return poll
 
     def polls(self) -> list[PollRow]:
-        return self.store.polls()
+        return self.board_store.polls()
 
     def create_poll(self, poll_id: str, question: str, options: list[str]) -> PollRow:
         poll_id = poll_id.strip()
@@ -426,7 +451,7 @@ class PollService:
             raise Rejected("Mindestens zwei Optionen noetig.")
         if len(set(options)) != len(options):
             raise Rejected("Optionen muessen verschieden sein.")
-        if self.store.poll(poll_id) is not None:
+        if self.board_store.poll(poll_id) is not None:
             raise Rejected(f"Umfrage '{poll_id}' existiert bereits.")
 
         # Beide Schluessel vor der Umfrage: eine Umfrage, die es gibt, aber fuer
@@ -434,15 +459,17 @@ class PollService:
         # nicht.
         self._erzeuge_poll_secret(poll_id)
         pubkey_pem = self._erzeuge_poll_key(poll_id)
-        self.store.create_poll(poll_id, question, options, datetime.now().isoformat(timespec="seconds"))
-        self.store.puffer_eintrag(
+        self.board_store.create_poll(
+            poll_id, question, options, datetime.now().isoformat(timespec="seconds")
+        )
+        self.board_store.puffer_eintrag(
             poll_id, board_eintrag.poll_open(poll_id, question, options, pubkey_pem)
         )
         # POLL_OPEN wird sofort veroeffentlicht: das Anlegen ist eine
         # Betreiberhandlung, ihr Zeitpunkt ist ohnehin oeffentlich (die Umfrage
         # erscheint auf der Startseite). Die Mindestmenge k schuetzt
         # Teilnahme-Eintraege, nicht Verwaltungsakte.
-        self.store.publiziere(poll_id)
+        self.board_store.publiziere(poll_id)
         log.info("poll", f"Umfrage '{poll_id}' angelegt.", options=options)
         return self.poll(poll_id)
 
@@ -450,21 +477,24 @@ class PollService:
         poll = self.poll(poll_id)
         if poll.closed:
             raise Rejected("Umfrage ist bereits geschlossen.")
-        self.store.close_poll(poll_id)
-        self.store.puffer_eintrag(poll_id, board_eintrag.poll_closed(poll_id))
+        self.board_store.close_poll(poll_id)
+        self.board_store.puffer_eintrag(poll_id, board_eintrag.poll_closed(poll_id))
         # Beim Schliessen wird der gesamte Puffer sofort veroeffentlicht
         # (ADR E3): kein Beleg wartet ueber das Ende hinaus. Der letzte Batch
         # darf dabei k unterschreiten - das ist die dokumentierte Grenze des
         # Mechanismus, keine Luecke.
-        batch = self.store.publiziere(poll_id)
-        if batch is not None and len(batch.entries) < self.batch_k + 1:
-            log.info(
-                "batch",
-                f"Letzter Batch {batch.n} von '{poll_id}' mit {len(batch.entries)} "
-                f"Eintraegen veroeffentlicht (unter k={self.batch_k}, bei Schliessung "
-                "zulaessig).",
-                poll=poll_id,
-            )
+        batch = self.board_store.publiziere(poll_id)
+        if batch is not None:
+            stimmen = self._stimmen(batch.entries)
+            if stimmen < self.batch_k:
+                log_board.info(
+                    "batch",
+                    f"Letzter Batch {batch.n} von '{poll_id}' mit {len(batch.entries)} "
+                    f"Eintraegen und {stimmen} Stimmen veroeffentlicht (unter "
+                    f"k={self.batch_k}, bei Schliessung zulaessig).",
+                    poll=poll_id,
+                )
+                self._melde_kleine_menge(poll_id, batch, stimmen, "Schliessung")
         # Erst schliessen, dann vernichten: Waere die Reihenfolge umgekehrt und
         # das Schliessen schluege fehl, liefe eine offene Umfrage ohne
         # Ableitungsschluessel weiter - sie koennte keine Token mehr ausgeben,
@@ -480,34 +510,82 @@ class PollService:
         # Zweck verloren: Es gibt nichts mehr, wofuer eine wiederholte
         # Blindsignatur gut waere (EIP-T-070). Er endet deshalb hier und nicht
         # erst mit seiner Lebensdauer.
-        self.store.verwirf_wiederhol_puffer(poll_id)
+        self.berechtigung.verwirf_wiederhol_puffer(poll_id)
         log.info("poll", f"Umfrage '{poll_id}' geschlossen.")
 
     # -- Batch-Veroeffentlichung (EIP-ADR-20260728-001, E3) -----------------
+    @staticmethod
+    def _stimmen(eintraege: Sequence[BoardEntry]) -> int:
+        """Wie viele VOTE-Eintraege darunter sind - die Anonymitaetsmenge.
+
+        Nicht die Zahl der Eintraege: Im Ein-Klick-Flow erzeugt jede Teilnahme
+        zwei (TOKEN_ISSUED + VOTE), eine Stimme versteckt sich aber nur unter
+        Stimmen. Gemessen in EIP-RPT-20260731-001, geaendert mit EIP-T-076.
+        """
+        return sum(1 for e in eintraege if isinstance(parse(e), Vote))
+
     def publiziere_wenn_faellig(self, poll_id: str) -> Batch | None:
-        """Veroeffentlicht den Puffer, wenn k erreicht oder der Zeitdeckel
-        abgelaufen ist. Wird nach jedem Puffer-Eintrag und periodisch (web.py,
-        Hintergrundaufgabe) aufgerufen - der Deckel darf nicht davon abhaengen,
-        dass zufaellig noch jemand vorbeikommt."""
-        anzahl, seit = self.store.pending_stand(poll_id)
-        if anzahl == 0:
+        """Veroeffentlicht den Puffer, wenn k *Stimmen* beisammen sind oder der
+        Zeitdeckel abgelaufen ist. Wird nach jedem Puffer-Eintrag und periodisch
+        (web.py, Hintergrundaufgabe) aufgerufen - der Deckel darf nicht davon
+        abhaengen, dass zufaellig noch jemand vorbeikommt.
+
+        Gezaehlt werden Stimmen und nicht Eintraege (EIP-T-076): Weil sich der
+        Puffer zufaellig auf TOKEN_ISSUED und VOTE verteilt, entstanden unter
+        Andrang token-lastige Batches, in denen fast jede vierte Stimme unter
+        weniger als 5 anderen lag - die Mindestmenge aus KODEX §2 war damit
+        keine. An Stimmen gebunden faellt dieser Anteil auf null, bei gleicher
+        Batchgroesse und gleicher Wartezeit.
+        """
+        pending = self.board_store.pending(poll_id)
+        if not pending:
             return None
-        faellig_menge = anzahl >= self.batch_k
+        _, seit = self.board_store.pending_stand(poll_id)
+        stimmen = self._stimmen(pending)
+        faellig_menge = stimmen >= self.batch_k
         faellig_zeit = seit is not None and (
             datetime.now() - seit >= timedelta(seconds=self.batch_deckel_s)
         )
         if not (faellig_menge or faellig_zeit):
             return None
-        batch = self.store.publiziere(poll_id)
+        batch = self.board_store.publiziere(poll_id)
         if batch is not None:
-            log.info(
+            log_board.info(
                 "batch",
                 f"Batch {batch.n} von '{poll_id}' veroeffentlicht: "
-                f"{len(batch.entries)} Eintraege "
+                f"{len(batch.entries)} Eintraege, davon {stimmen} Stimmen "
                 f"({'Mindestmenge k erreicht' if faellig_menge else 'Zeitdeckel'}).",
                 poll=poll_id,
             )
+            if not faellig_menge:
+                self._melde_kleine_menge(poll_id, batch, stimmen, "Zeitdeckel")
         return batch
+
+    def _melde_kleine_menge(
+        self, poll_id: str, batch: Batch, stimmen: int, anlass: str
+    ) -> None:
+        """Meldet einen veroeffentlichten Batch unter der Mindestmenge.
+
+        Das ist kein Programmfehler, sondern die dokumentierte Grenze des
+        Mechanismus (ADR E3): Bei duennem Verkehr loest der Zeitdeckel aus, und
+        beim Schliessen wird der Rest in jedem Fall veroeffentlicht. Es ist
+        trotzdem eine *Abweichung von der Zusage* aus KODEX §2 - und die muss
+        der Betreiber sehen, waehrend die Umfrage laeuft, nicht erst hinterher
+        (EIP-T-076). Ein Batch ohne Stimmen bleibt still: Dort ist keine Stimme,
+        die sich verstecken muesste.
+        """
+        if stimmen == 0:
+            return
+        log_board.inconsistency(
+            "batch",
+            f"Batch {batch.n} von '{poll_id}' mit nur {stimmen} "
+            f"{'Stimme' if stimmen == 1 else 'Stimmen'} "
+            f"veroeffentlicht ({anlass}, Mindestmenge k={self.batch_k}) - die "
+            "Anonymitaetsmenge dieser Stimmen ist kleiner als zugesagt.",
+            poll=poll_id,
+            stimmen=stimmen,
+            k=self.batch_k,
+        )
 
     def publiziere_faellige(self) -> None:
         """Zeitdeckel-Durchlauf ueber alle Umfragen (Hintergrundaufgabe)."""
@@ -515,7 +593,7 @@ class PollService:
             try:
                 self.publiziere_wenn_faellig(p.poll_id)
             except Exception as exc:  # ein haengender Puffer ist genau der stille Fehler
-                log.exception("batch", exc)
+                log_board.exception("batch", exc)
 
     # -- Ablauf des Wiederhol-Puffers (EIP-T-070) --------------------------
     def verwirf_abgelaufene_wiederholungen(self) -> int:
@@ -527,11 +605,11 @@ class PollService:
         """
         if not self.retry_cache_s:
             return 0
-        weg = self.store.verwirf_wiederhol_puffer(
+        weg = self.berechtigung.verwirf_wiederhol_puffer(
             aelter_als=datetime.now() - timedelta(seconds=self.retry_cache_s)
         )
         if weg:
-            log.info(
+            log_berechtigung.info(
                 "phase-a",
                 f"{weg} abgelaufene Eintraege des Wiederhol-Puffers geloescht "
                 f"(Lebensdauer {self.retry_cache_s // 3600} h, EIP-T-070).",
@@ -558,23 +636,28 @@ class PollService:
         # Berechtigung verbraucht, ohne dass jemand ein Token bekommen haette.
         try:
             blind_sig = blind.blind_sign(
-                blinded_msg, zahlen.n, signaturschluessel.private_numbers().d
+                blinded_msg, zahlen.n, signaturschluessel.private_numbers().d, zahlen.e
             )
         except ValueError as exc:
             raise Rejected(f"Verblindete Anfrage ungueltig: {exc}") from exc
 
         blinded_h = hashlib.sha256(blinded_msg).hexdigest()
 
-        # Ein Ausweis, ein Token: pruefen, eintragen und im Board-Puffer
-        # vermerken sind ein Schritt (store.beanspruche_berechtigung, EIP-T-047).
-        vermerkt = self.store.beanspruche_berechtigung(
+        # Ein Ausweis, ein Token: pruefen, eintragen und Wiederhol-Puffer sind
+        # ein Schritt auf der Berechtigungsseite (EIP-T-047, EIP-T-070). Der
+        # TOKEN_ISSUED-Eintrag fuers Board liegt seit Baustein G in der anderen
+        # Datei und folgt als zweiter Schritt; schlaegt er fehl, wird der
+        # Anspruch zurueckgenommen (gib_frei) - das Fenster dazwischen ist der
+        # Preis der Trennung und wird von check_consistency sichtbar gemacht,
+        # nicht von einer Transaktion verdeckt, die es ueber zwei Dateien nicht
+        # gibt.
+        beansprucht = self.berechtigung.beanspruche(
             poll_id,
             key,
-            board_eintrag.token_issued(poll_id),
             blinded_h if self.retry_cache_s else None,
             blind_sig.hex() if self.retry_cache_s else None,
         )
-        if vermerkt is None:
+        if not beansprucht:
             # Verbrauchter Anspruch heisst nicht zwingend "hat sein Token"
             # (EIP-T-070): Die Antwort kann unterwegs verloren gegangen sein -
             # Verbindungsabbruch, geschlossener Tab im falschen Moment. Kommt
@@ -584,12 +667,12 @@ class PollService:
             # ist bitgleich die erste (RSA ist deterministisch), und ein
             # *anderes* blinded_msg faellt unten durch.
             wiederholt = (
-                self.store.wiederhol_signatur(poll_id, key, blinded_h)
+                self.berechtigung.wiederhol_signatur(poll_id, key, blinded_h)
                 if self.retry_cache_s
                 else None
             )
             if wiederholt is not None:
-                log.info(
+                log_berechtigung.info(
                     "phase-a",
                     f"Blindsignatur fuer '{poll_id}' wiederholt - gleiche verblindete "
                     "Anfrage, verlorene Antwort (EIP-T-070).",
@@ -613,11 +696,16 @@ class PollService:
                 "abgestimmt, steht die Stimme im oeffentlichen Board und laesst sich mit dem "
                 "Beleg unter /verify pruefen."
             )
+        try:
+            self.board_store.puffer_eintrag(poll_id, board_eintrag.token_issued(poll_id))
+        except Exception:
+            self.berechtigung.gib_frei(poll_id, key)
+            raise
         # Bewusst ohne voter_key: fuer die Fehlersuche reicht "ein Token wurde
         # ausgegeben". Wer es war, zusammen mit dem Zeitstempel, waere die halbe
         # Zuordnung Person -> Stimme (EIP-T-018). Die Doppelabholung faellt
         # ohnehin ueber den Eligibility-Ledger auf, nicht ueber dieses Log.
-        log.info("phase-a", f"Token blind signiert fuer '{poll_id}'.")
+        log_berechtigung.info("phase-a", f"Token blind signiert fuer '{poll_id}'.")
         self.publiziere_wenn_faellig(poll_id)
         return blind_sig
 
@@ -639,13 +727,14 @@ class PollService:
             raise Rejected("Ungueltiger Stimmzettel (unbekannte Option).")
         # Geprueft wird gegen den Schluessel aus dem Board - dieselbe Quelle, aus
         # der auch ein Dritter prueft, und die einzige, die das Schliessen
-        # ueberlebt (EIP-T-069).
+        # ueberlebt (EIP-T-069). Phase B beruehrt die Berechtigungs-Datenbank
+        # an keiner Stelle (Baustein G).
         if not blind.verify(self.poll_pubkey(poll_id), token, sig):
             raise Rejected("Token-Signatur ungueltig.")
 
         # Ein Token, eine Stimme: verbrauchen und in den Board-Puffer schreiben
-        # sind ein Schritt (store.verbrauche_token, EIP-T-047).
-        vermerkt = self.store.verbrauche_token(
+        # sind ein Schritt (board_store.verbrauche_token, EIP-T-047).
+        vermerkt = self.board_store.verbrauche_token(
             poll_id, token.hex(), board_eintrag.vote(poll_id, token, sig, choices)
         )
         if vermerkt is None:
@@ -660,7 +749,7 @@ class PollService:
         # (ADR E4). Jede Veroeffentlichung nimmt den ganzen Puffer mit, also
         # ist die zugesagte Batch-Nummer exakt, nicht nur eine Untergrenze.
         beleg = self._signiere_beleg(poll_id, entry, zugesagter_batch)
-        log.info(
+        log_board.info(
             "phase-b",
             f"Stimme fuer '{poll_id}' gepuffert (Batch {zugesagter_batch} zugesagt).",
             poll=poll_id,
@@ -674,7 +763,25 @@ class PollService:
         """Die veroeffentlichten Eintraege. Der Puffer gehoert nicht dazu -
         oeffentlich ist nur, was in einem Batch steht."""
         self.poll(poll_id)
-        return [e for b in self.store.veroeffentlichte_batches(poll_id) for e in b.entries]
+        return [e for b in self.board_store.veroeffentlichte_batches(poll_id) for e in b.entries]
+
+    def ledger_stand(self, poll_id: str) -> tuple[int, int]:
+        """(ausgegebene Berechtigungen, verbrauchte Tokens) - der bewusste Join.
+
+        Die beiden Zahlen kommen seit Baustein G aus zwei Dateien; ein
+        gemeinsamer Lesezeitpunkt existiert nicht mehr. Gelesen wird erst die
+        Board-Seite, dann die Berechtigungsseite - in der Gegenrichtung der
+        Schreibreihenfolge (Anspruch zuerst, Board danach): So ist die
+        Eligibility-Zahl nie *kleiner* als das, was das Board schon zeigt, und
+        die Abrechnung meldet keinen falschen Ueberschuss. Eine Ausgabe, die
+        genau zwischen die beiden Lesezugriffe faellt, kann kurzzeitig als
+        "Berechtigung ohne Board-Eintrag" erscheinen - eine Meldung, die beim
+        naechsten Durchlauf verschwindet, war dieser Schnappschuss-Effekt,
+        keine Manipulation.
+        """
+        spent = self.board_store.anzahl_verbraucht(poll_id)
+        eligible = self.berechtigung.anzahl_ansprueche(poll_id)
+        return eligible, spent
 
     def pruefbericht(self, poll_id: str) -> Pruefbericht:
         """Vollpruefung: ein Durchlauf ueber das ganze Board, alle Aussagen darin (§7).
@@ -691,7 +798,7 @@ class PollService:
         Methode, nicht an der fortgeschriebenen (EIP-T-051).
         """
         poll = self.poll(poll_id)
-        bericht = pruefe(self.store.veroeffentlichte_batches(poll_id), poll.options)
+        bericht = pruefe(self.board_store.veroeffentlichte_batches(poll_id), poll.options)
         self._letzte_pruefung[poll_id] = bericht
         return bericht
 
@@ -708,9 +815,11 @@ class PollService:
         self, poll_id: str
     ) -> tuple[Pruefbericht, list[BoardEntry], int, int]:
         """(fortgeschriebener Bericht, Puffer, Eligibility-Ledger, Vote-Ledger)
-        in einem Zug."""
+        - Board-Seite in einem Zug, die Eligibility-Zahl danach (ledger_stand
+        erklaert die Reihenfolge)."""
         options = self.poll(poll_id).options
-        batches, pending, db_eligible, spent = self.store.momentaufnahme(poll_id)
+        batches, pending, spent = self.board_store.momentaufnahme(poll_id)
+        db_eligible = self.berechtigung.anzahl_ansprueche(poll_id)
         vorher = self._letzte_pruefung.get(poll_id)
         bericht = (
             pruefe(batches, options)
@@ -778,7 +887,13 @@ class PollService:
         return self.laufender_bericht(poll_id).accounting
 
     def lookup(self, poll_id: str, token_hex: str) -> list[str] | None:
-        """Individuelle Verifizierbarkeit: eigenes Token im Board finden."""
+        """Individuelle Verifizierbarkeit: eigenes Token im Board finden.
+
+        Seit EIP-T-033 (Baustein F) benutzt die /verify-Seite diesen Weg nicht
+        mehr - die Suche laeuft im Browser ueber den Board-Export, damit der
+        Server das Token nie sieht. Hier bleibt die Methode fuer Tests und
+        interne Pruefungen.
+        """
         return self.pruefbericht(poll_id).lookup(token_hex)
 
     def board_export(self, poll_id: str) -> dict[str, object]:
@@ -810,7 +925,7 @@ class PollService:
                     # nach, statt sie zu glauben (verifikation.batches_from_export).
                     "entries": [e.payload for e in b.entries],
                 }
-                for b in self.store.veroeffentlichte_batches(poll_id)
+                for b in self.board_store.veroeffentlichte_batches(poll_id)
             ],
         }
 
@@ -818,23 +933,31 @@ class PollService:
     def check_consistency(self, poll_id: str, bericht: Pruefbericht | None = None) -> list[str]:
         """Vergleicht Board gegen internen Zustand. Findings gehen ins Debug-Modul.
 
+        Das ist seit Baustein G der zweite bewusste Join ueber die Trennlinie
+        (neben ledger_stand) - und er gehoert genau hierher: Die Aufsicht
+        vergleicht beide Seiten, das ist ihr Zweck. Die Meldungen laufen ins
+        Betriebs-Log, nicht in eines der Seiten-Logs.
+
         Der Bericht darf uebergeben werden, wenn der Aufrufer das Board ohnehin
         schon geprueft hat - sonst laeuft dieselbe Pruefung ein zweites Mal.
         Wer die Vollpruefung will, uebergibt ``pruefbericht(poll_id)``.
 
-        Ohne uebergebenen Bericht laeuft die laufende Pruefung: Board und beide
-        Ledger in einem Zug gelesen (store.momentaufnahme) und erst danach
-        geprueft. Sonst liegen die teuren Signaturpruefungen zwischen den
-        Lesezugriffen, und eine Stimme, die in genau diesem Moment dazukommt,
-        sieht wie eine Inkonsistenz aus - eine Falschmeldung im Debug-Modul,
-        ausgerechnet an der Stelle, die echte Manipulation anzeigen soll.
+        Ohne uebergebenen Bericht laeuft die laufende Pruefung: Board-Seite in
+        einem Zug gelesen (board_store.momentaufnahme) und erst danach
+        geprueft. Die Eligibility-Zahl kommt aus der anderen Datei und damit
+        von einem spaeteren Zeitpunkt - eine Ausgabe genau dazwischen kann
+        einen Durchlauf lang wie eine Abweichung aussehen (ledger_stand
+        erklaert die Richtung). Eine Meldung, die beim naechsten Durchlauf
+        verschwindet, war dieser Schnappschuss-Effekt; eine, die bleibt, ist
+        ein Befund.
         """
         findings: list[str] = []
         if bericht is None:
             bericht, pending, db_eligible, spent = self._laufende_momentaufnahme(poll_id)
         else:
-            db_eligible, spent = self.store.ledger_stand(poll_id)
-            pending = self.store.pending(poll_id)
+            spent = self.board_store.anzahl_verbraucht(poll_id)
+            pending = self.board_store.pending(poll_id)
+            db_eligible = self.berechtigung.anzahl_ansprueche(poll_id)
 
         status = bericht.chain
         if not status.ok:
@@ -873,7 +996,7 @@ class PollService:
                 f"{acc.n_votes + pending_votes} Stimmen bei "
                 f"{acc.n_eligible + pending_tokens} Token-Ausgaben"
             )
-        anzahl, seit = self.store.pending_stand(poll_id)
+        anzahl, seit = self.board_store.pending_stand(poll_id)
         if self.poll(poll_id).closed and anzahl:
             findings.append(
                 f"Umfrage ist geschlossen, aber {anzahl} Eintraege warten noch im "
@@ -894,7 +1017,7 @@ class PollService:
         # heisst, dass niemand mehr teilnehmen kann - was ohne diese Zeile eine
         # stille Abweisung pro Versuch waere statt eines sichtbaren Zustands.
         geschlossen = self.poll(poll_id).closed
-        hat_schluessel = self.store.get_config(POLL_SECRET + poll_id) is not None
+        hat_schluessel = self.berechtigung.get_config(POLL_SECRET + poll_id) is not None
         if geschlossen and hat_schluessel:
             findings.append(
                 "Umfrage ist geschlossen, aber ihr Umfrage-Schluessel existiert noch - "
@@ -911,7 +1034,7 @@ class PollService:
         # Betreiber weiter gueltige Token herstellen - die Auszaehlung waere
         # nicht eingefroren, obwohl wir nach aussen genau das sagen. Fehlt er
         # bei offener Umfrage, kann niemand mehr teilnehmen.
-        hat_sig_key = self.store.get_config(POLL_KEY + poll_id) is not None
+        hat_sig_key = self.berechtigung.get_config(POLL_KEY + poll_id) is not None
         if geschlossen and hat_sig_key:
             findings.append(
                 "Umfrage ist geschlossen, aber ihr Signaturschluessel existiert noch - es "

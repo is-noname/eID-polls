@@ -1,7 +1,12 @@
-// RSA-Blindsignatur, Client-Seite - RFC 9474 (RSABSSA-SHA384-PSS-Deterministic).
+// RSA-Blindsignatur, Client-Seite - RFC 9474, Variante
+// RSABSSA-SHA384-PSSZERO-Deterministic (Salt-Laenge 0, PrepareIdentity). Bis
+// 2026-08-01 stand hier "PSS-Deterministic"; das ist die Variante mit 48 Byte
+// Salt und war nie das, was diese Datei rechnet (EIP-T-008).
 //
 // Gegenstelle: app/blind.py. Beide Seiten muessen bitgenau dasselbe
 // EMSA-PSS-ENCODE rechnen, sonst schlaegt die PSS-Pruefung beim Abstimmen fehl.
+// blind_vektor.mjs haelt diese Datei gegen den Testvektor aus RFC 9474 A.4 -
+// derselbe Vektor, gegen den blind.py geprueft wird.
 //
 // Warum das hier im Browser laeuft und nicht auf dem Server: Der Stimm-Token
 // entsteht lokal, wird lokal verblindet und lokal wieder entblindet. Der Server
@@ -128,8 +133,36 @@ export function newToken() {
   return crypto.getRandomValues(new Uint8Array(32));
 }
 
-/** Verblindet das Token. Rueckgabe: { blindedHex, inv } - inv bleibt im Browser. */
-export async function blindToken(token, nHex, eHex) {
+/** Zieht einen Blendfaktor gleichverteilt aus [2, n).
+ *
+ * RFC 9474 §4.2: "The blinding factor r MUST be randomly chosen from a uniform
+ * distribution. This is typically done via rejection sampling." Frueher stand
+ * hier `os2ip(rBytes) % n`, und das ist gerade nicht gleichverteilt: bei einem
+ * Modulus knapp ueber einer Zweierpotenz kaemen die kleinen Werte fast doppelt
+ * so haeufig heraus wie die grossen. Also: auf die Bitlaenge von n maskieren
+ * und verwerfen, was zu gross ist (EIP-T-008).
+ */
+function zufaelligerBlendfaktor(n) {
+  const bits = bitLength(n);
+  const bytes = Math.ceil(bits / 8);
+  const ueberzaehlig = 8 * bytes - bits;
+  for (let versuch = 0; versuch < 64; versuch += 1) {
+    const roh = crypto.getRandomValues(new Uint8Array(bytes));
+    roh[0] &= 0xff >> ueberzaehlig;
+    const r = os2ip(roh);
+    if (r >= 2n && r < n) return r;
+  }
+  throw new Error("Kein Blendfaktor im gueltigen Bereich gefunden.");
+}
+
+/** Verblindet das Token mit einem vorgegebenen Blendfaktor.
+ *
+ * Im Betrieb ruft das nur blindToken auf. Getrennt steht es, damit
+ * blind_vektor.mjs den Blendfaktor aus RFC 9474 A.4 durch genau diesen
+ * Rechenweg schicken kann - ein nachgebauter Rechenweg im Test wuerde die
+ * Datei gegen sich selbst pruefen und nicht gegen den RFC.
+ */
+export async function blindTokenMitFaktor(token, nHex, eHex, r) {
   const n = BigInt(`0x${nHex}`);
   const e = BigInt(`0x${eHex}`);
   const k = Math.ceil(bitLength(n) / 8);
@@ -138,14 +171,18 @@ export async function blindToken(token, nHex, eHex) {
   const m = os2ip(encoded);
   if (m >= n) throw new Error("Kodierte Nachricht groesser als der Modulus.");
 
-  for (let attempt = 0; attempt < 32; attempt += 1) {
-    const rBytes = crypto.getRandomValues(new Uint8Array(k));
-    const r = os2ip(rBytes) % n;
-    if (r < 2n) continue;
-    const rInv = modInverse(r, n);
-    if (rInv === null) continue;
-    const z = (m * modPow(r, e, n)) % n;
-    return { blindedHex: bytesToHex(i2osp(z, k)), inv: rInv.toString(16) };
+  const rInv = modInverse(r, n);
+  if (rInv === null) return null; // nicht invertierbar - Aufrufer zieht neu
+  const z = (m * modPow(r, e, n)) % n;
+  return { blindedHex: bytesToHex(i2osp(z, k)), inv: rInv.toString(16) };
+}
+
+/** Verblindet das Token. Rueckgabe: { blindedHex, inv } - inv bleibt im Browser. */
+export async function blindToken(token, nHex, eHex) {
+  const n = BigInt(`0x${nHex}`);
+  for (let versuch = 0; versuch < 32; versuch += 1) {
+    const ergebnis = await blindTokenMitFaktor(token, nHex, eHex, zufaelligerBlendfaktor(n));
+    if (ergebnis !== null) return ergebnis;
   }
   throw new Error("Kein brauchbarer Blinding-Faktor gefunden.");
 }
@@ -158,4 +195,6 @@ export function finalizeSignature(blindSigHex, invHex, nHex) {
   return bytesToHex(i2osp(s, k));
 }
 
-export { bytesToHex, hexToBytes };
+// emsaPssEncode wird im Browser nicht gebraucht - blind_vektor.mjs prueft damit
+// den Schritt einzeln, damit eine Abweichung zeigt, wo sie sitzt.
+export { bytesToHex, hexToBytes, emsaPssEncode };

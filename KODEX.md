@@ -11,7 +11,7 @@
 > Historie: [Kodex-Protokoll](/kodex/protokoll) · Begriffe: Glossar (projektintern) ·
 > These: EIP-RFC-20260726-001
 
-**Version 12 — 2026-07-31**
+**Version 16 — 2026-08-01**
 
 ---
 
@@ -156,29 +156,36 @@ können.
 **Status.** `bindend` als Prinzip. Die konkreten Parameter sind seit Version 7 entschieden und
 umgesetzt (EIP-ADR-20260728-001, 2026-07-31): Das Board wird als
 Merkle-Set pro Batch mit verketteten Roots veröffentlicht, sortiert nach Blatt-Hash; Mindestmenge
-**k = 10** Einträge, Zeitdeckel **6 Stunden**, bei Schließung sofort (der letzte Batch darf k
+**k = 10 Stimmen**, Zeitdeckel **6 Stunden**, bei Schließung sofort (der letzte Batch darf k
 unterschreiten — dokumentierte Grenze, kein Fehler). Keine Tabelle trägt mehr eine
-Eingangsreihenfolge. **Die Mindestmenge ist derzeit keine** und der Satz „Vor der Veröffentlichung
-muss eine Mindest-Anonymitätsmenge erreicht sein" damit heute nicht gedeckt: k zählt Einträge, und
-im Ein-Klick-Flow sind das je Teilnahme zwei (Ausgabe + Stimme). Die gemessene Personen-Menge ist
-deshalb genau k/2, also **5 statt 10** — und weil die Mischung im Puffer schwankt, liegen unter
-Andrang bis zu 23,6 % der Stimmen sogar darunter
+Eingangsreihenfolge. Dass k **Stimmen** zählt und nicht Einträge, ist eine Korrektur vom
+2026-08-01 (Version 15, Begründung im [Kodex-Protokoll](/kodex/protokoll)): Vorher zählte k alle Einträge, und weil
+jede Teilnahme zwei erzeugt (Ausgabe + Stimme), war die zugesagte Menge in Wahrheit k/2 — unter
+Andrang lagen 23,6 % der Stimmen sogar unter 5
 (EIP-RPT-20260731-001 Anonymitaetsmenge-Batch-Simulation; woher die Simulation stammt, steht
-dort). `offen` →
-EIP-T-076 (Fälligkeit an Stimmen binden, Menge auf 10 anheben),
-fällig vor dem ersten echten Durchlauf (Betriebsstufe `produktiv`). Ebenfalls gemessen und ehrlich
-zu nennen: Unterhalb von rund `k/(2 × Deckelfenster)` Teilnahmen je Stunde greift der Zeitdeckel
+dort). An Stimmen gebunden fällt dieser Anteil auf 0,0 %, bei gleicher Batchgröße und gleicher
+Wartezeit. Ehrlich zu nennen bleibt, was die Zusage **nicht** deckt: Löst der Zeitdeckel aus oder
+endet die Umfrage, wird auch unter k veröffentlicht. Das Board nennt deshalb je Batch die
+tatsächliche Stimmenzahl und hebt die kleinste hervor, und der Betreiber bekommt jeden solchen
+Batch als Befund ins Debug-Modul — die Zusage gilt, wo sie greift, und wo sie nicht greift, steht
+es da. Ebenfalls gemessen und ehrlich
+zu nennen: Unterhalb von rund `k/Deckelfenster` Teilnahmen je Stunde greift der Zeitdeckel
 statt k, und die Menge fällt gegen 1 — bei 25 Teilnehmenden über 7 Tage steht jede fünfte Stimme
 allein in ihrem Batch. Das ist die Grenze des Mechanismus und durch keine Parameterwahl zu
 beheben. Die Sitzungstrennung der Abstimm-Route
 (Baustein F) ist seit Version 8 umgesetzt: Die Stimme geht ohne Cookie, Auth-Header und Referrer
 an den Server, mitgesandter Sitzungskontext wird im Debug-Modul als Befund gemeldet, und beide
-Phasen-Routen antworten nie schneller als der Antwort-Floor. Noch `offen`: die Speichertrennung
-(Baustein G) und die Token-Suche auf `/verify`, die das Session-Cookie im selben Request
-mitempfängt →
-EIP-T-033, fällig vor dem ersten echten
-Durchlauf (Betriebsstufe `produktiv`). Der öffentliche Anker gegen Split-View ist
-`offen` → EIP-T-006, dieselbe Fälligkeit.
+Phasen-Routen antworten nie schneller als der Antwort-Floor. Seit Version 16 sind auch die
+Speichertrennung (Baustein G) und die Token-Suche auf `/verify` umgesetzt (Herleitung und
+Ticketverweis im [Kodex-Protokoll](/kodex/protokoll), Version 16): Eligibility-Ledger und Board
+liegen in zwei Datenbankdateien mit getrennten Zugriffspfaden und getrennten Debug-Logs, und die
+Token-Suche läuft im Browser über den Board-Export — das Token steht im URL-Fragment und erreicht
+den Server nicht mehr. Ehrlich dazu: Beide Seiten laufen weiter in einem Prozess bei einem
+Betreiber; gegen Laufzeit-Beobachtung durch uns selbst hilft die Trennung der Dateien nicht
+(→ EIP-T-034 für die Netzwerkebene,
+EIP-T-037 für die Betreibergrenze). Der öffentliche Anker
+gegen Split-View ist `offen` → EIP-T-006, fällig vor dem ersten echten
+Durchlauf (Betriebsstufe `produktiv`).
 
 ### § 3 Keine eigene Ausweis-Kryptografie
 
@@ -236,7 +243,8 @@ Umfrage**, bis der Signaturschlüssel geteilt ist →
 EIP-T-040, fällig vor dem ersten echten Durchlauf.
 Dagegen helfen nur verteilte Dritte (§ 12); was bleibt, ist die Ledger-Abrechnung, die den
 Überschuss sichtbar macht. Die weiteren Schulden dieses Paragraphen sind bei ihren Paragraphen
-geführt: öffentlicher Anker gegen Split-View (§ 2), reproduzierbarer Build (§ 20).
+geführt: öffentlicher Anker gegen Split-View (§ 2), fehlende Lizenz (§ 20). Der Abgleich des
+ausgelieferten Clients ist seit dem 2026-08-01 keine Disziplin mehr, sondern von außen messbar.
 
 ### § 5 Behörden, Herausgabe und Auskunft
 
@@ -467,8 +475,10 @@ mit Wettbewerbscharakter.
 ### § 16 Grenzen der Nutzung
 
 **Regel.** Ergebnisse haben keine Rechtswirkung. Das Verfahren wird nicht in bindenden Entscheidungen
-eingesetzt, nicht als Wahl, nicht als Volksentscheid, nicht als Betriebsrats- oder Vereinswahl. Wir setzen
-das über Nutzungsbedingungen für Einbetter durch, nicht nur als Bekenntnis.
+eingesetzt, nicht als Wahl, nicht als Volksentscheid, nicht als Betriebsrats- oder Vereinswahl. Wir binden
+Einbetter über Nutzungsbedingungen für Einbetter daran, nicht nur über ein Bekenntnis — und sagen dabei, was
+dieses Instrument ist: ein Entzugsrecht im Nachhinein, keine technische Verhinderung. Wozu jemand ein
+Ergebnis verwendet, sehen wir nicht.
 
 **Warum.** Uns fehlen die Schutzmechanismen des Wahlrechts, allen voran die Nötigungsresistenz: Unsere
 individuelle Verifizierbarkeit ist zugleich eine vorzeigbare Quittung. Das ist eine bewusste
@@ -477,9 +487,13 @@ Architekturentscheidung — und sie schließt jeden Wahleinsatz aus.
 **Konkret verboten.** Vermarktung als Wahlsystem. Kooperationen, deren Zweck eine bindende Abstimmung ist.
 Stillschweigende Duldung, wenn ein Einbetter das Widget so einsetzt.
 
-**Status.** `bindend`. Die Durchsetzung über Nutzungsbedingungen ist `offen` →
-EIP-T-062, fällig vor der ersten Einbettung durch
-Dritte, spätestens vor Betriebsstufe `produktiv`.
+**Status.** `bindend`. Die Nutzungsbedingungen für Einbetter liegen seit dem 2026-08-01 vor (Version 13) und
+enthalten das Verbot, die Nennerpflicht,
+die Rechtsfolge und die Aufstellung, was davon erzwingbar ist. Was fehlt, ist nicht mehr der Text,
+sondern der Griff: Solange es keine Einbettung gibt, gibt es keinen Zugang, der entzogen werden
+könnte. `offen` bleibt deshalb die Vergabe und der Entzug der Einbettungserlaubnis →
+EIP-T-023, fällig mit der ersten Einbettung durch Dritte, spätestens
+vor Betriebsstufe `produktiv`. Das Widget darf nicht ausgeliefert werden, bevor dieser Weg steht.
 
 ---
 
@@ -560,9 +574,31 @@ Minifizierte oder gebündelte Auslieferung ohne reproduzierbaren Weg vom Quellte
 Schritten, die im Client laufen müssen — allen voran das Blinding. Fremde Bibliotheken sind dagegen
 erlaubt und nach § 3 geboten; sie gehören in den veröffentlichten, gehashten Stand.
 
-**Status.** `bindend` für die Veröffentlichung des Quellcodes. Reproduzierbarer Build,
-Hash-Veröffentlichung und Prüfanleitung sind `offen` → EIP-T-007, fällig vor
-dem ersten echten Durchlauf (Betriebsstufe `produktiv`).
+**Status.** `bindend`. Reproduzierbarer Build, Hash-Veröffentlichung und Prüfanleitung sind seit dem
+2026-08-01 **eingelöst** (Version 14 im [Kodex-Protokoll](/kodex/protokoll)) — die Lizenz aus dem ersten Satz dieser
+Regel ist es nicht: Sie fehlt, damit steht der Code unter dem gesetzlichen Normalfall *alle Rechte
+vorbehalten*, und Weiterbetrieb ist gerade nicht erlaubt. Als Verstoß V-004 protokolliert und `offen`
+→ EIP-T-078. Fällig ist das nicht künftig, sondern
+**überfällig**: Der Satz steht ohne Vorbehalt auf `bindend`, spätestens mit der Betriebsstufe
+`öffentlich erreichbar` war er einzulösen, und die läuft seit dem 2026-07-27.
+
+**Der Client ist nachrechenbar, und zwar ohne diesen Server zu fragen.** Aller Client-Code liegt
+unverändert unter `/static/` — nicht gebündelt, nicht minifiziert; ein Build-Schritt, der
+reproduzierbar sein müsste, existiert nicht. Ausführbaren Inline-Code in den Seiten gibt es seit dem
+2026-08-01 keinen mehr, denn er stünde in der gerenderten Seite und wäre mit keiner Repo-Datei
+vergleichbar — ein Hash über `static/` hätte seine Abwesenheit dann nur vorgetäuscht. `/version`
+nennt jede Client-Datei mit ihrem Hash, die Nachweis-Seite jeder Umfrage zeigt Liste und Prüfbefehl,
+`app/DOKU.md` und `app/DEPLOY.md` beschreiben den Weg. Entscheidend ist, was der Vergleich
+vergleicht: die abgerufene Datei gegen das öffentliche Repository. Beide Größen stammen aus
+verschiedenen Quellen, keine aus einer Behauptung dieser App — anders als beim `treehash`, der eine
+Selbstauskunft bleibt. Ein Rückfall zu Inline-Code meldet sich selbst als Inkonsistenz im
+Debug-Modul.
+
+Was auch das nicht leistet, weil § 4 es verlangt: Es entlarvt eine Auslieferung, die **für alle**
+vom veröffentlichten Stand abweicht, nicht eine, die ausgerechnet einem einzelnen Besucher anderen
+Code schickt. Dagegen hilft nur, dass mehrere unabhängig abrufen und vergleichen — dieselbe Struktur
+wie beim Split-View-Problem des Boards (§ 2) und mit denselben Grenzen. Und es hilft niemandem, der
+nicht nachrechnet; vollständig gelöst wäre es erst mit signierter App statt Web-Code.
 
 Die Übereinstimmung von Repository und Auslieferung ist seit dem 2026-08-01 (Stand `ec1044d`)
 **feststellbar statt behauptet**: Die Instanz weist ihren Stand unter `/version` aus — benannter Commit und ein Hash über die Dateien, die sie
@@ -572,11 +608,12 @@ nicht, dass keine Abweichung entsteht, sondern dass eine entstandene auffällt. 
 liegen bleibt, ist ab sofort ein Befund im Debug-Modul und im Abgleich vor jeder Veröffentlichung,
 kein stiller Zustand mehr wie bei V-001.
 
-Was daran `Disziplin` bleibt — und deshalb hier stehen bleibt, statt als erledigt zu gelten: Das ist
-die Selbstauskunft des Servers, den man gerade prüfen will. Wer den ausgelieferten Code ändert, kann
-diese Antwort mit ändern. Sie deckt ein Versehen auf, nicht einen Betreiber, der lügt. Dagegen hilft
-erst der reproduzierbare, von Dritten nachgerechnete Build → EIP-T-007,
-fällig ab Betriebsstufe `produktiv`.
+Was daran Selbstauskunft bleibt: der `treehash` über den **gesamten** Stand, Server-Code
+eingeschlossen. Welchen Python-Code ein fremder Container ausführt, kann von außen niemand messen —
+wer ihn ändert, kann diese Antwort mit ändern. Für den Teil, an dem das Wahlgeheimnis hängt, ist das
+seit dem 2026-08-01 nicht mehr nötig (siehe oben); für den Rest bleibt es Disziplin, und dagegen hilft
+keine Zeile in diesem Paragraphen, sondern erst ein Betrieb, der nicht allein bei uns liegt (§ 4,
+EIP-T-040).
 
 ---
 
@@ -587,8 +624,14 @@ abgeleitet, nicht eigenständig: Maßgeblich ist der Status beim jeweiligen Para
 `scripts/check_kodex.py` prüft, dass beide übereinstimmen und dass kein Vermerk ohne Ticket und
 Ereignis dasteht.
 
-**Stand 2026-07-31: 11 von 20 Paragraphen. Die Grenze aus § 4 b liegt bei 8 — sie ist überschritten,
+**Stand 2026-08-01: 11 von 20 Paragraphen. Die Grenze aus § 4 b liegt bei 8 — sie ist überschritten,
 der Baustopp gilt.**
+
+Version 15 löst den dritten Vermerk unter § 2 auf: Die Mindestmenge zählt jetzt Stimmen und ist
+damit die Zahl, die sie zu sein behauptet (EIP-T-076). Die Zahl
+oben bleibt trotzdem bei 11, weil § 2 zwei weitere Vermerke trägt — dieselbe Schwäche der Kennzahl
+wie bei ihrer Entstehung in Version 12, nur in die andere Richtung: Damals verschwieg sie einen neuen
+Befund, jetzt verschweigt sie gebaute Arbeit. Sie zählt Paragraphen, nicht Schulden.
 
 Die Zahl steht seit Version 9 unverändert, obwohl § 10 mit Version 10 herausfällt: § 5 tritt an
 seine Stelle. Der Offenlegungsweg ist gebaut, der Eingangskanal für Behördenanfragen ist es nicht —
@@ -601,12 +644,24 @@ Paragraphen, nicht Schulden. Der neue Vermerk ist keine kleine Ergänzung, sonde
 die Mindestmenge aus der Regel von § 2 heute nicht existiert. Wer nur auf die 11 sieht, hält den
 2026-07-31 für einen Tag ohne Veränderung.
 
+Version 14 lässt die Zahl zum zweiten Mal in Folge stehen, und zum zweiten Mal aus einem Grund, den
+die Zahl verschweigt: § 20 hat seine Schuld eingelöst — der Client ist nachrechenbar, ohne diese
+Instanz zu fragen — und trägt trotzdem weiter einen Vermerk, weil beim Nachsehen auffiel, dass der
+**erste** Satz des Paragraphen nie erfüllt war. Es gibt keine Lizenz. Der Fund ist die eigentliche
+Nachricht dieser Version: Ein Satz auf `bindend` steht nicht in der Schuldenübersicht und wird
+deshalb auch nicht geprüft — er gilt als erledigt, weil er nie als offen markiert wurde. Wer wissen
+will, wo noch solche Sätze stehen, findet sie nicht in dieser Tabelle.
+
+Version 13 ändert die Zahl ebenfalls nicht, und auch hier lohnt der Blick auf den Grund: § 16 hat
+seinen Text bekommen (Nutzungsbedingungen für Einbetter), aber nicht seinen Griff. Ein Regelwerk ohne
+entziehbaren Zugang trägt die Schuld nicht ab, es verschiebt sie an die Stelle, wo sie hingehört —
+das Widget. Wer sie hier als erledigt geführt hätte, hätte einen Paragraphen freigekauft, indem er
+ein Dokument schreibt.
+
 | § | Was offen ist | Ticket | Fällig vor | Seit |
 |---|---|---|---|---|
 | 1 | Protokollierung beim Hoster (Loadbalancer, TLS-Endpunkt, Cloudflare) — belegt, dass sie stattfindet; Umfang und Frist offen. Die eigene Seite ist erledigt | EIP-T-075 | `öffentlich erreichbar` | 2026-07-26 |
-| 2 | Speichertrennung der Abstimm-Route (Baustein G) und Session-Cookie an /verify | EIP-T-033 | `produktiv` | 2026-07-26 |
 | 2 | Öffentlicher Anker gegen Split-View | EIP-T-006 | `produktiv` | 2026-07-26 |
-| 2 | Mindestmenge zählt Einträge statt Stimmen — wirksam 5 statt 10, unter Andrang bis 23,6 % der Stimmen darunter (gemessen, `EIP-RPT-20260731-001`) | EIP-T-076 | `produktiv` | 2026-07-31 |
 | 4 | Ballot Stuffing bleibt Disziplin **während der Laufzeit** (Schlüssel liegt allein bei uns; nach Schließung vernichtet, EIP-T-069) | EIP-T-040 | `produktiv` | 2026-07-26 |
 | 5 | Eigener Eingangskanal für Behördenanfragen — Bauform entschieden (Postfach ohne Domain), Einrichtung offen | EIP-T-073 | `produktiv` | 2026-07-31 |
 | 6 | DSGVO-Kollision entschieden und begründet | EIP-T-061 | `produktiv` | 2026-07-26 |
@@ -614,20 +669,20 @@ die Mindestmenge aus der Regel von § 2 heute nicht existiert. Wer nur auf die 1
 | 12 | Übergabe der Fragehoheit an ein unabhängiges Gremium | EIP-T-022 | politische Relevanz, spät. `produktiv` | 2026-07-26 |
 | 13 | Finanzierungsmodell im Detail | EIP-T-026 | erste Annahme von Geld | 2026-07-26 |
 | 14 | Rechtsform und Nachfolgebindung | EIP-T-065 | `produktiv`, jed. vor Trägerwechsel | 2026-07-26 |
-| 16 | Durchsetzung über Nutzungsbedingungen | EIP-T-062 | erste Einbettung, spät. `produktiv` | 2026-07-26 |
-| 20 | Reproduzierbarer Build, Hash, Prüfanleitung. Die Übereinstimmung von Repository und Auslieferung ist seit EIP-T-074 feststellbar (`/version`); was bleibt, ist die Selbstauskunft — sie deckt ein Versehen auf, keinen Betreiber, der lügt | EIP-T-007 | `produktiv` | 2026-07-27 |
+| 16 | Vergabe und Entzug der Einbettungserlaubnis. Die Nutzungsbedingungen selbst stehen seit 2026-08-01 (EIP-T-062); ohne Einbettung gibt es keinen Zugang, den ein Verstoß kosten könnte | EIP-T-023 | erste Einbettung, spät. `produktiv` | 2026-07-26 |
+| 20 | Keine Lizenz am veröffentlichten Code — damit gilt *alle Rechte vorbehalten*, und der Weiterbetrieb, den dieser Paragraph zusagt, ist nicht erlaubt. Verstoß V-004, nicht bloß Rückstand: Der Satz steht ohne Vorbehalt auf `bindend` | EIP-T-078 | `öffentlich erreichbar` — **überfällig** | 2026-08-01 |
 
 Drei Fälligkeiten hängen an der Betriebsstufe `öffentlich erreichbar`, die seit dem 2026-07-27 läuft.
-Stand 2026-07-31:
+Stand 2026-08-01:
 
-- **§ 20** — erfüllt, und seit dem 2026-08-01 nicht mehr nur im Moment einer Prüfung: Die Instanz
-  weist ihren Stand unter `/version` aus, und zwar mit einem Hash über die ausgelieferten Dateien,
-  nicht nur mit einer Commit-Angabe (EIP-T-074). Zwischen einer Änderung hier und ihrem Deploy zeigt
-  die Instanz weiterhin einen älteren Stand — das ist keine Abweichung, sondern der Weg dorthin.
-  Neu ist, dass es **sichtbar** ist, statt dass niemand außer uns es bemerkt: im Startprotokoll, im
-  Debug-Modul und im Abgleich, der zu jeder Veröffentlichung gehört. Was offen bleibt, ist nicht
-  diese Fälligkeit, sondern die nächste Stufe → EIP-T-007, fällig
-  `produktiv`
+- **§ 20** — der Nachprüfbarkeits-Teil ist erfüllt, und seit dem 2026-08-01 auch für die Stelle, an
+  der das Wahlgeheimnis hängt: Die Instanz weist ihren Stand unter `/version` aus (EIP-T-074), und
+  der Client lässt sich Datei für Datei gegen das Repository halten, **ohne diese Antwort zu
+  benutzen** (EIP-T-007). Zwischen einer Änderung hier und ihrem Deploy zeigt die Instanz weiterhin
+  einen älteren Stand — das ist keine Abweichung, sondern der Weg dorthin; neu ist, dass es
+  **sichtbar** ist statt still.
+  **Gerissen ist der andere Teil desselben Paragraphen**: Der Code steht ohne Lizenz öffentlich,
+  Weiterbetrieb ist damit nicht erlaubt (V-004) → EIP-T-078
 - **§ 10** — erfüllt: Kodex, Verstoßprotokoll und Transparenzbericht sind auf der Instanz ohne
   Anmeldung erreichbar (Version 10, EIP-T-063)
 - **§ 1** — weiterhin nur teilweise, aber die Hälfte steht: Dass die App keine IPs mehr
@@ -639,7 +694,9 @@ Stand 2026-07-31:
   mehr bloß unbekannt: Render sagt vertraglich zentrale Infrastruktur-Protokollierung zu, ohne
   Umfang und Frist zu nennen. Offen ist die Auskunft darüber, nicht mehr die Existenz →
   EIP-T-075.
-  **Bleibt die einzige gerissene Fälligkeit dieser Betriebsstufe**
+  **Gerissen, seit die Stufe läuft** — und bis zum 2026-08-01 die einzige. Seither steht die
+  fehlende Lizenz aus § 20 daneben: zwei von drei Fälligkeiten dieser Betriebsstufe sind offen,
+  eine davon (V-004) war es die ganze Zeit, ohne dass es jemandem auffiel
 
 Die Spalte *Seit* nennt das Datum der Kodex-Version, in der der Vermerk zuerst stand, nicht das
 Datum dieser Übersicht. Ein Vermerk wird durch die Aufnahme hier nicht jünger.

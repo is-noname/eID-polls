@@ -204,6 +204,13 @@ class Pruefbericht:
     konnte, mitsamt Grund. Er zaehlt nirgends mit und macht das Ergebnis
     unbrauchbar - er verschwindet nicht still (EIP-T-046).
 
+    ``stimmen_je_batch`` haelt je Batch (Index = Batch-Nummer) die Zahl seiner
+    VOTE-Eintraege. Das ist die Anonymitaetsmenge, unter der sich eine Stimme
+    dieses Batches verbirgt - als **Messwert** am veroeffentlichten Board, nicht
+    als Zusage: Die Zusage ist k, und dass beides auseinanderfallen kann, war
+    der Befund aus EIP-RPT-20260731-001 (EIP-T-076). Jeder Dritte rechnet die
+    Zahl aus dem Export nach.
+
     ``schluessel_fehler`` meldet, dass der Token-Schluessel dieser Umfrage im
     Board fehlt, doppelt ist, nicht lesbar ist oder einem unabhaengig
     mitgegebenen Schluessel widerspricht (EIP-T-069). Ohne pruefbaren Schluessel
@@ -219,6 +226,7 @@ class Pruefbericht:
     unlesbar: Unlesbar | None = None
     schluessel_pem: str | None = None
     schluessel_fehler: str | None = None
+    stimmen_je_batch: tuple[int, ...] = ()
 
     @property
     def entries(self) -> tuple[BoardEntry, ...]:
@@ -337,6 +345,7 @@ def _pruefe(
         counts: dict[str, int] = {opt: 0 for opt in (options or [])}
         unknown_choice: str | None = None
         unlesbar: Unlesbar | None = None
+        stimmen_je_batch: list[int] = []
     else:
         ab = len(vorher.batches)
         sig_ok, bad_sig_at = vorher.chain.signatures_ok, vorher.chain.bad_signature_at
@@ -345,8 +354,10 @@ def _pruefe(
         counts = dict(vorher.counts)
         unknown_choice = vorher.unknown_choice
         unlesbar = vorher.unlesbar
+        stimmen_je_batch = list(vorher.stimmen_je_batch)
 
     for batch in batches[ab:]:
+        stimmen_je_batch.append(0)
         for entry in batch.entries:
             eintrag = parse(entry)
 
@@ -379,6 +390,7 @@ def _pruefe(
             # zaehlt mit und macht das Board unbrauchbar, statt still zu
             # verschwinden.
             votes.append((eintrag.token_hex, eintrag.choices))
+            stimmen_je_batch[-1] += 1
             for choice in eintrag.choices:
                 if choice in counts:
                     counts[choice] += 1
@@ -405,6 +417,7 @@ def _pruefe(
         unlesbar=unlesbar,
         schluessel_pem=schluessel_pem,
         schluessel_fehler=schluessel_fehler,
+        stimmen_je_batch=tuple(stimmen_je_batch),
     )
 
 
@@ -437,6 +450,11 @@ def batches_from_export(export: dict[str, Any]) -> list[Batch]:
 def _report_lines(export: dict[str, Any], bericht: Pruefbericht, key_source: str) -> list[str]:
     chain = bericht.chain
     acc = bericht.accounting
+    # Gemessen, nicht zugesagt: Wie gross die Anonymitaetsmenge je Batch
+    # tatsaechlich geworden ist, steht nur im Board - und der kleinste Batch ist
+    # die Zahl, die fuer die dort liegenden Stimmen gilt (EIP-T-076). Batches
+    # ohne Stimme bleiben aussen vor, sie verstecken nichts.
+    mengen = [s for s in bericht.stimmen_je_batch if s]
     lines = [
         f"Umfrage:          {export.get('poll', '?')}",
         f"Frage:            {export.get('question', '?')}",
@@ -453,6 +471,8 @@ def _report_lines(export: dict[str, Any], bericht: Pruefbericht, key_source: str
         ),
         f"Abrechnung:       {acc.n_votes} Stimmen bei {acc.n_eligible} ausgegebenen Token"
         + ("" if acc.ok else f"  -> UEBERSCHUSS +{acc.surplus}"),
+        "Stimmen je Batch: "
+        + (f"kleinste Menge {min(mengen)}, groesste {max(mengen)}" if mengen else "keine"),
         "",
     ]
     if bericht.schluessel_fehler is not None:

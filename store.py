@@ -1,31 +1,32 @@
-"""SQLite-Persistenz: Eligibility-Ledger, Vote-Ledger, Board mit Batch-Kette.
+"""SQLite-Persistenz der Board-Seite - und die gemeinsame Basis beider Speicher.
+
+Seit EIP-T-033 (Baustein G) gibt es **zwei Datenbankdateien**, nicht eine:
+
+  board.sqlite3         diese Datei hier: Umfragen, Board, Batches, Vote-Ledger
+  *.berechtigung.*      berechtigung_store.py: Eligibility-Ledger, Wiederhol-
+                        Puffer, Umfrage-Schluessel - alles, was das Pseudonym
+                        kennt
+
+Die Trennlinie verlaeuft dort, wo spaeter die Betreibergrenze liegen soll
+(Stufe 2, EIP-T-037/T-040): Dienst A kennt das Pseudonym und gibt Blind-
+signaturen aus, Dienst B kennt Token und Stimme. Ein Join ueber beide Seiten
+ist damit eine bewusste Handlung ueber zwei Dateien - kein SELECT ueber zwei
+Tabellen derselben Datei, das einem Codepfad versehentlich unterlaeuft.
 
 Datenmodell nach EIP-RFC-20260725-001 §6/§9, dem Prototyp-Fund aus
 PROTOTYPE_two-ledger/NOTES.md und EIP-ADR-20260728-001:
 
-  eligibility  gehashte Pseudonyme - weiss "hat abgeholt", nicht "wie gestimmt"
   spent        verbrauchte Tokens - reiner Doppelabstimmungs-Index, KEINE Stimmen
   board        die Eintraege; ohne Eingangsreihenfolge, jeder Eintrag gehoert zu
                einem veroeffentlichten Batch oder wartet im Puffer (batch NULL)
   batches      die veroeffentlichten Batches mit Merkle-Root und Batch-Kette -
                zusammen mit board die einzige Auszaehlungsquelle (§7)
-  issue_retry  kurzlebiger Wiederhol-Puffer der Ausgabe (EIP-T-070): verblindete
-               Anfrage und ihre Blindsignatur, damit ein Abbruch nach dem
-               Signieren nicht die Berechtigung verbrennt. Wird nach Ablauf und
-               beim Schliessen geloescht, faellt aus Sicherungskopien heraus
 
-Keine Tabelle traegt eine Eingangsreihenfolge (EIP-T-033, Baustein E):
-eligibility und spent sind WITHOUT ROWID ueber ihre Primaerschluessel, board
-haengt an (poll_id, leaf_hash) - der Blatt-Hash ist gleichverteilt und sagt
-nichts ueber die Zeit. Die einzige Ordnung ist die Batch-Nummer, und deren
-Granularitaet ist die Anonymitaetsmenge (ADR E3).
-
-issue_retry ist die eine Ausnahme und deshalb ausdruecklich benannt: Sie traegt
-eine Zeit, weil ein Ablauf sie braucht. Auf die *Stunde gerundet*, wie der
-Puffer-Beginn - eine Stunde ist zu grob, um daraus eine Reihenfolge zu bauen,
-und die Zeile verschwindet ohnehin mit dem Ablauf. Was sie verbindet
-(voter_key -> verblindete Anfrage), sieht der Issuer im regulaeren Ablauf
-ohnehin; das entblindete Token kommt darin nicht vor.
+Keine Tabelle traegt eine Eingangsreihenfolge (EIP-T-033, Baustein E): spent
+ist WITHOUT ROWID ueber seinen Primaerschluessel, board haengt an (poll_id,
+leaf_hash) - der Blatt-Hash ist gleichverteilt und sagt nichts ueber die Zeit.
+Die einzige Ordnung ist die Batch-Nummer, und deren Granularitaet ist die
+Anonymitaetsmenge (ADR E3).
 
 Der Puffer-Zeitpunkt (fuer den Zeitdeckel) wird **auf die Stunde gerundet** je
 Umfrage gespeichert, nicht je Eintrag: Ein exakter Zeitstempel des ersten
@@ -47,7 +48,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import board_eintrag
 from board_eintrag import GENESIS, BoardEntry, canonical
@@ -58,67 +59,13 @@ __all__ = [
     "Batch",
     "BoardEntry",
     "PollRow",
+    "SqliteStore",
     "Store",
     "canonical",
 ]
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS config (
-    key   TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS polls (
-    poll_id  TEXT PRIMARY KEY,
-    question TEXT NOT NULL,
-    options  TEXT NOT NULL,
-    closed   INTEGER NOT NULL DEFAULT 0,
-    created  TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS eligibility (
-    poll_id   TEXT NOT NULL,
-    voter_key TEXT NOT NULL,
-    PRIMARY KEY (poll_id, voter_key)
-) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS spent (
-    poll_id   TEXT NOT NULL,
-    token_hex TEXT NOT NULL,
-    PRIMARY KEY (poll_id, token_hex)
-) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS board (
-    poll_id   TEXT NOT NULL,
-    leaf_hash TEXT NOT NULL,
-    payload   TEXT NOT NULL,
-    batch     INTEGER,
-    PRIMARY KEY (poll_id, leaf_hash)
-) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS batches (
-    poll_id     TEXT NOT NULL,
-    batch       INTEGER NOT NULL,
-    merkle_root TEXT NOT NULL,
-    batch_root  TEXT NOT NULL,
-    published   TEXT NOT NULL,
-    PRIMARY KEY (poll_id, batch)
-) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS issue_retry (
-    poll_id   TEXT NOT NULL,
-    voter_key TEXT NOT NULL,
-    blinded_h TEXT NOT NULL,
-    blind_sig TEXT NOT NULL,
-    stunde    TEXT NOT NULL,
-    PRIMARY KEY (poll_id, voter_key)
-) WITHOUT ROWID;
-"""
-
 # Praefix des gerundeten Puffer-Beginns je Umfrage (Zeitdeckel, ADR E3).
 PENDING_SINCE = "pending_since:"
-
-# Was aus der config-Tabelle eine Sicherungskopie ueberleben darf
-# (EIP-T-067). Bewusst eine *Positiv*liste: Eine Liste der Geheimnisse waere
-# eine Liste von heute - der naechste Schluessel, den jemand hinzufuegt, laege
-# still in jeder Kopie, und genau dieser Fund (ein vernichtetes server_secret,
-# das in data.backup.<zeit>/ weiterlebte) hat das Ticket ausgeloest. Ein neuer
-# Eintrag muss hier bewusst freigegeben werden, sonst faellt er heraus.
-KOPIERBARE_CONFIG_PRAEFIXE = (PENDING_SINCE,)
 
 
 @dataclass(frozen=True)
@@ -130,7 +77,27 @@ class PollRow:
     created: str
 
 
-class Store:
+class SqliteStore:
+    """Gemeinsame Basis beider Speicher: Verbindung, Lock, config-Tabelle.
+
+    Was hier steht, brauchen beide Seiten der Trennlinie identisch - vor allem
+    ``vernichte_config`` und ``kopiere_ohne_geheimnisse``, deren Zusagen nicht
+    in zwei Fassungen auseinanderlaufen duerfen. Was eine Seite alleine
+    braucht, steht in ihrer Unterklasse.
+    """
+
+    SCHEMA: ClassVar[str] = ""
+    # Was aus der config-Tabelle eine Sicherungskopie ueberleben darf
+    # (EIP-T-067). Bewusst eine *Positiv*liste: Eine Liste der Geheimnisse waere
+    # eine Liste von heute - der naechste Schluessel, den jemand hinzufuegt,
+    # laege still in jeder Kopie, und genau dieser Fund (ein vernichtetes
+    # server_secret, das in data.backup.<zeit>/ weiterlebte) hat das Ticket
+    # ausgeloest. Ein neuer Eintrag muss hier bewusst freigegeben werden, sonst
+    # faellt er heraus.
+    KOPIERBARE_CONFIG_PRAEFIXE: ClassVar[tuple[str, ...]] = ()
+    # Tabellen, die in einer Kopie geleert werden (Betriebszustand, kein Bestand).
+    KOPIE_LEEREN: ClassVar[tuple[str, ...]] = ()
+
     def __init__(self, path: Path) -> None:
         self.path = path
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -143,7 +110,7 @@ class Store:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA busy_timeout=5000")
         self._weise_altformat_ab()
-        self._conn.executescript(SCHEMA)
+        self._conn.executescript(self.SCHEMA)
         self._conn.commit()
         # Alle Threads teilen sich diese eine Verbindung (check_same_thread=False).
         # Deshalb steht auch jeder *Lesezugriff* unter dem Lock, nicht nur die
@@ -153,51 +120,24 @@ class Store:
         #
         # Das Lock ist privat (EIP-T-047): es sichert diese eine Verbindung, es
         # ist *nicht* der Grund, warum ein Ausweis nur ein Token bekommt. Diese
-        # Regel setzen beanspruche_berechtigung und verbrauche_token selbst
-        # durch. RLock bleibt, weil die zusammengesetzten Operationen hier drin
-        # schachteln (momentaufnahme, publiziere).
+        # Regel setzen die Ledger-Methoden selbst durch. RLock bleibt, weil die
+        # zusammengesetzten Operationen hier drin schachteln (momentaufnahme,
+        # publiziere).
         self._lock = threading.RLock()
 
     def _weise_altformat_ab(self) -> None:
-        """Datenbanken im Ketten-Format (vor ADR-20260728-001) nicht stillschweigend
-        weiterbenutzen.
+        """Hook der Unterklassen: bekannte Altformate sichtbar abweisen."""
 
-        Der Formatwechsel ist ein bewusster Bruch (ADR, "Formatbruch"): Eintraege
-        verlieren ihre Nummern, die Kette wird zur Batch-Kette. Ein Altbestand
-        laesst sich nicht verlustfrei ueberfuehren, ohne seine Eingangsreihenfolge
-        mitzunehmen - und genau die soll weg. Die Migrationsentscheidung der ADR:
-        Vorfuehrdaten verwerfen. Sichtbar statt still - deshalb Abbruch mit
-        Anleitung statt eines leeren Boards neben vollen Ledgern.
-        """
-        spalten = {
-            r["name"]
-            for r in self._conn.execute("PRAGMA table_info(board)").fetchall()
-        }
-        if "idx" in spalten:
-            raise RuntimeError(
-                f"Die Datenbank {self.path} stammt aus dem Ketten-Format vor "
-                "EIP-ADR-20260728-001 (Merkle-Set mit Batch-Kette). Sie enthaelt nur "
-                "Vorfuehrdaten und wird verworfen: Datei loeschen oder EIDPOLL_DB auf "
-                "einen neuen Pfad setzen, dann neu starten."
-            )
-        # Boards ohne Token-Schluessel im POLL_OPEN-Eintrag (vor EIP-T-069)
-        # liessen sich nicht mehr pruefen: Der globale Schluessel, gegen den
-        # ihre Signaturen gelten, wird beim Start vernichtet. Auch das ist
-        # Vorfuehrbestand und wird sichtbar verworfen, statt als Board mit
-        # lauter unlesbaren Eroeffnungseintraegen weiterzulaufen.
-        if spalten:
-            alt = self._conn.execute(
-                "SELECT COUNT(*) AS n FROM board "
-                "WHERE payload LIKE '%\"POLL_OPEN\"%' AND payload NOT LIKE '%\"pubkey\"%'"
-            ).fetchone()
-            if alt and int(alt["n"]):
-                raise RuntimeError(
-                    f"Die Datenbank {self.path} stammt aus der Zeit vor EIP-T-069 (ein "
-                    "globaler Token-Signaturschluessel statt einem je Umfrage). Ihre "
-                    "Boards nennen keinen Schluessel und waeren nach dem Start nicht mehr "
-                    "pruefbar. Sie enthaelt nur Vorfuehrdaten und wird verworfen: Datei "
-                    "loeschen oder EIDPOLL_DB auf einen neuen Pfad setzen, dann neu starten."
-                )
+    def _hat_tabelle(self, name: str) -> bool:
+        return bool(
+            self._conn.execute(f"PRAGMA table_info({name})").fetchall()
+        )
+
+    @staticmethod
+    def _stunde() -> str:
+        return datetime.now().replace(minute=0, second=0, microsecond=0).isoformat(
+            timespec="seconds"
+        )
 
     # -- config ------------------------------------------------------------
     def get_config(self, key: str) -> str | None:
@@ -283,10 +223,8 @@ class Store:
 
         Deshalb kopiert diese Methode nicht die Datei, sondern die Datenbank
         *ohne* ihre config-Tabelle bis auf ``KOPIERBARE_CONFIG_PRAEFIXE`` und
-        ohne den Wiederhol-Puffer ``issue_retry`` (EIP-T-070, siehe unten).
-        Ledger, Board und Batches bleiben vollstaendig - sie sind der Grund,
-        eine Kopie zu haben, und ohne Schluessel geben sie keine Zuordnung her
-        (das prueft smoke_test.datenabzug_nach_schluss am Original).
+        ohne die Tabellen aus ``KOPIE_LEEREN`` (Betriebszustand von heute,
+        kein Bestand - EIP-T-070).
 
         Drei Feinheiten, die je einen Fehlschlag gekostet haben:
 
@@ -301,8 +239,7 @@ class Store:
           die Datei (V-003 eine Ebene hoeher).
 
         Was die Methode **nicht** leistet: Sie macht ein Backup einer offenen
-        Umfrage nicht unbedenklich. Ohne ``poll_secret`` laesst sich aus der
-        Kopie zwar nichts zurueckrechnen, aber Regel 1 der Backup-Regel
+        Umfrage nicht unbedenklich. Regel 1 der Backup-Regel
         (EIP-RPT-20260731-002 §3.3) bleibt der Massstab: Sie sagt, *wann* eine
         Kopie existieren darf, diese Methode nur, *wie* sie dann aussieht.
         """
@@ -319,31 +256,123 @@ class Store:
 
         kopie = sqlite3.connect(ziel)
         try:
-            behalten = " OR ".join(["key LIKE ?"] * len(KOPIERBARE_CONFIG_PRAEFIXE))
-            muster = [p + "%" for p in KOPIERBARE_CONFIG_PRAEFIXE]
+            if self.KOPIERBARE_CONFIG_PRAEFIXE:
+                behalten = " OR ".join(["key LIKE ?"] * len(self.KOPIERBARE_CONFIG_PRAEFIXE))
+                wo = f"NOT ({behalten})"
+                muster = [p + "%" for p in self.KOPIERBARE_CONFIG_PRAEFIXE]
+            else:
+                wo, muster = "1=1", []
             entfernt = [
                 r[0] for r in kopie.execute(
-                    f"SELECT key FROM config WHERE NOT ({behalten}) ORDER BY key", muster
+                    f"SELECT key FROM config WHERE {wo} ORDER BY key", muster
                 ).fetchall()
             ]
             kopie.execute(
                 f"UPDATE config SET value = "
                 f"substr(hex(randomblob(length(value))), 1, length(value)) "
-                f"WHERE NOT ({behalten})", muster
+                f"WHERE {wo}", muster
             )
-            kopie.execute(f"DELETE FROM config WHERE NOT ({behalten})", muster)
-            # Der Wiederhol-Puffer (EIP-T-070) ist Betriebszustand von heute,
-            # kein Bestand. In einer Kopie ueberlebte er seinen eigenen Ablauf -
-            # dieselbe Bewegung wie das server_secret in data.backup.<zeit>/,
-            # nur eine Tabelle weiter. Er faellt deshalb heraus, ohne dass es
-            # jemand beim Anlegen der Kopie bedenken muss.
-            kopie.execute("DELETE FROM issue_retry")
+            kopie.execute(f"DELETE FROM config WHERE {wo}", muster)
+            for tabelle in self.KOPIE_LEEREN:
+                kopie.execute(f"DELETE FROM {tabelle}")
             kopie.commit()
             kopie.execute("VACUUM")
             kopie.execute("PRAGMA journal_mode=DELETE")
         finally:
             kopie.close()
         return entfernt
+
+
+class Store(SqliteStore):
+    """Die Board-Seite: Umfragen, Board mit Batch-Kette, Vote-Ledger.
+
+    Kennt Token und Stimme, aber kein Pseudonym und keinen Umfrage-Schluessel -
+    die liegen in berechtigung_store.BerechtigungsStore (Baustein G).
+    """
+
+    SCHEMA = """
+    CREATE TABLE IF NOT EXISTS config (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS polls (
+        poll_id  TEXT PRIMARY KEY,
+        question TEXT NOT NULL,
+        options  TEXT NOT NULL,
+        closed   INTEGER NOT NULL DEFAULT 0,
+        created  TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS spent (
+        poll_id   TEXT NOT NULL,
+        token_hex TEXT NOT NULL,
+        PRIMARY KEY (poll_id, token_hex)
+    ) WITHOUT ROWID;
+    CREATE TABLE IF NOT EXISTS board (
+        poll_id   TEXT NOT NULL,
+        leaf_hash TEXT NOT NULL,
+        payload   TEXT NOT NULL,
+        batch     INTEGER,
+        PRIMARY KEY (poll_id, leaf_hash)
+    ) WITHOUT ROWID;
+    CREATE TABLE IF NOT EXISTS batches (
+        poll_id     TEXT NOT NULL,
+        batch       INTEGER NOT NULL,
+        merkle_root TEXT NOT NULL,
+        batch_root  TEXT NOT NULL,
+        published   TEXT NOT NULL,
+        PRIMARY KEY (poll_id, batch)
+    ) WITHOUT ROWID;
+    """
+    KOPIERBARE_CONFIG_PRAEFIXE = (PENDING_SINCE,)
+    KOPIE_LEEREN = ()
+
+    def _weise_altformat_ab(self) -> None:
+        """Bekannte Altbestaende nicht stillschweigend weiterbenutzen.
+
+        Drei Faelle, alle nach demselben Muster (sichtbar abweisen mit
+        Anleitung statt still weiterlaufen):
+
+        1. Ketten-Format vor EIP-ADR-20260728-001 (board.idx).
+        2. Boards ohne Token-Schluessel im POLL_OPEN-Eintrag (vor EIP-T-069).
+        3. Kombinierte Datenbank vor Baustein G (eligibility-Tabelle in
+           derselben Datei wie das Board): Die Trennung der Speicher laesst
+           sich nicht dadurch herstellen, dass die alte Datei einfach zur
+           Board-Datei erklaert wird - der Eligibility-Bestand laege dann
+           weiter neben dem Board, und die Trennlinie waere Behauptung.
+           Vorfuehrdaten verwerfen, wie bei den Formatbruechen zuvor.
+        """
+        spalten = {
+            r["name"]
+            for r in self._conn.execute("PRAGMA table_info(board)").fetchall()
+        }
+        if "idx" in spalten:
+            raise RuntimeError(
+                f"Die Datenbank {self.path} stammt aus dem Ketten-Format vor "
+                "EIP-ADR-20260728-001 (Merkle-Set mit Batch-Kette). Sie enthaelt nur "
+                "Vorfuehrdaten und wird verworfen: Datei loeschen oder EIDPOLL_DB auf "
+                "einen neuen Pfad setzen, dann neu starten."
+            )
+        if spalten:
+            alt = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM board "
+                "WHERE payload LIKE '%\"POLL_OPEN\"%' AND payload NOT LIKE '%\"pubkey\"%'"
+            ).fetchone()
+            if alt and int(alt["n"]):
+                raise RuntimeError(
+                    f"Die Datenbank {self.path} stammt aus der Zeit vor EIP-T-069 (ein "
+                    "globaler Token-Signaturschluessel statt einem je Umfrage). Ihre "
+                    "Boards nennen keinen Schluessel und waeren nach dem Start nicht mehr "
+                    "pruefbar. Sie enthaelt nur Vorfuehrdaten und wird verworfen: Datei "
+                    "loeschen oder EIDPOLL_DB auf einen neuen Pfad setzen, dann neu starten."
+                )
+        if self._hat_tabelle("eligibility"):
+            raise RuntimeError(
+                f"Die Datenbank {self.path} stammt aus der Zeit vor der Speicher-Trennung "
+                "(EIP-T-033, Baustein G): Eligibility-Ledger und Board liegen in derselben "
+                "Datei. Seitdem gehoeren sie in zwei Dateien mit getrennten Zugriffspfaden. "
+                "Sie enthaelt nur Vorfuehrdaten und wird verworfen: Datei loeschen oder "
+                "EIDPOLL_DB auf einen neuen Pfad setzen, dann neu starten."
+            )
 
     # -- polls -------------------------------------------------------------
     def create_poll(self, poll_id: str, question: str, options: list[str], created: str) -> None:
@@ -382,113 +411,6 @@ class Store:
             self._conn.execute("UPDATE polls SET closed = 1 WHERE poll_id = ?", (poll_id,))
             self._conn.commit()
 
-    # -- Eligibility-Ledger: ein Ausweis, ein Token (§6) --------------------
-    def beanspruche_berechtigung(
-        self,
-        poll_id: str,
-        voter_key: str,
-        eintrag: dict[str, Any],
-        blinded_h: str | None = None,
-        blind_sig_hex: str | None = None,
-    ) -> BoardEntry | None:
-        """Erhebt den Anspruch auf genau ein Stimm-Token und vermerkt die
-        Ausgabe im Board-Puffer.
-
-        Rueckgabe: der gepufferte Board-Eintrag der Ausgabe, oder ``None``,
-        wenn fuer diesen Ausweis in dieser Umfrage schon eine Berechtigung
-        ausgegeben wurde.
-
-        ``blinded_h`` und ``blind_sig_hex`` gehen in denselben Schritt
-        (EIP-T-070): Wer den Anspruch verbraucht, muss die Antwort nachher noch
-        einmal bekommen koennen. Laege der Wiederhol-Puffer in einer zweiten
-        Transaktion, waere genau der Fall wieder offen, den das Ticket schliesst
-        - Anspruch weg, Antwort nirgends. Ohne die beiden (Puffer abgeschaltet)
-        bleibt es beim alten Verhalten.
-
-        Pruefen und Eintragen sind *ein* Schritt, durchgesetzt vom PRIMARY KEY
-        der Tabelle: ``INSERT OR IGNORE`` traegt ein oder tut nichts, und
-        ``rowcount`` sagt, was davon passiert ist. Ein zweiter Anspruch kann
-        sich deshalb nicht zwischen Pruefung und Einfuegen schieben - die
-        Datenbank entscheidet, nicht die Aufmerksamkeit des Aufrufers
-        (EIP-T-047, §9).
-
-        Der Board-Eintrag gehoert in denselben Schritt: sonst zeigt die
-        Abrechnung fuer einen Moment einen Ledger-Eintrag ohne Board-Eintrag,
-        und das Debug-Modul meldet eine Inkonsistenz, die es nicht gibt.
-        """
-        with self._lock:
-            cur = self._conn.execute(
-                "INSERT OR IGNORE INTO eligibility (poll_id, voter_key) VALUES (?, ?)",
-                (poll_id, voter_key),
-            )
-            if cur.rowcount == 0:
-                return None
-            try:
-                if blinded_h is not None and blind_sig_hex is not None:
-                    self._conn.execute(
-                        "INSERT OR REPLACE INTO issue_retry "
-                        "(poll_id, voter_key, blinded_h, blind_sig, stunde) VALUES (?, ?, ?, ?, ?)",
-                        (poll_id, voter_key, blinded_h, blind_sig_hex, self._stunde()),
-                    )
-                # _puffer committet - und damit auch den Anspruch oben.
-                entry, _ = self._puffer(poll_id, eintrag)
-                return entry
-            except Exception:
-                self._conn.rollback()  # kein Board-Eintrag, kein Anspruch
-                raise
-
-    @staticmethod
-    def _stunde() -> str:
-        return datetime.now().replace(minute=0, second=0, microsecond=0).isoformat(
-            timespec="seconds"
-        )
-
-    def wiederhol_signatur(self, poll_id: str, voter_key: str, blinded_h: str) -> str | None:
-        """Die zuvor ausgegebene Blindsignatur, wenn dieselbe verblindete
-        Anfrage noch einmal kommt (EIP-T-070). Sonst ``None``.
-
-        ``None`` heisst zweierlei und darf es auch: kein Puffer-Eintrag mehr
-        (abgelaufen), oder ein *anderes* ``blinded_msg`` von einem bereits
-        versorgten Ausweis. Beides endet in derselben Abweisung - der Aufrufer
-        unterscheidet sie fuer das Debug-Modul, nicht fuer die Antwort.
-        """
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT blind_sig FROM issue_retry "
-                "WHERE poll_id = ? AND voter_key = ? AND blinded_h = ?",
-                (poll_id, voter_key, blinded_h),
-            ).fetchone()
-        return row["blind_sig"] if row else None
-
-    def verwirf_wiederhol_puffer(
-        self, poll_id: str | None = None, aelter_als: datetime | None = None
-    ) -> int:
-        """Loescht Wiederhol-Eintraege und gibt zurueck, wie viele es waren.
-
-        Ohne Argumente: alles. ``poll_id`` grenzt auf eine Umfrage ein (beim
-        Schliessen - danach ist kein Token mehr etwas wert), ``aelter_als`` auf
-        die abgelaufenen (Ablaufdurchlauf). Der Vergleich laeuft ueber den
-        ISO-Text, der sortiert wie die Zeit.
-        """
-        bedingungen: list[str] = []
-        werte: list[Any] = []
-        if poll_id is not None:
-            bedingungen.append("poll_id = ?")
-            werte.append(poll_id)
-        if aelter_als is not None:
-            bedingungen.append("stunde < ?")
-            werte.append(aelter_als.isoformat(timespec="seconds"))
-        wo = (" WHERE " + " AND ".join(bedingungen)) if bedingungen else ""
-        with self._lock:
-            cur = self._conn.execute(f"DELETE FROM issue_retry{wo}", werte)
-            self._conn.commit()
-        return cur.rowcount
-
-    def wiederhol_puffer_stand(self) -> int:
-        with self._lock:
-            row = self._conn.execute("SELECT COUNT(*) AS n FROM issue_retry").fetchone()
-        return int(row["n"])
-
     # -- Vote-Ledger: ein Token, eine Stimme (§9) --------------------------
     def verbrauche_token(
         self, poll_id: str, token_hex: str, eintrag: dict[str, Any]
@@ -501,10 +423,13 @@ class Store:
         Veroeffentlichung nimmt den ganzen Puffer mit, also ist der naechste
         Batch nach dem Einfuegen genau der, in dem dieser Eintrag erscheint.
 
-        Wie beanspruche_berechtigung ein einziger Schritt ueber den PRIMARY
-        KEY - und aus demselben Grund zusammen mit dem Board-Eintrag. Der
-        Ledger haelt nur den Token-Hash, keine Stimme: was gestimmt wurde,
-        steht ausschliesslich im Board (§7).
+        Pruefen und Eintragen sind *ein* Schritt, durchgesetzt vom PRIMARY KEY
+        der Tabelle: ``INSERT OR IGNORE`` traegt ein oder tut nichts, und
+        ``rowcount`` sagt, was davon passiert ist (EIP-T-047, §9). Der
+        Board-Eintrag gehoert in denselben Schritt - beides liegt in dieser
+        einen Datei, die Transaktion bleibt also auch nach der Speicher-
+        Trennung (Baustein G) ein Stueck. Der Ledger haelt nur den Token-Hash,
+        keine Stimme: was gestimmt wurde, steht ausschliesslich im Board (§7).
         """
         with self._lock:
             cur = self._conn.execute(
@@ -519,35 +444,26 @@ class Store:
                 self._conn.rollback()  # keine Stimme, kein verbrauchtes Token
                 raise
 
-    # -- Ledger-Stand fuer die Abrechnung (§9) -----------------------------
-    def ledger_stand(self, poll_id: str) -> tuple[int, int]:
-        """(ausgegebene Berechtigungen, verbrauchte Tokens) in einem Zug.
-
-        Beide Zahlen zusammen, damit die Abrechnung nicht zwei Zeitpunkte
-        vergleicht: dazwischen abgegebene Stimmen saehen sonst wie eine
-        Inkonsistenz aus - eine Falschmeldung ausgerechnet an der Stelle, die
-        echte Manipulation anzeigen soll.
-        """
+    def anzahl_verbraucht(self, poll_id: str) -> int:
+        """Verbrauchte Tokens dieser Umfrage - die Board-Haelfte der Abrechnung."""
         with self._lock:
             row = self._conn.execute(
-                "SELECT (SELECT COUNT(*) FROM eligibility WHERE poll_id = ?) AS eligible, "
-                "       (SELECT COUNT(*) FROM spent WHERE poll_id = ?) AS spent",
-                (poll_id, poll_id),
+                "SELECT COUNT(*) AS n FROM spent WHERE poll_id = ?", (poll_id,)
             ).fetchone()
-        return int(row["eligible"]), int(row["spent"])
+        return int(row["n"])
 
-    def momentaufnahme(
-        self, poll_id: str
-    ) -> tuple[list[Batch], list[BoardEntry], int, int]:
-        """(Batches, Puffer, ausgegebene Berechtigungen, verbrauchte Tokens) in
-        einem Zug - erst danach pruefen: die teuren Signaturpruefungen duerfen
-        nicht zwischen den Lesezugriffen liegen (siehe ledger_stand).
+    def momentaufnahme(self, poll_id: str) -> tuple[list[Batch], list[BoardEntry], int]:
+        """(Batches, Puffer, verbrauchte Tokens) in einem Zug - erst danach
+        pruefen: die teuren Signaturpruefungen duerfen nicht zwischen den
+        Lesezugriffen liegen. Die Eligibility-Haelfte der Abrechnung liegt seit
+        Baustein G in der anderen Datei; wie die beiden Lesezeitpunkte
+        zusammengehen, entscheidet der Aufrufer (poll_service.ledger_stand).
         """
         with self._lock:
             batches = self.veroeffentlichte_batches(poll_id)
             pending = self.pending(poll_id)
-            eligible, spent = self.ledger_stand(poll_id)
-        return batches, pending, eligible, spent
+            spent = self.anzahl_verbraucht(poll_id)
+        return batches, pending, spent
 
     # -- Board: Puffer und Batches (EIP-ADR-20260728-001) -------------------
     def _puffer(self, poll_id: str, payload: dict[str, Any]) -> tuple[BoardEntry, int]:
@@ -562,10 +478,8 @@ class Store:
         key = PENDING_SINCE + poll_id
         row = self._conn.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()
         if row is None:
-            stunde = datetime.now().replace(minute=0, second=0, microsecond=0)
             self._conn.execute(
-                "INSERT INTO config (key, value) VALUES (?, ?)",
-                (key, stunde.isoformat(timespec="seconds")),
+                "INSERT INTO config (key, value) VALUES (?, ?)", (key, self._stunde())
             )
         zusage = int(
             self._conn.execute(
@@ -576,7 +490,10 @@ class Store:
         return entry, zusage
 
     def puffer_eintrag(self, poll_id: str, payload: dict[str, Any]) -> BoardEntry:
-        """Eintrag ohne Ledger-Anspruch puffern (POLL_OPEN, POLL_CLOSED)."""
+        """Eintrag ohne Vote-Ledger-Anspruch puffern (POLL_OPEN, POLL_CLOSED,
+        TOKEN_ISSUED - letzterer kommt seit Baustein G von der Berechtigungs-
+        seite herueber: der Eintrag traegt nur einen Zufalls-Nonce, kein
+        Pseudonym, und die oeffentliche Abrechnung aus §9 braucht ihn)."""
         with self._lock:
             entry, _ = self._puffer(poll_id, payload)
         return entry

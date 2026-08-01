@@ -38,8 +38,14 @@ meldet ihn getrennt.
 **Die Grenze, weil sie nach Paragraf 4 mitzusagen ist.** Das hier ist die
 Selbstauskunft des Servers, den man gerade pruefen will. Gegen ein Versehen
 hilft sie, gegen einen Betreiber, der luegt, nicht: Wer den Code aendert, kann
-auch diese Zeilen aendern. Dagegen hilft erst ein reproduzierbarer, von Dritten
-nachgerechneter Build (EIP-T-007) - und vollstaendig auch der nicht.
+auch diese Zeilen aendern.
+
+Deshalb steht seit EIP-T-007 daneben, was **ohne** diese Selbstauskunft
+auskommt: ``client()`` listet die Dateien, die der Browser ausfuehrt, einzeln
+mit ihrem Hash. Wer sie abruft und selbst hasht, vergleicht zwei Groessen, von
+denen keine aus dieser Antwort stammt - die Auslieferung gegen das
+oeffentliche Repository. Was auch das nicht ausschliesst, steht dort in
+``grenze``: eine Auslieferung, die einzelnen Besuchern anderen Code schickt.
 """
 
 from __future__ import annotations
@@ -47,6 +53,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -111,6 +118,111 @@ def treehash(basis: Path = BASE_DIR) -> tuple[str, int]:
     return hashlib.sha256(text.encode()).hexdigest(), text.count("\n")
 
 
+# ---------------------------------------------------------------------------
+# Der Client: was im Browser laeuft (Paragraf 20, EIP-T-007)
+# ---------------------------------------------------------------------------
+#
+# Der treehash oben deckt alles ab, was hier liegt - Server wie Client. Er ist
+# damit die Antwort auf "welcher Stand laeuft hier", aber nicht auf die Frage,
+# um die es Paragraf 20 eigentlich geht: **Ist der Code, der gerade in meinem
+# Browser das Blinding rechnet, derselbe, der veroeffentlicht ist?**
+#
+# Der Unterschied ist keiner der Feinheit, sondern der Beweiskraft. Den treehash
+# kann nur der Server berechnen, und wer ihm nicht traut, hat mit seiner Antwort
+# nichts geprueft. Die Dateien unter ``static/`` dagegen gehen unveraendert ueber
+# die Leitung: Jeder kann sie selbst abrufen, selbst hashen und gegen das
+# oeffentliche Repository halten - ohne diesen Server zu fragen und ohne unser
+# Werkzeug. Das ist eine Messung von aussen, keine Selbstauskunft.
+#
+# Voraussetzung dafuer ist, dass **kein** ausfuehrbarer Client-Code woanders
+# steht. Inline-Skripte in den Templates waeren genau die Luecke: Sie stecken in
+# der gerenderten Seite, sind dort mit keiner Repo-Datei mehr vergleichbar, und
+# ein Hash ueber static/ wuerde ihre Abwesenheit nur vortaeuschen. Seit
+# EIP-T-007 gibt es keine mehr - ``client_luecken`` haelt das nach und meldet
+# einen Rueckfall als Inkonsistenz ins Debug-Modul.
+
+CLIENT_ORDNER = "static"
+
+CLIENT_VERFAHREN = (
+    "sha256 ueber die Zeilen '<sha256 der Datei>  <Pfad>' aller Dateien unter static/, "
+    "nach Pfad sortiert, je Zeile mit \\n abgeschlossen"
+)
+CLIENT_NACHRECHNEN = (
+    "gegen die Auslieferung, ohne diesen Server zu fragen: "
+    "curl -s <url>/static/blind.js | sha256sum - und gegen das Repository: "
+    "LC_ALL=C sh -c 'find static -type f | sort | xargs sha256sum | sha256sum' im Ordner app/"
+)
+
+
+def client_dateien(basis: Path = BASE_DIR) -> list[Path]:
+    """Die Dateien, die der Browser abruft - relativ zu ``basis``, nach Pfad sortiert."""
+    return [rel for rel in dateien(basis) if rel.parts and rel.parts[0] == CLIENT_ORDNER]
+
+
+def client_manifest(basis: Path = BASE_DIR) -> str:
+    """Manifest der Client-Dateien im Format von ``sha256sum``."""
+    zeilen = []
+    for rel in client_dateien(basis):
+        digest = hashlib.sha256((basis / rel).read_bytes()).hexdigest()
+        zeilen.append(f"{digest}  {rel.as_posix()}\n")
+    return "".join(zeilen)
+
+
+def clienthash(basis: Path = BASE_DIR) -> str:
+    """Hash ueber das Client-Manifest."""
+    return hashlib.sha256(client_manifest(basis).encode()).hexdigest()
+
+
+def client_luecken(basis: Path = BASE_DIR) -> list[str]:
+    """Ausfuehrbarer Client-Code ausserhalb von static/ - also ausserhalb des Hashs.
+
+    Geprueft werden die Templates auf ``<script>``-Bloecke mit Inhalt. Ein
+    ``<script src=...>`` ist keiner: Er laedt eine Datei, die im Hash steht.
+    ``<script type="application/json">`` ebenfalls nicht - das sind Daten, die
+    der Browser nicht ausfuehrt, und genau der Weg, auf dem poll.html seine
+    umfragespezifischen Werte uebergibt, ohne Code zu erzeugen.
+    """
+    befunde: list[str] = []
+    ordner = basis / "templates"
+    if not ordner.is_dir():
+        return befunde
+    muster = re.compile(r"<script(?P<attr>[^>]*)>(?P<inhalt>.*?)</script>", re.DOTALL)
+    for pfad in sorted(ordner.glob("*.html")):
+        for treffer in muster.finditer(pfad.read_text(encoding="utf-8")):
+            attr = treffer.group("attr")
+            if "src=" in attr or 'type="application/json"' in attr:
+                continue
+            if not treffer.group("inhalt").strip():
+                continue
+            befunde.append(
+                f"templates/{pfad.name} enthaelt ausfuehrbaren Inline-Code. Der laeuft im "
+                f"Browser, steht aber nicht unter static/ und faellt damit aus dem "
+                f"Client-Hash - er wuerde Vollstaendigkeit nur behaupten (Paragraf 20)."
+            )
+    return befunde
+
+
+def client(basis: Path = BASE_DIR) -> dict[str, Any]:
+    """Was der Browser ausfuehrt, Datei fuer Datei - nachrechenbar ohne uns."""
+    return {
+        "clienthash": f"sha256:{clienthash(basis)}",
+        "dateien": {
+            rel.as_posix(): hashlib.sha256((basis / rel).read_bytes()).hexdigest()
+            for rel in client_dateien(basis)
+        },
+        "verfahren": CLIENT_VERFAHREN,
+        "nachrechnen": CLIENT_NACHRECHNEN,
+        "luecken": client_luecken(basis),
+        "grenze": (
+            "Diese Liste laesst sich pruefen, ohne uns zu glauben: Wer eine Datei selbst "
+            "abruft und hasht, vergleicht zwei Dinge, die beide nicht von dieser Antwort "
+            "stammen. Was sie nicht ausschliesst, ist eine Auslieferung, die einzelnen "
+            "Besuchern anderen Code schickt als allen anderen - dagegen hilft nur, dass "
+            "mehrere unabhaengig abrufen und vergleichen."
+        ),
+    }
+
+
 def _git(basis: Path, *args: str) -> str | None:
     """git-Aufruf im Ordner ``basis``; ``None``, wenn git oder Repo fehlen."""
     try:
@@ -156,11 +268,13 @@ def stand(basis: Path = BASE_DIR) -> dict[str, Any]:
         "verfahren": VERFAHREN,
         "nachrechnen": NACHRECHNEN,
         "repository": "https://github.com/is-noname/eID-polls (Branch prototype)",
+        "client": client(basis),
         "grenze": (
             "Selbstauskunft dieser Instanz. Sie deckt ein Versehen auf, nicht einen "
             "Betreiber, der luegt - wer den Code aendert, kann auch diese Antwort "
-            "aendern. Ein reproduzierbarer, von Dritten nachgerechneter Build steht "
-            "aus (KODEX Paragraf 20, EIP-T-007)."
+            "aendern. Wer nicht uns pruefen will, sondern den Code in seinem Browser, "
+            "nimmt 'client': dessen Dateien lassen sich abrufen und selbst hashen, "
+            "ohne diese Antwort zu verwenden (KODEX Paragraf 20)."
         ),
     }
 
@@ -240,6 +354,10 @@ def abgleich(basis: Path = BASE_DIR, bericht_pfad: Path | None = None) -> Abglei
     verschiedene Strecken. Getrennt angezeigt saehe jede fuer sich harmlos aus.
     """
     befunde, hinweise = lokale_abweichungen(basis)
+    # Client-Code ausserhalb von static/ ist kein Schoenheitsfehler: Er macht
+    # den Client-Hash zu einer Aussage ueber einen Teil, die wie eine ueber das
+    # Ganze aussieht.
+    befunde.extend(client_luecken(basis))
     eigener = stand(basis)
     bericht = bericht_lesen(bericht_pfad if bericht_pfad is not None else BERICHT)
 
