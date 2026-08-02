@@ -348,6 +348,10 @@ def page(request: Request, template: str, status_code: int = 200, **context: Any
     context.setdefault("nenner_bezeichnung", d.settings.nenner_bezeichnung)
     context.setdefault("nenner_quelle", d.settings.nenner_quelle)
     context.setdefault("nenner_quelle_url", d.settings.nenner_quelle_url)
+    # Der Zugangshinweis begleitet den Nenner ueberall dorthin, wo er steht
+    # (KODEX §11, EIP-T-092): Die Quote sagt, wie viele teilgenommen haben, der
+    # Hinweis, wer gar nicht erst konnte.
+    context.setdefault("zugang_hinweis", d.settings.zugang_hinweis)
     return d.templates.TemplateResponse(request, template, context, status_code=status_code)
 
 
@@ -750,8 +754,16 @@ async def api_board(request: Request, poll_id: str) -> JSONResponse:
 
         curl -sO http://.../api/board/{poll_id}
         python3 verifikation.py board.json
+
+    ``zugang`` kommt aus KODEX §11 (EIP-T-092) und wird hier angehaengt, nicht in
+    ``board_export()`` erzeugt: Alles, was der Kern in die Datei schreibt, liegt
+    unter der Merkle-Root und ist nachrechenbar. Der Hinweis ist das nicht - er
+    ist eine Aussage des Betreibers ueber die Zahl, und die gehoert nicht in
+    denselben Topf wie das, was ein Dritter selbst pruefen kann.
     """
-    return JSONResponse(deps(request).service.board_export(poll_id))
+    export = deps(request).service.board_export(poll_id)
+    export["zugang"] = deps(request).settings.zugang_hinweis
+    return JSONResponse(export)
 
 
 @router.get("/anker/{poll_id}/{batch}/root")
@@ -800,8 +812,14 @@ async def api_status(request: Request, poll_id: str) -> JSONResponse:
     (auditor.py, EIP-T-071). Ohne sie muesste er die HTML-Seite auslesen und
     haette am Ende verglichen, was er selbst geparst hat. Solange die Umfrage
     laeuft, gibt es kein Ergebnis - dann steht in ``result_error``, warum.
+
+    ``nenner`` und ``zugang`` stehen dabei neben ``result``, weil beide zur Zahl
+    gehoeren und nicht zur Seite, die sie anzeigt (KODEX §8, §11; EIP-T-025,
+    EIP-T-092): Wer das Ergebnis von hier holt, bekommt den Nenner und die
+    Zugangsvoraussetzung mit, statt sie aus dem HTML klauben zu muessen.
     """
-    service = deps(request).service
+    d = deps(request)
+    service, settings = d.service, d.settings
     poll = service.poll(poll_id)
     bericht = service.laufender_bericht(poll_id)
     accounting = bericht.accounting
@@ -817,6 +835,10 @@ async def api_status(request: Request, poll_id: str) -> JSONResponse:
             "participation": accounting.n_votes,
             "n_eligible": accounting.n_eligible,
             "accounting_ok": accounting.ok,
+            "nenner": settings.nenner,
+            "nenner_bezeichnung": settings.nenner_bezeichnung,
+            "nenner_quelle": settings.nenner_quelle,
+            "zugang": settings.zugang_hinweis,
             "result": result,
             "result_error": result_error,
         }

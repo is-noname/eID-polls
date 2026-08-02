@@ -2276,6 +2276,34 @@ def main() -> int:
     check("Punkt 7c: Nenner steht vor den Ergebnisbalken",
           quote_pos >= 0 and quote_pos < seite.find("bar-row"))
 
+    # EIP-T-092 / KODEX §11: Die Zugangsvoraussetzung gehoert an die Zahl. Der
+    # Wortlaut darf sich aendern, die drei Bestandteile nicht - eID, PIN und die
+    # Feststellung, dass der Nenner darueber hinausgeht. Geprueft wird gegen die
+    # Einstellung, nicht gegen einen hier abgeschriebenen Satz: Ein Test, der
+    # seine eigene Kopie prueft, faellt beim Auseinanderlaufen nicht auf.
+    zugang = Settings().zugang_hinweis
+    zugang_pos = seite.find(zugang)
+    check("Punkt 7d: Ergebnis nennt die eID-Verfuegbarkeit als Zugangsvoraussetzung",
+          zugang_pos >= 0
+          and "eID" in zugang
+          and "PIN" in zugang,
+          f"zugang_pos={zugang_pos}")
+    check("Punkt 7e: Zugangshinweis steht bei der Quote, vor den Ergebnisbalken",
+          zugang_pos >= 0 and quote_pos < zugang_pos < seite.find("bar-row"))
+
+    # Und derselbe Satz dort, wo das Ergebnis maschinenlesbar herausgeht: Ein
+    # Hinweis, der beim Weitertragen abfaellt, erfuellt §11 genau dann nicht
+    # mehr, wenn es darauf ankommt.
+    export = client.get(f"/api/board/{POLL}").json()
+    status_json = client.get(f"/api/status/{POLL}").json()
+    check("Punkt 7f: Zugangshinweis auch im Board-Export und in /api/status",
+          export.get("zugang") == zugang and status_json.get("zugang") == zugang,
+          f"board={export.get('zugang') is not None} status={status_json.get('zugang') is not None}")
+    check("Punkt 7g: /api/status nennt den Nenner zum Ergebnis",
+          status_json.get("nenner") == Settings().nenner
+          and "Wahlberechtigte" in str(status_json.get("nenner_bezeichnung", "")),
+          str(status_json.get("nenner")))
+
     # Erst hier: der Auditor prueft den *echten* Export dieser Umfrage, es muss
     # also abgestimmt und geschlossen sein.
     auditor_unabhaengig()

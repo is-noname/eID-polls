@@ -11,7 +11,7 @@
 > Historie: [Kodex-Protokoll](/kodex/protokoll) · Begriffe: Glossar (projektintern) ·
 > These: EIP-RFC-20260726-001
 
-**Version 27 — 2026-08-02**
+**Version 28 — 2026-08-02**
 
 ---
 
@@ -569,12 +569,13 @@ Sehvermögen oder Maus nicht bedienbar sind.
 EIP-T-064, fällig vor dem ersten echten Durchlauf
 (Betriebsstufe `produktiv`).
 
-Ebenfalls `offen` und bis zum 2026-08-01 unbemerkt: die **Hinweispflicht am Ergebnis**. Der
-Ergebnisblock der Board-Seite nennt die eID-Verfügbarkeit als Zugangsvoraussetzung nicht — der
-Paragraph verlangt sie ausdrücklich „bei jedem Ergebnis, nicht nur im Manifest" (V-006, derselbe
-Sachverhalt wie bei § 7 und § 8) → EIP-T-092, fällig vor
-Betriebsstufe `produktiv`. Die Ausschlusswirkung gehört an die Zahl, weil sie sonst genau dort
-fehlt, wo jemand die Zahl weiterträgt.
+Die **Hinweispflicht am Ergebnis** ist seit dem 2026-08-02 eingelöst
+(EIP-T-092, V-006 damit am Ergebnis behoben; was
+von dem Verstoß bleibt, hängt an § 7): Der
+Ergebnisblock der Board-Seite nennt die eID-Verfügbarkeit als Zugangsvoraussetzung direkt an der
+Beteiligungsquote, und derselbe Satz geht über `/api/board/{poll_id}` und `/api/status/{poll_id}`
+maschinenlesbar mit heraus. Die Ausschlusswirkung gehört an die Zahl, weil sie sonst genau dort
+fehlt, wo jemand die Zahl weiterträgt — deshalb steht sie an ihr und nicht unter ihr.
 
 ---
 
@@ -827,6 +828,11 @@ der Baustopp gilt.** Bis Version 25 stand hier 13; die Tabelle darunter führte 
 `scripts/check_kodex.py` zählt sie. Korrigiert mit Version 26 — die Zahl war zu hoch, nicht die
 Lage besser.
 
+Version 28 trägt einen Vermerk ab, ohne dass die Zahl sinkt: Die Hinweispflicht am Ergebnis ist
+eingelöst (EIP-T-092), § 11 bleibt aber wegen eAT
+und Barrierefreiheit belastet. Dieselbe Blindheit wie in Version 15, wieder zuungunsten der
+gebauten Arbeit — die Zahl zählt Paragraphen, nicht Schulden.
+
 Version 20 ist der größte Sprung, den diese Zahl je gemacht hat, und **kein einziger Vermerk
 beschreibt einen neuen Zustand**: § 3, § 7 und § 8 kommen hinzu, § 11 und § 12 bekommen einen
 zweiten Halbsatz — gefunden im ersten vollständigen Durchgang durch die bindenden Sätze
@@ -888,7 +894,6 @@ ein Dokument schreibt.
 | 6 | DSGVO-Kollision entschieden und begründet | EIP-T-061 | `produktiv` | 2026-07-26 |
 | 7 | Von den sechs Größen, die vor dem Start feststehen müssen, kennt die App drei. Der Nenner steht seit dem 2026-08-02 (EIP-T-025, erledigt); Laufzeit und Auswertungsplan gibt es im Datenmodell nicht. Verstoß V-006 | EIP-T-091 | `produktiv` | 2026-08-01 |
 | 11 | eAT-Unterstützung, Barrierefreiheit | EIP-T-064 | `produktiv` | 2026-07-26 |
-| 11 | Hinweispflicht am Ergebnis: Die Ergebnisdarstellung nennt die eID-Verfügbarkeit als Zugangsvoraussetzung nicht. Verstoß V-006 | EIP-T-092 | `produktiv` | 2026-08-01 |
 | 12 | Übergabe der Fragehoheit an ein unabhängiges Gremium | EIP-T-022 | politische Relevanz, spät. `produktiv` | 2026-07-26 |
 | 12 | Zwischenregel bis zur Übergabe: die Enthaltungsoption ist seit dem 2026-08-01 erzwungen (EIP-T-085); neutrale Formulierung und Veröffentlichung abgelehnter Vorschläge bleiben Disziplin — das eine ist maschinell nicht prüfbar, das andere braucht einen Eingangsweg für Vorschläge | EIP-T-022 | erste Frage außerhalb einer Vorführung | 2026-08-01 |
 | 13 | Finanzierungsmodell im Detail | EIP-T-026 | erste Annahme von Geld | 2026-07-26 |

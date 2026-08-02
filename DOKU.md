@@ -579,6 +579,14 @@ zentrale Statistik über gültige Personalausweise; die Daten liegen bei rund 5.
 Ausweisbehörden, und ob ausgelieferte Ausweise noch im Umlauf sind, ist unbekannt. Ein Nenner,
 den niemand nachschlagen kann, ist keiner.
 
+**Der Zugangshinweis gehört dazu** (KODEX § 11, EIP-T-092). Direkt an der Quote steht, wer gar
+nicht erst teilnehmen konnte: Nötig sind eine aktivierte Online-Ausweisfunktion **und** die
+zugehörige PIN, der Nenner umfasst dagegen alle Wahlberechtigten. Der Satz steht nicht nur im
+HTML, sondern geht als Feld `zugang` über `/api/board/{poll_id}` und `/api/status/{poll_id}` mit
+heraus — ein Hinweis, der beim Weitertragen der Zahl abfällt, fehlt genau dort, wo er gebraucht
+wird. Sein Text steht in `config.py` neben dem Nenner, damit Seite und Schnittstelle nicht
+auseinanderlaufen können.
+
 Der Wert steht in `config.py` und nicht im Template, weil er vorab und dauerhaft feststehen muss.
 Ein je Umfrage passend gewählter Nenner wäre genau der Methodentrick, gegen den dieses Verfahren
 antritt. Eine **Veröffentlichungsschwelle** gibt es bewusst nicht: Jedes Ergebnis erscheint mit

@@ -113,6 +113,22 @@ class Settings:
         "https://www.bundeswahlleiterin.de/mitteilungen/bundestagswahlen/2025/"
         "20241204_btw25_schaetzung-wahlberechtigte.html"
     )
+    # Hinweispflicht aus KODEX §11 (EIP-T-092): Die Ausschlusswirkung gehoert an
+    # die Zahl. Der Nenner sind alle Wahlberechtigten - teilnehmen konnte nur,
+    # wer eine aktivierte eID *und* die PIN hat. Ohne diesen Satz referiert, wer
+    # die Quote zitiert, eine Beteiligung an einem Verfahren, zu dem ein grosser
+    # Teil des Nenners keinen Zugang hatte.
+    #
+    # Der Satz steht hier und nicht nur im Template, weil er auch dort
+    # mitgehen muss, wo das Ergebnis maschinenlesbar herausgeht: Ein Hinweis,
+    # der beim Weitertragen abfaellt, erfuellt §11 genau dann nicht mehr, wenn
+    # es darauf ankommt.
+    zugang_hinweis: str = (
+        "Teilnehmen konnte nur, wer eine aktivierte Online-Ausweisfunktion (eID) und die "
+        "zugehörige PIN hat. Der Nenner umfasst dagegen alle Wahlberechtigten — ein großer "
+        "Teil davon hatte zu diesem Verfahren keinen Zugang. Wer teilnimmt, unterscheidet "
+        "sich deshalb systematisch von wem nicht teilnimmt."
+    )
     seed_demo: bool = False
     seed_poll_id: str = "demo"
     seed_question: str = DEFAULT_QUESTION

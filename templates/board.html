@@ -198,6 +198,10 @@
     Beteiligung: <strong>{{ voters }} von {{ "{:,}".format(nenner) | replace(",", ".") }}</strong>
     {{ nenner_bezeichnung }}
     — {% if quote >= 0.01 %}{{ ("%.2f" % quote) | replace(".", ",") }} %{% else %}unter 0,01 %{% endif %}
+    {# KODEX §11 (EIP-T-092): Die Zugangsvoraussetzung steht an der Quote, nicht
+       weiter unten - wer die Zahl weitertraegt, kopiert diesen Satz mit oder
+       laesst ihn genau dort weg, wo er noetig waere. #}
+    <div style="margin-top:6px">{{ zugang_hinweis }}</div>
     <small>
       Nenner: {{ nenner_quelle }}, <a href="{{ nenner_quelle_url }}" rel="noreferrer">Quelle</a>.
       Vorab und dauerhaft festgelegt, nicht je Umfrage gewählt — ein nachträglich passender
@@ -222,20 +226,19 @@
     Anteil der {{ voters }} Abstimmenden. Da mehrere Antworten möglich sind, kann die Summe über
     100 % liegen.
   </p>
-  {# KODEX §11, Rest von Verstoss V-006: Nenner und Quote stehen jetzt oben
-     (EIP-T-025). Was bleibt, ist die Zugangshuerde - sie verschwindet nicht
-     dadurch, dass der Nenner benannt ist, sondern wird durch ihn erst
-     sichtbar. Eine Veroeffentlichungsschwelle gibt es bewusst nicht: Wir
-     zeigen die Quote und sagen, was sie ist. #}
+  {# V-006 ist mit EIP-T-025 (Nenner, Quote) und EIP-T-092 (Zugangshinweis)
+     aufgeloest - beides steht jetzt oben an der Zahl, nicht hier unten. Was
+     hier bleibt, ist die Folgerung daraus, und die traegt nur, wenn die
+     Voraussetzung darueber gelesen wurde. Eine Veroeffentlichungsschwelle gibt
+     es bewusst nicht: Wir zeigen die Quote und sagen, was sie ist. #}
   <div class="banner warn" style="margin-top:12px">
     Was diese Zahlen nicht sagen
     <small>
       Die Prozente an den Balken beziehen sich auf die {{ voters }} Abstimmenden — also auf sich
-      selbst; wie viel das gemessen an allen Berechtigten ist, steht oben. Hinzu kommt die
-      Zugangshürde: Mit dem Online-Ausweis abstimmen kann nur, wer eine nutzbare eID hat, und wer
-      teilnimmt, unterscheidet sich systematisch von wem nicht teilnimmt. Das Ergebnis ist damit
-      das Votum der Teilnehmenden, nie eine Aussage über die Bevölkerung. Solange kein echter
-      eID-Flow läuft, ist diese Darstellung ohnehin eine Vorführung des Verfahrens.
+      selbst; wie viel das gemessen an allen Berechtigten ist und wer gar nicht erst teilnehmen
+      konnte, steht oben. Das Ergebnis ist damit das Votum der Teilnehmenden, nie eine Aussage
+      über die Bevölkerung. Solange kein echter eID-Flow läuft, ist diese Darstellung ohnehin eine
+      Vorführung des Verfahrens.
     </small>
   </div>
 {% else %}

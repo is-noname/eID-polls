@@ -15,6 +15,31 @@
 
 ## Änderungsprotokoll
 
+### Version 28 — 2026-08-02
+
+**§ 11 löst die Hinweispflicht am Ergebnis ein**
+(EIP-T-092). Der Ergebnisblock der Board-Seite
+nennt die eID-Verfügbarkeit als Zugangsvoraussetzung jetzt direkt an der Beteiligungsquote, und
+derselbe Satz geht über `/api/board/{poll_id}` und `/api/status/{poll_id}` maschinenlesbar mit
+heraus. Der Vermerk aus Version 20 ist damit erledigt; V-006 bleibt offen, weil § 7 außerdem
+Laufzeit und Auswertungsplan verlangt.
+
+**Warum der Satz an der Quote steht und nicht darunter.** Die Zugangshürde stand seit dem
+2026-07-27 im Warnblock unter den Balken — nicht falsch, aber an der falschen Stelle: Wer die Quote
+weiterträgt, kopiert die Zeile, an der sie steht. Ein Hinweis unter dem Ergebnis fällt genau dann
+ab, wenn er gebraucht wird. Dasselbe gilt für den maschinenlesbaren Weg; deshalb steht er dort
+neben `result` und nicht nur im HTML.
+
+**Der Hinweis benennt jetzt beides — eID und PIN.** Die alte Formulierung sprach von einer
+„nutzbaren eID". Zugangsvoraussetzung sind eine aktivierte Online-Ausweisfunktion *und* die
+zugehörige PIN; wer nur die eine hat, kommt nicht durch. Der Nenner umfasst dagegen alle
+Wahlberechtigten — die Lücke zwischen beidem ist die Ausschlusswirkung, die § 11 genannt haben will.
+
+**Die Zahl bewegt sich nicht.** § 11 trägt weiter den Vermerk zu eAT und Barrierefreiheit
+(EIP-T-064): 12 belastete Paragraphen, Baustopp
+unverändert. Zum dritten Mal in vier Versionen zeigt die Kennzahl eine Bewegung nicht an, diesmal
+zuungunsten gebauter Arbeit (§ 4 b, Blindheit der Kennzahl).
+
 ### Version 27 — 2026-08-02
 
 **§ 3 trennt seine beiden Hälften** (EIP-T-008,
@@ -1392,3 +1417,21 @@ nichts, für die Beweisführung „gezählt statt geschätzt" schon.
 *Weiterhin offen:* die Veröffentlichungsschwelle aus § 8 Satz 2 — nicht als Rückstand, sondern als
 Widerspruch, siehe Version 23. Dazu Laufzeit und Auswertungsplan aus § 7 und der Zugangshinweis
 aus § 11.
+
+**Nachtrag 2026-08-02 (2) — Zugangshinweis steht, Verstoß behoben.**
+(EIP-T-092, Kodex Version 28.) Der Ergebnisblock
+nennt die eID-Verfügbarkeit als Zugangsvoraussetzung an der Beteiligungsquote, und derselbe Satz
+geht über `/api/board/{poll_id}` und `/api/status/{poll_id}` maschinenlesbar mit heraus. § 11 ist
+damit eingelöst, der Vermerk gestrichen — als letzter der drei Paragraphen, die dieser Eintrag
+*am Ergebnis* betrifft. **Der Eintrag bleibt `offen`:** § 7 verlangt außerdem Laufzeit und
+Auswertungsplan vor dem Start, und die gibt es im Datenmodell weiterhin nicht.
+
+Der Satz war nicht ganz abwesend: Unter den Balken stand seit dem 2026-07-27 „Mit dem Online-Ausweis
+abstimmen kann nur, wer eine nutzbare eID hat". Das ändert den Befund oben nicht — § 11 verlangt den
+Hinweis *bei* jedem Ergebnis, und ein Satz unter dem Ergebnis fällt ab, sobald jemand die Zahl
+zitiert. Er war zudem zu weich: Es braucht aktivierte eID **und** PIN.
+
+Was von V-006 bleibt, betrifft nicht mehr die Darstellung des Ergebnisses, sondern was vor dem Start
+feststehen muss: Laufzeit und Auswertungsplan aus § 7
+(EIP-T-091). Dazu die Veröffentlichungsschwelle
+aus § 8 Satz 2, die seit Version 24 kein Rückstand mehr ist, sondern eine gestrichene Regel.
