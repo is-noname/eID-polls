@@ -650,9 +650,16 @@ und Ledger bleiben unberührt.
 keine geprüfte Umsetzung gibt (PyPI-Suche **2026-08-01**: keine Distribution unter
 `blind-rsa-signatures`, `blind_signatures`, `blindsig`, `rsa-blind-signatures`, `pyblindsig`,
 `rsabssa`, `blind-signature`, `pyblind-rsa`, `blindrsa`, `py-blind-rsa`, `rfc9474`).
-Geprüft zugekauft sind SHA-384 und die PSS-Verifikation aus `cryptography`; selbst geschrieben sind
-EMSA-PSS-ENCODE, MGF1 und die Blinding-Arithmetik — in Python und in JavaScript. Deutlich besser
-als der textbook-Chaum des Prototyps, aber kein Ersatz für einen Audit.
+Geprüft zugekauft sind SHA-384, die Schlüsselerzeugung und die PSS-Verifikation aus `cryptography`;
+selbst geschrieben sind EMSA-PSS-ENCODE, MGF1 und die Blinding-Arithmetik — in Python und in
+JavaScript. Deutlich besser als der textbook-Chaum des Prototyps, aber kein Ersatz für einen Audit.
+
+Die beiden Seiten tragen daran ungleich. Im serverseitigen Stimmweg läuft genau eine selbst
+geschriebene Operation: die rohe RSA-Privatoperation in `blind_sign()`. Die übrigen Schritte laufen
+im Browser (`static/blind.js`); ihre Python-Zwillinge in `blind.py` bedienen den Testvektor und die
+Angriffsdemos. Für die Browserseite gäbe es eine gepflegte Bibliothek (EIP-T-008), für die
+Serverseite ändert eine Bibliothek nichts — sie rechnete dasselbe. Die serverseitige Schuld ist das
+Zeitverhalten: `pow(m, d, n)` läuft in CPython ohne Blinding und ohne konstante Zeit (EIP-T-093).
 
 Was seit EIP-T-008 dazugekommen ist und was nicht: Beide Seiten rechnen den **Testvektor aus
 RFC 9474 Anhang A.4** nach, Schritt für Schritt und mit dem Blendfaktor aus dem RFC statt einem

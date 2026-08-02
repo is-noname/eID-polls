@@ -11,7 +11,7 @@
 > Historie: [Kodex-Protokoll](/kodex/protokoll) · Begriffe: Glossar (projektintern) ·
 > These: EIP-RFC-20260726-001
 
-**Version 26 — 2026-08-02**
+**Version 27 — 2026-08-02**
 
 ---
 
@@ -269,16 +269,29 @@ Selbstgebaute Zufallsquellen. „Nur für den Prototyp" gilt als Begründung nic
 weiterlebt.
 
 **Status.** `bindend` — und **gerissen** (V-005, seit dem 2026-08-01 bekannt, im Betrieb seit
-2026-07-27). Die Blindsignatur ist in ihren Kernschritten selbst geschrieben: EMSA-PSS-ENCODE, MGF1,
-die Blinding-Arithmetik und die rohe RSA-Operation in `app/blind.py` und `static/blind.js`.
-Zugekauft und geprüft sind SHA-384 und die PSS-Verifikation aus `cryptography`. Der Grund ist echt —
-für Python existiert keine geprüfte RFC-9474-Umsetzung — und ändert am Status nichts: Bis eine
-Bibliothek eintauschbar ist, gilt hier `Disziplin`, gedeckt durch die Testvektoren aus RFC 9474 A.4,
-die Korrektheit belegen und Seitenkanalfreiheit nicht →
-EIP-T-008, fällig vor Betriebsstufe `produktiv`.
+2026-07-27). Die Blindsignatur ist selbst geschrieben, auf beiden Seiten, und das bleibt sie
+vorerst. Zugekauft und geprüft sind SHA-384, die Schlüsselerzeugung und die PSS-Verifikation aus
+`cryptography`. Hier gilt `Disziplin`, gedeckt durch die Testvektoren aus RFC 9474 A.4 — die belegen
+Korrektheit, nicht Seitenkanalfreiheit und nicht das Sicherheitsziel des Protokolls.
 
-Dass dieser Paragraph bis zum 2026-08-01 ohne Vermerk dastand, während der Code seine Abweichung im
-eigenen Docstring benannte, ist der Befund — nicht die Abweichung selbst.
+Die beiden Seiten sind ungleich, und der Kodex hat sie bis zum 2026-08-02 gleich behandelt:
+
+- **Browser** (`static/blind.js`): vollständig selbst geschrieben — Kodierung, MGF1, Blendfaktor,
+  Entblendung. Hier gibt es eine gepflegte Alternative (`@cloudflare/blindrsa-ts`), also ist die
+  Frage entscheidbar und keine Wartefrage → EIP-T-008.
+- **Server** (`app/blind.py`): im Stimmweg läuft genau eine selbst geschriebene Operation, die rohe
+  RSA-Privatoperation in `blind_sign()`. Eine Bibliothek würde daran nichts ändern; sie rechnete
+  dasselbe. Die Schuld ist nicht der Zukauf, sondern das Zeitverhalten →
+  EIP-T-093.
+
+Beides fällig vor Betriebsstufe `produktiv`, ebenso der externe Audit
+(EIP-T-094) — er prüft, was Testvektoren prinzipiell nicht erreichen.
+
+Zwei Befunde stehen hier über der Abweichung selbst. Dass dieser Paragraph bis zum 2026-08-01 ohne
+Vermerk dastand, während der Code seine Abweichung im eigenen Docstring benannte — und dass er
+danach vier serverseitige Kernschritte aufzählte, von denen drei im Browser laufen (berichtigt am
+2026-08-02). Ein zu breit gefasster Vermerk sieht nach Strenge aus und ist doch dasselbe: eine
+Aussage über den Code, die der Code nicht hergibt.
 
 ### § 4 Selbstbindung statt Versprechen
 
@@ -414,7 +427,7 @@ Optionen einer laufenden Umfrage zu ändern. Der **erste** ist `offen` — von d
 vor dem Start feststehen müssen, kennt die App drei. Der **Nenner** steht seit dem 2026-08-02 fest
 und öffentlich (EIP-T-025, § 8). Laufzeit und Auswertungsplan
 existieren im Datenmodell nicht (V-006) →
-EIP-T-025, fällig vor Betriebsstufe `produktiv`. Ohne sie
+EIP-T-091, fällig vor Betriebsstufe `produktiv`. Ohne sie
 gibt es nichts, woran eine nachträgliche Änderung sich messen ließe — die Präregistrierung schützt
 dann eine Zusage, die nie gemacht wurde.
 
@@ -448,7 +461,7 @@ Version 24). Damit ist dieser Paragraph vollständig eingelöst.
 Nicht zu verwechseln mit der **Anonymitätsschwelle** (`min_anonymity_threshold` der Basisidee):
 Die schützt die Teilnehmenden statt die Öffentlichkeit, führt zu einem Warnlabel am Ergebnis statt
 zu seinem Wegfall. Sie ist eine Frage des Wahlgeheimnisses, nicht der Zahlen-Ehrlichkeit; ihr
-Umsetzungsstand wird in EIP-T-025 geführt und gehört
+Umsetzungsstand wird in EIP-T-090 geführt und gehört
 nicht in diesen Paragraphen.
 
 ### § 9 Sprachregeln
@@ -559,7 +572,7 @@ EIP-T-064, fällig vor dem ersten echten Durchlauf
 Ebenfalls `offen` und bis zum 2026-08-01 unbemerkt: die **Hinweispflicht am Ergebnis**. Der
 Ergebnisblock der Board-Seite nennt die eID-Verfügbarkeit als Zugangsvoraussetzung nicht — der
 Paragraph verlangt sie ausdrücklich „bei jedem Ergebnis, nicht nur im Manifest" (V-006, derselbe
-Sachverhalt wie bei § 7 und § 8) → EIP-T-025, fällig vor
+Sachverhalt wie bei § 7 und § 8) → EIP-T-092, fällig vor
 Betriebsstufe `produktiv`. Die Ausschlusswirkung gehört an die Zahl, weil sie sonst genau dort
 fehlt, wo jemand die Zahl weiterträgt.
 
@@ -868,13 +881,14 @@ ein Dokument schreibt.
 | 2 | Split-View: zwei parallel geführte Boards. Der Zeitanker steht seit 2026-08-01 (EIP-T-006) und schließt das rückwirkende Umschreiben; Equivocation deckt er prinzipiell nicht auf, dazu braucht es Gegenzeichner | EIP-T-036 | `produktiv` | 2026-07-26 |
 | 2 | Betreibergrenze: Wer beide Vorgänge entgegennimmt, sieht beide zu ihrer Zeit. Für die gespeicherten Daten ist die Trennung gebaut, für den laufenden Betrieb bleibt sie Disziplin — nicht durch Arbeit an dieser Instanz behebbar (EIP-ADR-20260802-003) | EIP-T-040 | `produktiv` | 2026-08-02 |
 | 2 | Netzwerkebene: anonymer Zustellkanal als Option. Entschieden und zur Hälfte gebaut (Verbindungstrennung, Kanalblindheit, EIP-T-034); der Kanal selbst ist eine Betriebsentscheidung und hängt an der Hosterfrage | EIP-T-082 | `produktiv` | 2026-08-01 |
-| 3 | Blindsignatur in ihren Kernschritten selbst geschrieben (EMSA-PSS-ENCODE, MGF1, Blinding-Arithmetik, rohe RSA-Operation), weil es für Python keine geprüfte RFC-9474-Bibliothek gibt. Gedeckt durch die RFC-Testvektoren — Korrektheit, nicht Seitenkanäle. Verstoß V-005 | EIP-T-008 | `produktiv` | 2026-08-01 |
+| 3 | Browser-Hälfte der Blindsignatur vollständig selbst geschrieben (`static/blind.js`: Kodierung, MGF1, Blendfaktor, Entblendung). Anders als serverseitig gibt es hier eine gepflegte Alternative, die Frage ist also entscheidbar. Verstoß V-005 | EIP-T-008 | `produktiv` | 2026-08-01 |
+| 3 | Server-Hälfte: die rohe RSA-Privatoperation in `blind_sign()` läuft ohne Blinding und ohne konstante Zeit. Eine Bibliothek löst das nicht — sie rechnete dasselbe. Gedeckt durch die RFC-Testvektoren, die Korrektheit belegen und Zeitverhalten nicht. Verstoß V-005 | EIP-T-093 | `produktiv` | 2026-08-02 |
 | 4 | Ballot Stuffing bleibt Disziplin **während der Laufzeit** (Schlüssel liegt allein bei uns; nach Schließung vernichtet, EIP-T-069) | EIP-T-040 | `produktiv` | 2026-07-26 |
 | 5 | Eigener Eingangskanal für Behördenanfragen — Bauform entschieden (Postfach ohne Domain), Einrichtung offen | EIP-T-073 | `produktiv` | 2026-07-31 |
 | 6 | DSGVO-Kollision entschieden und begründet | EIP-T-061 | `produktiv` | 2026-07-26 |
-| 7 | Von den sechs Größen, die vor dem Start feststehen müssen, kennt die App drei. Der Nenner steht seit dem 2026-08-02 (EIP-T-025); Laufzeit und Auswertungsplan gibt es im Datenmodell nicht. Verstoß V-006 | EIP-T-025 | `produktiv` | 2026-08-01 |
+| 7 | Von den sechs Größen, die vor dem Start feststehen müssen, kennt die App drei. Der Nenner steht seit dem 2026-08-02 (EIP-T-025, erledigt); Laufzeit und Auswertungsplan gibt es im Datenmodell nicht. Verstoß V-006 | EIP-T-091 | `produktiv` | 2026-08-01 |
 | 11 | eAT-Unterstützung, Barrierefreiheit | EIP-T-064 | `produktiv` | 2026-07-26 |
-| 11 | Hinweispflicht am Ergebnis: Die Ergebnisdarstellung nennt die eID-Verfügbarkeit als Zugangsvoraussetzung nicht. Verstoß V-006 | EIP-T-025 | `produktiv` | 2026-08-01 |
+| 11 | Hinweispflicht am Ergebnis: Die Ergebnisdarstellung nennt die eID-Verfügbarkeit als Zugangsvoraussetzung nicht. Verstoß V-006 | EIP-T-092 | `produktiv` | 2026-08-01 |
 | 12 | Übergabe der Fragehoheit an ein unabhängiges Gremium | EIP-T-022 | politische Relevanz, spät. `produktiv` | 2026-07-26 |
 | 12 | Zwischenregel bis zur Übergabe: die Enthaltungsoption ist seit dem 2026-08-01 erzwungen (EIP-T-085); neutrale Formulierung und Veröffentlichung abgelehnter Vorschläge bleiben Disziplin — das eine ist maschinell nicht prüfbar, das andere braucht einen Eingangsweg für Vorschläge | EIP-T-022 | erste Frage außerhalb einer Vorführung | 2026-08-01 |
 | 13 | Finanzierungsmodell im Detail | EIP-T-026 | erste Annahme von Geld | 2026-07-26 |

@@ -32,7 +32,15 @@ Was daraus folgt, offen benannt:
                          eine ganz gewoehnliche PSS-Signatur und laesst sich
                          von jedem Dritten mit Standardwerkzeug pruefen.
   Selbst geschrieben:    EMSA-PSS-ENCODE, MGF1, die modulare Arithmetik des
-                         Blindings und die rohe RSA-Signaturoperation.
+                         Blindings und die rohe RSA-Signaturoperation. Im
+                         serverseitigen Stimmweg laeuft davon nur die letzte:
+                         poll_service ruft blind_sign(), sonst nichts aus
+                         dieser Datei ausser verify(). Die uebrigen Schritte
+                         gehoeren dem Browser (static/blind.js); hier bedienen
+                         sie testvektor() und die Angriffsdemos in demo.py.
+                         Die serverseitige Restschuld ist deshalb nicht der
+                         fehlende Zukauf, sondern das Zeitverhalten von
+                         blind_sign - siehe dort (EIP-T-093).
   Nachgewiesen:          testvektor() rechnet jeden dieser Schritte gegen den
                          Testvektor aus RFC 9474 Anhang A.4 nach - Byte fuer
                          Byte, mit dem Blendfaktor aus dem RFC statt einem

@@ -15,6 +15,31 @@
 
 ## Änderungsprotokoll
 
+### Version 27 — 2026-08-02
+
+**§ 3 trennt seine beiden Hälften** (EIP-T-008,
+EIP-T-093, EIP-T-094). Der Vermerk aus
+Version 20 führte vier serverseitig selbst geschriebene Kernschritte auf. Drei davon laufen im
+Browser. Was serverseitig im Stimmweg tatsächlich selbst gerechnet wird, ist die rohe
+RSA-Privatoperation in `blind_sign()` — nachgesehen in `poll_service.py:943` und `blind.py:177-192`,
+Einzelheiten im Nachtrag zu V-005.
+
+**Warum das mehr ist als eine Korrektur.** Ein zu breiter Vermerk sieht nach Strenge aus und wirkt
+wie eine zu enge: Er stellt die Behebung falsch dar. Solange die Server-Hälfte mit „für Python gibt
+es keine geprüfte Bibliothek" begründet war, wartete sie auf ein Ereignis, das sie nicht abtragen
+würde — eine RFC-9474-Bibliothek rechnete an dieser Stelle dasselbe `pow`. Die serverseitige Schuld
+ist das Zeitverhalten dieser Operation, und dafür braucht es keine Bibliothek, sondern eine
+Entscheidung. Die Schuldenübersicht führt § 3 seither in zwei Zeilen, je eine je Auflösungsereignis.
+
+**Der Audit bekommt zum ersten Mal ein Ticket.** Der V-005-Eintrag argumentiert seit dem 2026-08-01
+unter Punkt 3 damit, dass der Testvektor Korrektheit belegt und Seitenkanalfreiheit nicht — ohne
+dass irgendwo stand, wer das je prüfen sollte. Ein Prüfvorbehalt ohne Ticket ist genau die Schuld,
+die § 4 a verbietet; er stand nur nicht als Vermerk da, sondern als Nebensatz.
+
+**Die Zahl bewegt sich wieder nicht.** § 3 war belastet und bleibt es, zwei Zeilen zählen wie eine:
+12 belastete Paragraphen, Baustopp unverändert. Zum zweiten Mal an einem Tag zeigt die Kennzahl
+Arbeit am Kodex nicht an — hier zu Recht, denn am Code hat sich nichts geändert.
+
 ### Version 26 — 2026-08-02
 
 **Die Betreibergrenze wird ein Vermerk** (EIP-T-037,
@@ -1226,9 +1251,10 @@ nächste Fund dieser Art wird wieder ein Zufallsfund sein.
 
 ### V-005 — Selbst geschriebene Blindsignatur-Primitive, entgegen § 3
 **Datum des Eintrags:** 2026-08-01 · **Paragraphen:** § 3, § 4, § 18 ·
-**Ticket:** EIP-T-008 · **Status:** offen. Die Behebung
-hängt an einer geprüften Bibliothek, die es für Python nicht gibt — der Verstoß liegt nicht darin,
-sondern im fehlenden Vermerk
+**Tickets:** EIP-T-008 (Browser),
+EIP-T-093 (Server), EIP-T-094 (Audit) ·
+**Status:** offen. Der Verstoß liegt nicht in der fehlenden Bibliothek, sondern im fehlenden Vermerk
+— siehe den Nachtrag vom 2026-08-02 unten, der die Behebungswege trennt
 
 **Was geschah.** § 3 lautet: *„Wir implementieren keine eID-Kryptografie und keine Wahlprimitive
 selbst."* Konkret verboten sind *„eigene RSA-Blindsignatur-Routinen"*, und der Paragraph nimmt die
@@ -1263,6 +1289,31 @@ V-004. Das Ticket lief unter Priorität `low`.
 4. Für einen echten Durchlauf ist das ein Blocker, kein Rückstand: § 3 begründet sich mit
    Seitenkanälen und Implementierungsfehlern, und beide treffen genau die Operation, an der das
    Wahlgeheimnis hängt.
+
+**Nachtrag 2026-08-02 — der Umfang war zu breit angegeben.** Der Eintrag oben und der daraus
+abgeleitete § 3-Vermerk nennen vier serverseitig selbst geschriebene Kernschritte: EMSA-PSS-ENCODE,
+MGF1, Blinding-Arithmetik, rohe RSA-Operation. Im serverseitigen Stimmweg läuft davon einer.
+`poll_service.py:943` ruft `blind.blind_sign()` (`blind.py:177-192`) — die rohe RSA-Privatoperation
+und die Rückrechnung aus RFC § 4.3. `generate_key()` und `verify()` gehen an `cryptography`. Die
+drei anderen Schritte gehören dem Browser (`static/blind.js`); ihre Python-Zwillinge in `blind.py`
+bedienen den RFC-Testvektor und die Angriffsdemos in `demo.py`.
+
+Kein Verstoß nach § 18: Die Angabe stellte die Lage schlechter dar, nicht besser. Aber es ist
+derselbe Fehlertyp wie der falsche Variantenname (`PSS` statt `PSSZERO`, berichtigt am 2026-08-01) —
+eine Aussage über den Code, die der Code nicht hergibt. Dass sie diesmal nach unten abwich, macht
+sie nicht richtiger; ein Kodex, dessen Angaben man nachsehen muss, prüft nichts mehr.
+
+Praktisch war die Folge eine falsche Behebungserwartung. Solange „für Python gibt es keine
+Bibliothek" als Grund für die Server-Hälfte galt, wartete diese Hälfte auf ein Ereignis, das sie
+nicht abtragen würde: Eine RFC-9474-Bibliothek rechnete an dieser Stelle dasselbe `pow`. Die echte
+serverseitige Schuld ist das Zeitverhalten — `pow(m, d, n)` läuft in CPython ohne Blinding und ohne
+konstante Zeit, und der betroffene Schlüssel ist der, mit dem sich Stimmzettel ausstellen lassen.
+
+Berichtigt in § 3 und in der Schuldenübersicht (dort seither zwei Zeilen, weil zwei verschiedene
+Ereignisse die Hälften auflösen), in `eid-wiki/Grenzen/Was-nicht-geleistet-wird.md` und in
+EIP-T-008, das auf die Browser-Hälfte zugeschnitten ist. Neu: EIP-T-093 (Seitenkanalhärtung) und
+EIP-T-094 (externer Audit — bis heute ohne eigenes Ticket, obwohl der Eintrag oben unter Punkt 3
+mit ihm argumentiert). § 3 bleibt belastet, die Schuldenzahl unverändert bei 12.
 
 ### V-006 — Ergebnisdarstellung ohne Nenner, Schwelle und Zugangshinweis
 **Datum des Eintrags:** 2026-08-01 · **Paragraphen:** § 7, § 8, § 11, § 18 ·
