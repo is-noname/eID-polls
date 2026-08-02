@@ -4,6 +4,13 @@ jinja2
 cryptography
 markdown
 
+# Kein direkter Import, aber FastAPI braucht es, sobald ein Endpunkt Form()
+# annimmt - und die eID-Simulation tut das (eid_sim.py, EIP-T-095). Fehlt es,
+# scheitert schon der Import von eid_sim und damit der Start der ganzen App.
+# Lokal faellt das nicht auf, weil das Paket in der venv ohnehin liegt; auf
+# einer frischen Umgebung war es der Grund, warum Render den alten Stand hielt.
+python-multipart
+
 # Externe Anker auf die Batch-Root (EIP-ADR-20260801-002). Nichts davon ist
 # selbst geschrieben - das ist KODEX §3, nicht Bequemlichkeit. Fehlen sie,
 # laeuft die App weiter und die Board-Seite sagt, dass keine Wurzel datiert ist.
