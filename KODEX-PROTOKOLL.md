@@ -15,6 +15,42 @@
 
 ## Änderungsprotokoll
 
+### Version 29 — 2026-08-02
+
+**§ 8 entscheidet die offene Frage zum Zwischenstand**
+(EIP-T-056). Seit dem 2026-07-28 stand offen, ob der
+während der Laufzeit aus dem Board ablesbare Zwischenstand gewollt ist. Er ist es nicht im Sinne
+einer Absicht, aber er wird in Kauf genommen: Die App zeigt ihn nicht, das Board gibt ihn her, und
+jede Oberfläche sagt beides. Der Paragraph führt die Entscheidung jetzt mit Begründung, statt sie
+in einem Ticket zu parken.
+
+**Was sich am Wortlaut ändert.** Die Verbotsliste sagte „Zwischenstände während der Laufzeit über
+den reinen Teilnahmezähler hinaus" — das las sich als Zusage, es gebe keinen. Verboten ist, einen
+*selbst auszuweisen*; das Verbot, seine Ablesbarkeit zu leugnen, steht jetzt daneben. Im Status
+wurde „einen Zwischenstand über den Teilnahmezähler hinaus gibt es nicht" zu „die App weist keinen
+aus". Der alte Satz war in seiner Breite unwahr — dieselbe Aussage, die als V-001 im
+Verstoßprotokoll steht, in der Statuszeile des Paragraphen, der sie verbietet.
+
+**Warum die Anzeigesperre bleibt, obwohl sie nichts schützt.** `tally()` verweigert die Verteilung
+vor Schluss, während dieselben Zahlen zwei Klicks entfernt im Board liegen. Das ist ein Umweg und
+kein Hindernis. Sie fällt trotzdem nicht: Ein aktiv angezeigter Zwischenstand verstärkt den
+Bandwagon-Effekt, statt ihn nur nicht zu verhindern, und ihre Abschaffung verlangte eine Änderung
+von Satz 1 der Verbotsliste. Die Sperre ist damit ausdrücklich eine Anzeigeentscheidung; als Schutz
+darf sie nirgends auftreten. Der Code sagt das jetzt an Ort und Stelle (`poll_service.tally`).
+
+**Verworfen: die Stimmen bis zum Schluss verschlüsseln.** Das wäre die einzige Variante, die den
+Zwischenstand wirklich verbirgt. Sie bricht die sofortige Verifizierbarkeit und mit ihr den
+Board-Export, `verifikation.py`, die Belegsuche auf `/verify` und die Zeitanker — Verifizierbarkeit
+steht in der Vorrangregel über Aussagekraft, und der Bandwagon-Effekt ist eine Frage der zweiten.
+Unabhängig davon ist es ein Feature mit Außenwirkung und unter § 4 b gesperrt.
+
+**Der Preis steht im Paragraphen.** Ablesen kann den Stand, wer eine JSON-Datei auswerten kann.
+Dieser Vorsprung ist benannt und nicht behoben; er wird nicht als „gleiche Information für alle"
+verkauft.
+
+**Die Zahl bewegt sich nicht.** § 8 war `bindend` und vollständig eingelöst und bleibt es — eine
+Entscheidung festzuhalten schafft keine Schuld. 12 belastete Paragraphen, Baustopp unverändert.
+
 ### Version 28 — 2026-08-02
 
 **§ 11 löst die Hinweispflicht am Ergebnis ein**
@@ -1085,6 +1121,8 @@ damaligen Befund, aber blind für denselben Satz in einer Datei, die keine Route
 3. Die Sache dahinter bleibt offen und wird hier nicht mitentschieden: ob der Zwischenstand
    überhaupt verborgen sein soll (EIP-T-056). Dieser
    Nachtrag stellt nur her, dass die Dokumente den heutigen Zustand beschreiben.
+   *Entschieden in Version 29 (2026-08-02): Er bleibt ablesbar, die App zeigt ihn nicht, beides wird
+   gesagt.*
 4. Die Batch-Veröffentlichung (k = 10, 6 h) verzögert den ablesbaren Stand. Sie darf dafür nicht in
    Anspruch genommen werden — sie ist gegen Verkettung gebaut, und ein Nebeneffekt als Schutz
    ausgegeben ist genau die Bewegung, die § 4 verbietet.

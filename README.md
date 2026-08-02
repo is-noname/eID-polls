@@ -44,7 +44,8 @@ Die Oberfläche nennt die Schritte in Alltagssprache; in Klammern steht, was im 
    Sekunden dazwischen und muss keine Sitzung überleben (EIP-ADR-20260725-002, EIP-T-021).
    Während die Umfrage läuft, zeigt die Seite nur den Teilnahmezähler; die Verteilung erscheint
    erst nach dem Schließen. Verborgen ist sie dadurch nicht — aus dem Board unter „Nachweise"
-   lässt sich der Zwischenstand auszählen (EIP-T-056).
+   lässt sich der Zwischenstand auszählen. Eine Anzeigeentscheidung, kein Schutz, und so gewollt
+   (KODEX § 8, EIP-T-056).
 4. **Schritt 3 „Dein Beleg"** sichern (`.txt`) und unter `/verify` die eigene Stimme nachschlagen.
 
 Die Kryptografie steht auf den Teilnehmerseiten in aufklappbaren Blöcken, nicht im Fließtext:

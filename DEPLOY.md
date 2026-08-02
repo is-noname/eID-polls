@@ -195,8 +195,9 @@ Ein Ablauf, der das trägt:
 
 1. **Startseite → Umfrage öffnen.** Die Umfrageseite zeigt nur den Teilnahmezähler; die Verteilung
    zeigt die App erst nach dem Schließen. Nicht sagen, es gebe keinen Zwischenstand — unter
-   *Nachweise* stehen die abgegebenen Stimmen samt gewählter Option, wer will, zählt ihn aus
-   (EIP-T-056).
+   *Nachweise* stehen die abgegebenen Stimmen samt gewählter Option, wer will, zählt ihn aus.
+   Dass die App ihn nicht anzeigt, ist eine Anzeigeentscheidung und kein Schutz — so entschieden
+   und begründet in KODEX § 8 (EIP-T-056).
 2. **Ausweisen** mit `testperson1`, PIN `123456`. Der Weg führt über den nachgestellten eID-Dienst
    und die nachgestellte Ausweis-App (EIP-T-095) — die Datenauskunft ist die vorführbare Stelle:
    angefordert wird **nur** das dienstespezifische Kennzeichen, nicht Name, Geburtsdatum oder

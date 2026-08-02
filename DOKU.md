@@ -129,15 +129,21 @@ Veröffentlichung abgelehnter Fragevorschläge — ist nicht erzwungen und auch 
    Zusage. Die Stimme erscheint im Board erst mit ihrem Batch — der Beleg bindet sofort.
 
 Während die Umfrage läuft, zeigt die Seite nur die Teilnahmezahl. Die Verteilung erscheint erst
-nach dem Schließen — der Gedanke dahinter: Zwischenstände beeinflussen laufende Abstimmungen.
+nach dem Schließen.
 
 **Das ist eine Anzeigeentscheidung, kein Schutz.** Das Board unter „Nachweise" gibt jeden
 veröffentlichten Eintrag samt gewählter Option heraus, auf der Seite wie über `/api/board/{id}`.
 Wer die Datei lädt, zählt den Zwischenstand selbst aus, und die Startseite sagt das auch so. Die
 Batch-Veröffentlichung verzögert ihn um bis zu sechs Stunden (k = 10, Zeitdeckel), verbirgt ihn
 aber nicht — sie ist gegen Verkettung gebaut, nicht gegen Mitzählen, und darf nicht als das
-zweite ausgegeben werden. Ob der Zwischenstand überhaupt verborgen sein *soll*, ist offen und
-wird in EIP-T-056 entschieden.
+zweite ausgegeben werden.
+
+**So bleibt es** (EIP-T-056, entschieden am 2026-08-02, festgehalten in KODEX § 8). Die Alternative
+wäre, die Stimmen bis zum Schluss verschlüsselt abzulegen — das bricht die sofortige
+Verifizierbarkeit samt Board-Export, `verifikation.py`, Belegsuche und Zeitankern. Die Sperre
+bleibt, weil ein angezeigter Zwischenstand den Bandwagon-Effekt verstärkt statt ihn nur nicht zu
+verhindern. Der Preis: Mitzählen kann, wer eine JSON-Datei auswerten kann. Das ist benannt und
+nicht behoben.
 
 > **Warum nur noch ein Schritt:** Früher war das Token-Holen ein eigener Schritt, und das Token
 > musste zwischen zwei Klicks im Browserspeicher überleben. Wer den Tab dazwischen schloss,

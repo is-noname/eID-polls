@@ -1145,6 +1145,17 @@ class PollService:
         return self.pruefbericht(poll_id).chain
 
     def tally(self, poll_id: str, bericht: Pruefbericht | None = None) -> dict[str, int]:
+        """Die Verteilung - erst nach Schluss, und das ist eine Anzeigeentscheidung.
+
+        Die Sperre unten schuetzt nichts: ``board_export`` gibt jeden
+        veroeffentlichten Eintrag samt gewaehlter Option heraus, auf der Seite
+        wie ueber ``/api/board/{id}``. Wer die Datei laedt, zaehlt den
+        Zwischenstand selbst aus. Sie bleibt trotzdem, weil ein angezeigter
+        Zwischenstand den Bandwagon-Effekt verstaerkt statt ihn nur nicht zu
+        verhindern - entschieden in EIP-T-056, festgehalten in KODEX Paragraf 8.
+        Als *Schutz* darf sie nirgends auftreten; dieselben Daten tragen die
+        sofortige Verifizierbarkeit und sind deshalb offen.
+        """
         poll = self.poll(poll_id)
         if not poll.closed:
             raise Rejected("Die Verteilung wird erst nach dem Ende der Umfrage angezeigt.")

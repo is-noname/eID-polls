@@ -38,7 +38,10 @@
   <p class="faint small" style="margin-top:14px">
     Das ausgewiesene Ergebnis erscheint erst nach dem Ende der Umfrage. Die abgegebenen Stimmen
     stehen aber von Anfang an unter „Nachweise" — wer will, zählt den Zwischenstand selbst aus.
-    Wir zeigen ihn nicht; verhindern können wir ihn nicht.
+    Wir zeigen ihn nicht; verhindern können wir ihn nicht. Dort erscheinen sie in Blöcken von
+    {{ batch_k }} Stimmen, spätestens nach {{ batch_deckel_h }} Stunden — der ablesbare Stand
+    hinkt also bis zu {{ batch_deckel_h }} Stunden hinterher. Das ist eine Maßnahme gegen
+    Verkettung und kein Schutz vor dem Mitzählen.
   </p>
 {% endif %}
 

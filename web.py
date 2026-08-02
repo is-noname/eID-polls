@@ -383,7 +383,17 @@ async def index(request: Request) -> HTMLResponse:
         }
         for p, bericht in ((p, service.laufender_bericht(p.poll_id)) for p in service.polls())
     ]
-    return page(request, "index.html", rows=rows)
+    # Die Batch-Groessen stehen im Text unter der Umfrageliste (EIP-T-056): Sie
+    # sagen, wie aktuell der aus dem Board ablesbare Stand ueberhaupt ist. Aus
+    # der Konfiguration, nicht aus der Vorlage - eine Zahl, die im Template
+    # steht, ueberlebt die erste Aenderung an config.py nicht.
+    return page(
+        request,
+        "index.html",
+        rows=rows,
+        batch_k=service.batch_k,
+        batch_deckel_h=service.batch_deckel_s // 3600,
+    )
 
 
 @router.get("/poll/{poll_id}", response_class=HTMLResponse)

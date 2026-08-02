@@ -11,7 +11,7 @@
 > Historie: [Kodex-Protokoll](/kodex/protokoll) · Begriffe: Glossar (projektintern) ·
 > These: EIP-RFC-20260726-001
 
-**Version 28 — 2026-08-02**
+**Version 29 — 2026-08-02**
 
 ---
 
@@ -444,15 +444,33 @@ selbst eine Entscheidung über das, was die Öffentlichkeit sehen darf.
 
 **Konkret verboten.** Prozentwerte ohne absolute Zahlen. Ergebnisgrafiken, die die Quote kleiner setzen als
 das Ergebnis. Ein Ergebnis zurückhalten, weil seine Quote unbequem klein ist.
-Zwischenstände während der Laufzeit über den reinen Teilnahmezähler hinaus.
+Einen Zwischenstand während der Laufzeit über den reinen Teilnahmezähler hinaus selbst ausweisen —
+und ebenso zu behaupten, es *gebe* keinen: Aus dem Board ist er ablesbar.
 
 **Status.** `bindend`. Satz 1 ist seit dem 2026-08-02 eingelöst: Über dem Ergebnis steht
 *„N von 59.200.000 Wahlberechtigten"* mit Quote, Quelle und Datum — vor den Balken, nicht darunter
 (EIP-T-025). Der Nenner sind die Deutschen ab 18 im Inland nach der Schätzung der
 Bundeswahlleiterin zur Bundestagswahl 2025; er steht in `config.py`, nicht im Template, weil er
 vorab und dauerhaft feststehen muss. Ebenfalls eingelöst: Kein Prozentwert steht ohne seine
-absolute Zahl, die Bezugsgröße wird an Ort und Stelle benannt, und einen Zwischenstand über den
-Teilnahmezähler hinaus gibt es nicht (EIP-T-083).
+absolute Zahl, die Bezugsgröße wird an Ort und Stelle benannt, und die App weist keinen
+Zwischenstand über den Teilnahmezähler hinaus aus (EIP-T-083).
+
+**Der Zwischenstand ist trotzdem ablesbar, und das steht so da** (Entscheidung zu
+EIP-T-056, 2026-08-02). Das Board gibt jeden
+veröffentlichten Eintrag samt gewählter Option heraus — auf `/board/{id}` wie über
+`/api/board/{id}` —, weil dieselben Daten die sofortige Verifizierbarkeit tragen: Belegsuche,
+`verifikation.py` und die Zeitanker rechnen darauf. Wer die Datei lädt, zählt mit. Die Sperre in
+`tally()` ist deshalb eine Anzeigeentscheidung und kein Schutz; sie bleibt, weil ein aktiv
+angezeigter Zwischenstand den Bandwagon-Effekt verstärkt, statt ihn nur nicht zu verhindern. Was
+dieser Paragraph verlangt, ist nicht ihre Abschaffung, sondern dass keine Oberfläche und kein
+Dokument sie als Schutz ausgibt. Die Batch-Veröffentlichung (k = 10, Zeitdeckel 6 h,
+EIP-ADR-20260728-001) verzögert den ablesbaren Stand um bis zu sechs Stunden; sie ist gegen
+Verkettung gebaut und wird dafür nicht in Anspruch genommen.
+
+Der Preis dieser Haltung ist ein Informationsvorsprung derer, die eine JSON-Datei auswerten können.
+Er ist benannt und nicht behoben. Die Gegenmittel wären, den Stand offen anzuzeigen (verstößt gegen
+Satz 1 der Verbotsliste) oder die Stimmen bis zum Schluss verschlüsselt abzulegen (bricht die
+sofortige Verifizierbarkeit). Beides wiegt schwerer.
 
 Die frühere Veröffentlichungsschwelle ist in Version 24 aus der Regel entfernt worden — sie stand
 nie in der Basisidee, sondern kam erst über den Kodex hinzu (Begründung: [Kodex-Protokoll](/kodex/protokoll),
