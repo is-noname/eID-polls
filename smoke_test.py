@@ -1510,6 +1510,112 @@ def sitzungstrennung() -> None:
           "sonst unterscheidet der Betreiber Onion- von Normalweg-Teilnehmenden")
 
 
+def belegpruefung_ohne_preisgabe() -> None:
+    """Die Belegpruefung verraet nicht, welchen Eintrag jemand sucht (EIP-T-035).
+
+    Individuelle Verifizierbarkeit hat eine Rueckseite: Wer im Board nach seinem
+    Token sucht, verraet durch die Suche, welcher Eintrag ihm gehoert - und
+    macht die Blindsignatur an genau der Stelle zunichte, an der sie wirkt.
+    Seit EIP-T-033 (Baustein F) laeuft die Suche deshalb im Browser ueber den
+    Board-Export; EIP-ADR-20260802-002 haelt das als Entscheidung fest.
+
+    Eine Entscheidung, die nur in einem Dokument steht, ueberlebt die naechste
+    Bequemlichkeit nicht. Vier Zusagen stehen deshalb hier:
+
+    1. Es gibt **keine Route**, die einen Token-Lookup beantwortet.
+       ``PollService.lookup`` bleibt fuer Tests und interne Pruefungen - kein
+       Endpunkt darf sie erreichen.
+    2. ``/verify`` liest kein Token. Alte Belege tragen noch ``?token=...``;
+       der Server darf es weder verarbeiten noch in seine Antwort schreiben
+       noch ins Debug-Modul geben.
+    3. Der Board-Export ist **ohne Anmeldung** abrufbar und setzt kein Cookie -
+       sonst waere die Suche im Browser wieder an eine Sitzung geknuepft.
+    4. Der ausgelieferte Client schickt das Token nirgends hin: kein ``fetch``
+       in ``static/verify.js`` traegt es.
+    """
+    import inspect
+
+    import debug as debug_modul
+
+    eigen = create_app(
+        store_path=Path(tempfile.mkdtemp()) / "beleg.sqlite3",
+        settings=Settings(admin_token="admin", batch_k=1, antwort_floor_s=0),
+    )
+    svc = eigen.state.deps.service
+    poll = "belegpruefung"
+    admin = TestClient(eigen)
+    admin.post("/api/admin/login", json={"token": "admin"})
+    admin.post("/api/admin/create",
+               json={"poll_id": poll, "question": "Leise?", "options": ["Ja", "Nein", "Enthaltung"]})
+
+    import secrets as sec
+
+    waehler = TestClient(eigen)
+    waehler.post("/api/auth", json={"credential": "testperson80"})
+    token = sec.token_bytes(32)
+    blinded, inv = blind.blind(token, *svc.poll_params(poll))
+    resp = waehler.post(f"/api/token/{poll}", json={"blinded": blinded.hex()})
+    sig = blind.finalize(bytes.fromhex(resp.json()["blind_sig"]), inv, svc.poll_params(poll)[0])
+    TestClient(eigen).post(f"/api/vote/{poll}",
+                           json={"token": token.hex(), "sig": sig.hex(), "choices": ["Ja"]})
+
+    # 1. Keine Route erreicht den Lookup. Geprueft am Quelltext der
+    # Endpunktfunktionen: Wer die Bequemlichkeit spaeter wieder einbaut, kommt
+    # an dieser Zeile nicht vorbei.
+    mit_lookup = [
+        r.path
+        for r in eigen.routes
+        if callable(getattr(r, "endpoint", None))
+        and ".lookup(" in _quelle_oder_leer(inspect, r.endpoint)
+    ]
+    check("Belegpruefung: keine Route beantwortet einen Token-Lookup",
+          not mit_lookup, ", ".join(mit_lookup))
+
+    # 2. /verify nimmt kein Token entgegen - auch nicht aus einem alten Beleg.
+    vorher = len(debug_modul.events_gesamt("all"))
+    seite = TestClient(eigen).get(f"/verify?poll={poll}&token={token.hex()}")
+    nachher = debug_modul.events_gesamt("all")[vorher:]
+    check("Belegpruefung: /verify ohne Anmeldung erreichbar",
+          seite.status_code == 200, f"status={seite.status_code}")
+    check("Belegpruefung: /verify schreibt das Token nicht in seine Antwort",
+          token.hex() not in seite.text,
+          "sonst waere es serverseitig verarbeitet worden")
+    check("Belegpruefung: /verify gibt das Token nicht ins Debug-Modul",
+          all(token.hex() not in f"{e.message}{e.detail}" for e in nachher),
+          "der Betreiber saehe sonst, wer welchen Eintrag sucht")
+
+    # 3. Der Export traegt die Suche - ohne Sitzung, ohne Cookie.
+    export = TestClient(eigen).get(f"/api/board/{poll}")
+    payloads = [p for b in export.json()["batches"] for p in b["entries"]]
+    check("Belegpruefung: Board-Export ohne Anmeldung abrufbar und vollstaendig",
+          export.status_code == 200 and any(token.hex() in p for p in payloads),
+          "die Suche im Browser braucht den ganzen Export")
+    check("Belegpruefung: Board-Export setzt kein Cookie",
+          "set-cookie" not in export.headers,
+          "sonst haenge die Pruefung wieder an einer Sitzung")
+
+    # 4. Der Client traegt das Token nirgends hinaus.
+    quelle = (Path(__file__).parent / "static" / "verify.js").read_text(encoding="utf-8")
+    fetch_zeilen = [z for z in quelle.splitlines() if "fetch(" in z]
+    check("Belegpruefung: kein fetch in verify.js traegt das Token",
+          bool(fetch_zeilen) and all("token" not in z for z in fetch_zeilen),
+          " | ".join(fetch_zeilen))
+    check("Belegpruefung: der Board-Abruf faehrt ohne Cookie und ohne Referrer",
+          'credentials: "omit"' in quelle and 'referrerPolicy: "no-referrer"' in quelle)
+
+
+def _quelle_oder_leer(inspect_modul, funktion) -> str:  # type: ignore[no-untyped-def]
+    """Quelltext einer Endpunktfunktion, leer wenn er nicht lesbar ist.
+
+    Nicht lesbar sind eingebaute und dynamisch erzeugte Funktionen (Starlettes
+    Statik-Mount). Die tragen keinen Lookup und duerfen den Test nicht abbrechen.
+    """
+    try:
+        return inspect_modul.getsource(funktion)
+    except (OSError, TypeError):
+        return ""
+
+
 def _verzeichnis_bytes(verzeichnis: Path) -> bytes:
     """Alle Dateien unter ``verzeichnis`` als rohe Bytes, rekursiv.
 
@@ -2182,6 +2288,7 @@ def main() -> int:
     abbruch_nach_signatur()
     puffer_abschaltbar()
     sitzungstrennung()
+    belegpruefung_ohne_preisgabe()
     datenabzug_nach_schluss()
     sicherungskopie_ohne_geheimnisse()
     offenlegungsseiten()

@@ -15,6 +15,121 @@
 
 ## Änderungsprotokoll
 
+### Version 26 — 2026-08-02
+
+**Die Betreibergrenze wird ein Vermerk** (EIP-T-037,
+EIP-ADR-20260802-003). § 2 sagt seit Version 16 in einem Halbsatz,
+dass die Trennung der Datenbankdateien gegen Beobachtung zur Laufzeit nicht hilft. Der Satz stand im
+Fließtext des Status-Absatzes, ohne `Disziplin`, ohne Ticket, ohne Fälligkeit — und damit in keiner
+Prüfung. Er steht jetzt als Schuld mit Ticket (EIP-T-040) und Ereignis (`produktiv`) in der
+Übersicht.
+
+**Warum das eine Änderung ist und keine Redaktion.** Der beschriebene Zustand ist unverändert; was
+sich ändert, ist seine Sichtbarkeit. Genau dieser Fall ist in Version 14 und 20 als Muster benannt
+worden: Ein einschränkender Satz, der nicht in der Schuldenübersicht steht, gilt als erledigt, weil
+er nie als offen markiert wurde (EIP-T-084). Hier ist er einmal
+gefunden worden, ohne dass ein Durchgang danach gesucht hätte — er fiel bei der Ausarbeitung der ADR
+an.
+
+**Nebenbefund: Die Kopfzahl der Schuldenübersicht war falsch.** Dort stand seit Version 20 „13 von
+20", während die Tabelle darunter 12 Paragraphen führte und `scripts/check_kodex.py` ebenfalls 12
+zählt. Aufgefallen ist es, weil diese Version die Zahl behaupten musste. Korrigiert auf 12. Kein
+Verstoß nach § 18 — die Zahl war zu hoch, die Lage also nicht besser dargestellt als sie ist —,
+aber derselbe Mechanismus wie beim Vermerk oben: Eine Größe, die niemand nachrechnet, driftet, und
+das Skript prüft die Form der Vermerke, nicht diesen Satz.
+
+**Die Zahl bewegt sich nicht.** § 2 trug bereits zwei Vermerke, es bleibt bei 12 belasteten
+Paragraphen und beim Baustopp. Das ist die in § 4 b benannte Blindheit der Kennzahl, hier in der
+ungünstigen Richtung: Eine Schuld wird sichtbar, und die Zahl zeigt es nicht. Wer nur auf sie sieht,
+hält den 2026-08-02 für einen Tag ohne Zuwachs.
+
+**§ 4 bekommt einen Test statt einer Einschätzung.** Der Paragraph verbot bisher Formulierungen der
+Art „wir können nicht", wo „wir tun es nicht" gilt, ohne zu sagen, woran man das erkennt — im
+Einzelfall wurde es geschätzt, und eine Schätzung fällt unter Druck zugunsten der stärkeren
+Formulierung aus. Zwei Fragen ersetzen sie: Empfängt dieselbe Partei beide Ereignisse? Kann dieselbe
+Partei die Ableitung nachrechnen? Beide sind vor dem Bauen beantwortbar und sortieren die
+Scheinlösungen aus („wir speichern es ja nicht", „es liegt in einer anderen Datei").
+
+**Was der Kodex damit erstmals schriftlich hat.** Zwei Zusagen sind für einen Einzelbetreiber nicht
+einlösbar — die Zuordnung von Anmeldung und Stimme im laufenden Betrieb und die Wiederherstellung
+eines verlorenen Tokens allein aus dem Ausweis. Nicht „noch nicht": Behebbar sind beide nur durch
+eine zweite Partei, die das Projekt nicht kontrolliert. Sie als offene Bauarbeit darzustellen ist ab
+dieser Version ausdrücklich verboten, weil es eine Zusage auf einen Zeitpunkt wäre, den kein Code
+herbeiführt.
+
+### Version 25 — 2026-08-02
+
+**§ 9 bekommt seinen Wortlaut** (EIP-T-028). Version 6
+hatte das Fachwort „untere Schranke" verworfen und die Sache behalten: Stimmanzahl und Nenner im
+selben Satz. Welcher Satz das genau ist, blieb offen und wurde als „Formulierungsaufgabe, keine
+offene Regel" ins Ticket verwiesen. Diese Version holt ihn in den Kodex.
+
+**Der Satz.** „{N} von {M} {Nennerbezeichnung} haben mit Ausweis abgestimmt ({Q}). {K} von ihnen
+({P}) sagen {Antwort}." Dazu Rundungsregeln je Platzhalter und die Festlegung, dass die
+**Reihenfolge Teil des Wortlauts** ist — Nenner vor Ergebnis, wie im Produkt der Nenner über den
+Balken steht und nicht darunter.
+
+**Warum überhaupt ein fester Wortlaut.** Nicht aus Formalismus. Vor dieser Version führten drei
+Stellen denselben Gedanken in drei Fassungen: der Kodex „68 % davon sagen X", das Manifest „von den
+Teilnehmenden — N von M Berechtigten — denken X", das Produkt „Beteiligung: N von 59.200.000". Eine
+Regel, die jede Stelle selbst ausformulieren lässt, driftet — und beim Driften verliert die
+bescheidenere Variante zuerst. Genau der Mechanismus aus
+EIP-T-044.
+
+**Ein Verstoß im Kodextext selbst, mit dieser Version behoben.** Der bisherige Beispielsatz des
+§ 9 nannte „68 % davon sagen X" — ein Prozentwert ohne die absolute Zahl daneben, und damit exakt
+das, was § 8 unter „Konkret verboten" führt. Der Paragraph, der die Sprachregeln setzt, hat die
+eigene Nachbarregel gebrochen, seit Version 6 und ohne dass es jemandem auffiel. Kein Verstoß nach
+§ 18: Der Satz war ein Beispiel im Kodex, keine veröffentlichte Aussage über ein Ergebnis, und im
+Produkt stand nie ein Prozentwert allein. Er wird hier trotzdem genannt, weil ein still korrigiertes
+Beispiel dieselbe Sorte Reparatur wäre, die § 10 verbietet. Die neue Satzform führt `{K}` neben
+`{P}` und macht den Fehler strukturell unmöglich.
+
+**Was daneben nachgezogen wurde, ohne Regeländerung.** Der Leitsatz des [Manifest](/manifest) behauptete
+Repräsentativität („was die Menschen in diesem Land wirklich denken") und widersprach damit dem
+Abschnitt „Nicht repräsentativ im statistischen Sinn" im selben Dokument sowie § 9. Er lautet jetzt
+„wie viele Menschen in diesem Land etwas denken … so, dass niemand **die Zahl** wegdiskutieren
+kann" — Betreiberentscheidung vom 2026-08-02, seit dem 2026-07-26 im Ticket offen gehalten und
+bewusst nicht nebenbei umformuliert. Ebenfalls im Manifest: Die Zusage „Wird die Schwelle verfehlt,
+erscheint kein Ergebnis" stand dort noch, obwohl Version 24 die Veröffentlichungsschwelle gestrichen
+hat. Ein Manifest, das eine Zusage weiterführt, die der Kodex zurückgenommen hat, ist der
+Drift-Fall in seiner unangenehmsten Richtung: nach außen zu viel versprochen.
+
+### Version 24 — 2026-08-02
+
+**Die Veröffentlichungsschwelle fällt aus § 7 und § 8. Jedes Ergebnis erscheint, auch eines mit
+sehr kleiner Quote** (EIP-T-025). Das ist eine Kürzung
+einer Zusage nach außen und braucht deshalb dieselbe Begründung wie eine Verschärfung (§ 17).
+
+**Der Grund.** Die Schwelle stand nie in der Basisidee. Weder
+`basisidee/konzept-anonymes-eid-umfragesystem.md` noch `spec-phase0-protokoll.md` noch der dortige
+Ethik-Kodex kennen sie. Was die Spec kennt, ist `min_anonymity_threshold` (§ 3.1) — eine
+**Anonymitäts**schwelle, die die Teilnehmenden schützt und zu einem *Warnlabel* führt, ausdrücklich
+nicht zum Wegfall des Ergebnisses. Der Projekt-Kodex hat daraus eine Veröffentlichungsschwelle
+gemacht, die etwas anderes tut: Sie hält der Öffentlichkeit ein Ergebnis vor. Diese Verwechslung
+ist der eigentliche Befund; die Streichung räumt sie ab.
+
+**Warum die Schwelle auch sachlich falsch war.** Sie sollte verhindern, dass ein Ergebnis mit
+kleiner Quote als Volkswille missbraucht wird. Sie kann das nicht, und sie kostet etwas. Steht der
+Nenner daneben, entwertet eine Quote von 0,3 % sich selbst — wer sie trotzdem hochhält,
+widerspricht der Zahl, die er mitzitiert. Umgekehrt heißt Zurückhalten: Wir entscheiden, welche
+Ergebnisse die Öffentlichkeit sehen darf. Das ist mehr Macht, als dieses Projekt haben will, und
+sie träfe zuerst die eigenen frühen Jahre, in denen jede Quote klein ist.
+
+**Was ausdrücklich bleibt.** Beteiligungsquote und benannter Nenner gleichrangig mit jedem
+Ergebnis (§ 8 Satz 1, seit dem 2026-08-02 im Produkt). Keine Prozentwerte ohne absolute Zahlen.
+Keine Untergruppen-Auswertung, die vorher nicht geplant war. Neu verboten und vorher nicht
+gesagt: ein Ergebnis zurückhalten, weil seine Quote unbequem klein ist.
+
+**Was das nicht heilt.** Die Anonymitätsschwelle aus der Spec gibt es im Produkt weiterhin nicht.
+Sie ist eine Frage des Wahlgeheimnisses, nicht der Zahlen-Ehrlichkeit, und wird im Ticket geführt.
+
+**Zur Redlichkeit dieser Änderung.** Sie folgt einer Entscheidung, die am 2026-08-01 im Ticket
+schon gefallen war — genau die Reihenfolge, vor der § 17 warnt. Version 23 hat den Widerspruch
+deshalb zunächst nur benannt und die Regel stehen lassen. Aufgelöst wird er hier nicht, weil die
+Entscheidung bequemer ist, sondern weil der Abgleich mit der Basisidee ergab, dass die Regel von
+Anfang an ein Fremdkörper war. Der Leser soll beides sehen können: den Grund und die Reihenfolge.
+
 ### Version 23 — 2026-08-02
 
 **Der Nenner steht; § 8 Satz 1 ist eingelöst, Satz 2 wird zum offenen Widerspruch**

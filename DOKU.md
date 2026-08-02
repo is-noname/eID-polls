@@ -179,6 +179,19 @@ ist eine bewusste Entscheidung: individuelle Verifizierbarkeit und Quittungsfrei
 einander aus (`EIP-ADR-20260725-001`). Konsequenz: Stimmenkauf und Nötigung sind technisch nicht
 verhindert.
 
+**Die Suche selbst läuft im Browser**, nicht auf dem Server: Er liefert das Board als Datei aus, das
+Token steht im `#`-Teil der Adresse, den der Browser nie mitsendet, und der Abruf fährt ohne Cookie.
+Eine Abfrage „gib mir den Eintrag zu Token X" gibt es nicht und soll es nicht geben — sonst wüsste
+der Betreiber, welcher Eintrag wem gehört, und die Blindsignatur wäre an der Stelle wertlos, an der
+sie wirkt (`EIP-ADR-20260802-002`). Was der Abruf trotzdem zeigt: die Absender-IP und **welche
+Umfrage** jemanden interessiert.
+
+**Das hat eine Grenze**, und sie ist ausgerechnet (`scripts/mess_boardgroesse.py`): Eine Teilnahme
+kostet 1.046 Bytes im Export, der Download wird also bei rund **100.000 Teilnehmenden** unzumutbar —
+100 MiB je Prüfung, und der Speicherbedarf im Browser läuft dem noch voraus. Bis dahin trägt der
+Weg; darüber greift die Reihenfolge im ADR (gzip, kompaktere Kodierung, Präfix-Bereiche, PIR). Die
+öffentliche Instanz liegt Größenordnungen darunter.
+
 ### Ergebnis und öffentliche Prüfung
 
 **Board** (`/board/{id}`) zeigt fünf Kennzahlen und darunter die veröffentlichten Batches:

@@ -2,7 +2,7 @@
      Nicht hier bearbeiten - Aenderungen gehoeren ins Original. -->
 # Manifest
 
-**Wir bauen einen Ort, an dem sich zeigen lässt, was die Menschen in diesem Land wirklich denken — so, dass niemand es wegdiskutieren kann.**
+**Wir bauen einen Ort, an dem sich nachzählbar zeigen lässt, wie viele Menschen in diesem Land etwas denken — so, dass niemand die Zahl wegdiskutieren kann.**
 
 ## Das Problem
 
@@ -60,7 +60,7 @@ Jede Zusage hier hat einen Paragraphen im [Kodex](/kodex), an dem sie prüfbar w
 
 - **Wir fragen nur das Pseudonym ab.** Kein Name, kein Geburtsdatum, keine Adresse. Keine IP-Adressen in Logs, kein Tracking, keine Dienste Dritter. Wir könnten mehr, wir wollen nicht. (§ 1)
 - **Frage, Nenner und Schwelle stehen vor dem Start öffentlich fest.** Nach Sicht der Zahlen ändern wir daran nichts. (§ 7)
-- **Wir veröffentlichen die Beteiligungsquote immer mit** — auch wenn sie niedrig ist. Besonders dann. Wird die Schwelle verfehlt, erscheint kein Ergebnis. (§ 8)
+- **Wir veröffentlichen die Beteiligungsquote immer mit** — auch wenn sie niedrig ist. Besonders dann. Jedes Ergebnis erscheint; zurückgehalten wird keines, auch keines mit unbequem kleiner Quote. (§ 8)
 - **Fehler melden wir selbst.** Betroffene Ergebnisse ziehen wir zurück, statt sie still zu korrigieren. (§ 10)
 - **Wir schreiben keine eigene Ausweis-Kryptografie.** Niemals. Wir sind Nutzer zertifizierter Komponenten, nicht ihr Erfinder. (§ 3)
 - **Wir veröffentlichen unseren Code.** Wer prüfen will, was in seinem Browser läuft, muss es prüfen können — deshalb ein Build, der sich aus dem offenen Stand nachbauen lässt. (§ 20)
@@ -79,7 +79,7 @@ Der wichtigste Abschnitt des Dokuments. Ein Projekt, das mit Vertrauen wirbt, ve
 
 **Kein Ersatz für Meinungsforschung.** Institute liefern Zeitreihen und Untergruppenanalysen, die wir nicht liefern. Wir liefern eine Sache, die sie nicht liefern können. Andere Gattung, nicht bessere Version.
 
-**Nicht repräsentativ im statistischen Sinn.** Wer teilnimmt, wählt sich selbst aus. Unsere mögliche Teilnehmerschaft ist zusätzlich jünger, männlicher, städtischer und höher gebildet als das Land — so ist die Online-Ausweisfunktion verteilt. Wir sagen deshalb nie „die Bevölkerung denkt X", sondern „von den Teilnehmenden — N von M Berechtigten — denken X" (§ 9).
+**Nicht repräsentativ im statistischen Sinn.** Wer teilnimmt, wählt sich selbst aus. Unsere mögliche Teilnehmerschaft ist zusätzlich jünger, männlicher, städtischer und höher gebildet als das Land — so ist die Online-Ausweisfunktion verteilt. Wir sagen deshalb nie „die Bevölkerung denkt X", sondern immer beide Zahlen im selben Satz: „N von M Wahlberechtigten haben mit Ausweis abgestimmt, K von ihnen sagen X." Ein Wortlaut, überall derselbe (§ 9).
 
 ## Wo wir stehen
 

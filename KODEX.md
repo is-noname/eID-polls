@@ -11,7 +11,7 @@
 > Historie: [Kodex-Protokoll](/kodex/protokoll) · Begriffe: Glossar (projektintern) ·
 > These: EIP-RFC-20260726-001
 
-**Version 23 — 2026-08-02**
+**Version 26 — 2026-08-02**
 
 ---
 
@@ -207,9 +207,21 @@ Speichertrennung (Baustein G) und die Token-Suche auf `/verify` umgesetzt (Herle
 Ticketverweis im [Kodex-Protokoll](/kodex/protokoll), Version 16): Eligibility-Ledger und Board
 liegen in zwei Datenbankdateien mit getrennten Zugriffspfaden und getrennten Debug-Logs, und die
 Token-Suche läuft im Browser über den Board-Export — das Token steht im URL-Fragment und erreicht
-den Server nicht mehr. Ehrlich dazu: Beide Seiten laufen weiter in einem Prozess bei einem
-Betreiber; gegen Laufzeit-Beobachtung durch uns selbst hilft die Trennung der Dateien nicht
-(EIP-T-037 für die Betreibergrenze).
+den Server nicht mehr.
+
+**Die Betreibergrenze — seit Version 26 als Schuld geführt statt als Halbsatz.** Beide Seiten
+laufen weiter in einem Prozess bei einem Betreiber, und gegen die Beobachtung **zur Laufzeit** hilft
+keine Speicherform: Wer die Berechtigungsanfrage und die Stimme beide entgegennimmt, sieht beide
+Ereignisse zu ihrer Zeit, gleichgültig wie sortiert, in wie viele Dateien getrennt und wie schnell
+gelöscht wird. Alles, was oben steht, wirkt auf den **gespeicherten** Stand — vollständig, und
+dort ist es eingelöst. Für den **laufenden Betrieb** ist die Zusage dieses Paragraphen dagegen
+`Disziplin`. Das ist keine offene Bauarbeit, sondern eine Eigenschaft der Betreiberzahl: Behebbar
+ist es nur durch eine zweite Partei, die wir nicht kontrollieren, nicht durch weitere Arbeit an
+dieser Instanz. Herleitung, Grenzen und die maßgebliche Formulierung nach außen:
+EIP-ADR-20260802-003 →
+EIP-T-040, fällig vor Betriebsstufe `produktiv`.
+Der einzige Hebel, der ohne zweite Partei wirkt, ist das Zeitfenster — und seine Stärke ist die
+Zahl der anderen Teilnahmen darin, siehe oben zum Zeitdeckel.
 
 Die **Netzwerkebene** ist seit Version 18 entschieden und zur Hälfte gebaut
 (EIP-ADR-20260801-003, EIP-T-034). Sie trug zwei Korrelatoren,
@@ -303,6 +315,14 @@ einen Ausweg offenließ: Wer einen Text an den Ist-Zustand angleicht, hat diesem
 ohne etwas gebaut zu haben (Herleitung: [Kodex-Protokoll](/kodex/protokoll), Version 3).
 
 **Konkret verboten.** Formulierungen der Art „wir können nicht", wo tatsächlich „wir tun es nicht" gilt.
+Ob der eine oder der andere Fall vorliegt, ist seit dem 2026-08-02 an zwei Fragen prüfbar, statt im
+Einzelfall geschätzt zu werden (EIP-ADR-20260802-003): Empfängt
+dieselbe Partei beide Ereignisse? Kann dieselbe Partei die Ableitung nachrechnen? Ein „ja" heißt
+„wir tun es nicht", und dann ist zu kennzeichnen. Die ADR hält außerdem fest, dass zwei Zusagen
+dieser Art für einen Einzelbetreiber **prinzipiell** nicht einlösbar sind — die Zuordnung von
+Anmeldung und Stimme im laufenden Betrieb (§ 2) und die Wiederherstellung eines verlorenen Tokens
+allein aus dem Ausweis. Beide dürfen deshalb nirgends als offene Bauarbeit dargestellt werden; das
+wäre eine Zusage auf einen Zeitpunkt, den kein Code herbeiführt.
 Aktuell betrifft das vor allem Ballot Stuffing: Solange eine Umfrage **läuft**, liegt ihr
 Token-Signaturschlüssel bei uns allein, und wir könnten Phantom-Tokens signieren. Das ist Disziplin,
 bis die Schwellensignatur steht — und wird so gesagt. Seit Version 17 gilt dasselbe für die externen
@@ -381,21 +401,18 @@ einen Auskunftsanspruch bedienen zu können.
 ### § 7 Präregistrierung
 
 **Regel.** Vor dem Start jeder Umfrage stehen öffentlich fest: Frage, Antwortoptionen, Laufzeit, gewählter
-Nenner, Veröffentlichungsschwelle und Auswertungsplan. Nach Sicht der Zahlen wird daran nichts mehr
-geändert.
+Nenner und Auswertungsplan. Nach Sicht der Zahlen wird daran nichts mehr geändert.
 
 **Warum.** Der wirksamste Manipulationsweg ist nicht die Auszählung, sondern die nachträgliche Wahl des
 Maßstabs. Präregistrierung ist der einzige Schutz dagegen, der ohne Vertrauen auskommt.
 
-**Konkret verboten.** Nachträgliche Änderung des Nenners. Absenken der Veröffentlichungsschwelle, weil sie
-knapp verfehlt wurde. Verlängerung einer laufenden Umfrage wegen des Zwischenstands. Nachträglich
-hinzugefügte Untergruppen-Auswertungen, die vorher nicht geplant waren.
+**Konkret verboten.** Nachträgliche Änderung des Nenners. Verlängerung einer laufenden Umfrage wegen des
+Zwischenstands. Nachträglich hinzugefügte Untergruppen-Auswertungen, die vorher nicht geplant waren.
 
 **Status.** `bindend`, und der zweite Satz ist technisch erzwungen: Es gibt keinen Weg, Frage oder
-Optionen einer laufenden Umfrage zu ändern. Der **erste** ist `offen` — von den sechs Größen, die
+Optionen einer laufenden Umfrage zu ändern. Der **erste** ist `offen` — von den fünf Größen, die
 vor dem Start feststehen müssen, kennt die App drei. Der **Nenner** steht seit dem 2026-08-02 fest
-und öffentlich (EIP-T-025, § 8); eine Veröffentlichungsschwelle ist bewusst abgewählt und deshalb
-kein Rückstand mehr, sondern der Widerspruch aus § 8 Satz 2. Laufzeit und Auswertungsplan
+und öffentlich (EIP-T-025, § 8). Laufzeit und Auswertungsplan
 existieren im Datenmodell nicht (V-006) →
 EIP-T-025, fällig vor Betriebsstufe `produktiv`. Ohne sie
 gibt es nichts, woran eine nachträgliche Änderung sich messen ließe — die Präregistrierung schützt
@@ -404,14 +421,16 @@ dann eine Zusage, die nie gemacht wurde.
 ### § 8 Zahlen-Ehrlichkeit
 
 **Regel.** Beteiligungsquote und benannter Nenner werden gleichrangig mit jedem Ergebnis veröffentlicht.
-Wird die vorab festgelegte Schwelle nicht erreicht, erscheint kein Ergebnis — nur die Tatsache, dass die
-Schwelle nicht erreicht wurde.
+Jedes Ergebnis erscheint — auch eines mit sehr kleiner Quote. Zurückgehalten wird nichts.
 
 **Warum.** Der Nenner ist die eigentliche Innovation. Eine Zahl ohne ihn ist genau die Sorte Zahl, gegen
-die wir angetreten sind.
+die wir angetreten sind. Steht er daneben, braucht es kein Zurückhalten: Eine Quote von 0,3 % entwertet
+sich selbst, und wer sie trotzdem als Volkswille ausgibt, widerspricht der Zahl, die er mitzitiert. Das
+ist sein Fehler, nicht unserer — und ein Ergebnis wegzulassen, um seinen Missbrauch zu verhindern, wäre
+selbst eine Entscheidung über das, was die Öffentlichkeit sehen darf.
 
 **Konkret verboten.** Prozentwerte ohne absolute Zahlen. Ergebnisgrafiken, die die Quote kleiner setzen als
-das Ergebnis. Veröffentlichung „nur intern" oder „nur für den Partner" unterhalb der Schwelle.
+das Ergebnis. Ein Ergebnis zurückhalten, weil seine Quote unbequem klein ist.
 Zwischenstände während der Laufzeit über den reinen Teilnahmezähler hinaus.
 
 **Status.** `bindend`. Satz 1 ist seit dem 2026-08-02 eingelöst: Über dem Ergebnis steht
@@ -422,31 +441,56 @@ vorab und dauerhaft feststehen muss. Ebenfalls eingelöst: Kein Prozentwert steh
 absolute Zahl, die Bezugsgröße wird an Ort und Stelle benannt, und einen Zwischenstand über den
 Teilnahmezähler hinaus gibt es nicht (EIP-T-083).
 
-`offen` ist **Satz 2** — die Schwelle, unterhalb derer kein Ergebnis erscheint. Sie existiert
-nicht, und gegen sie ist am 2026-08-01 entschieden worden: Jedes Ergebnis erscheint mit seiner Quote, auch eine sehr kleine; was Dritte
-daraus machen, regelt Transparenz statt Zurückhaltung. Damit ist dies **kein Umsetzungsrückstand,
-sondern ein Widerspruch im Dokument selbst** (V-006, Nachtrag vom 2026-08-02) →
-EIP-T-025, fällig vor Betriebsstufe `produktiv`.
-Auflösen kann ihn nur eines von beidem: die Schwelle bauen, oder Satz 2
-nach § 17 streichen — versioniert, begründet, protokolliert. Bis dahin gilt der Satz, wie er
-dasteht; eine Zusage verschwindet nicht dadurch, dass man sie nicht mehr einlösen will.
+Die frühere Veröffentlichungsschwelle ist in Version 24 aus der Regel entfernt worden — sie stand
+nie in der Basisidee, sondern kam erst über den Kodex hinzu (Begründung: [Kodex-Protokoll](/kodex/protokoll),
+Version 24). Damit ist dieser Paragraph vollständig eingelöst.
+
+Nicht zu verwechseln mit der **Anonymitätsschwelle** (`min_anonymity_threshold` der Basisidee):
+Die schützt die Teilnehmenden statt die Öffentlichkeit, führt zu einem Warnlabel am Ergebnis statt
+zu seinem Wegfall. Sie ist eine Frage des Wahlgeheimnisses, nicht der Zahlen-Ehrlichkeit; ihr
+Umsetzungsstand wird in EIP-T-025 geführt und gehört
+nicht in diesen Paragraphen.
 
 ### § 9 Sprachregeln
 
-**Regel.** Jede eigene Aussage über ein Ergebnis nennt die Stimmanzahl und den Nenner im selben Satz:
+**Regel.** Jede eigene Aussage über ein Ergebnis nennt Stimmanzahl und Nenner im selben Satz. Der
+Wortlaut steht fest und ist überall derselbe — Oberfläche, Dokument, Grafik, Widget:
 
-> „1,2 Mio. Menschen haben mit Ausweis abgestimmt, 68 % davon sagen X. Das sind 2 % der 61 Mio.
-> Wahlberechtigten."
+> „{N} von {M} {Nennerbezeichnung} haben mit Ausweis abgestimmt ({Q}). {K} von ihnen ({P}) sagen
+> {Antwort}."
+
+Beispiel: „12.437 von 59.200.000 Wahlberechtigten (Deutsche ab 18 im Inland) haben mit Ausweis
+abgestimmt (0,02 %). 8.432 von ihnen (68 %) sagen Ja."
+
+**Die Reihenfolge ist Teil des Wortlauts:** Nenner vor Ergebnis. Steht er dahinter, liest ihn
+niemand — derselbe Grund, aus dem er im Produkt über den Balken steht und nicht darunter (§ 8).
+
+**Platzhalter und Rundung.**
+
+- `{N}`, `{M}`, `{K}` — absolute Zahlen, exakt, nie gerundet, mit Tausenderpunkt. Eine gezählte
+  Zahl zu runden gibt genau die Genauigkeit auf, die dieses Verfahren herstellt.
+- `{Q}`, Beteiligungsquote — zwei Nachkommastellen, **abgerundet**; unterhalb von 0,01 % steht
+  „unter 0,01 %" und nicht „0,00 %". Abgerundet, weil ein Rundungsfehler zugunsten der eigenen
+  Reichweite die Sorte Fehler ist, die niemand für einen hält.
+- `{P}`, Anteil an den Abstimmenden — ganze Prozent, kaufmännisch gerundet; unterhalb von 1 % steht
+  „unter 1 %". Nie ohne `{K}` daneben.
+- `{M}` und `{Nennerbezeichnung}` stammen aus der Konfiguration, stehen vorab fest und werden nicht
+  je Umfrage gewählt (§ 7).
+- Waren mehrere Antworten möglich, folgt der Zusatz: „Mehrere Antworten waren möglich, die Anteile
+  summieren sich über 100 %."
 
 Nie „die Bevölkerung denkt X", nie „repräsentativ". Die Regel bindet uns, unsere Grafiken und das
 Einbettungs-Widget — nicht Dritte, die zitieren.
 
 **Warum.** Die Zahlen erledigen das Argument selbst: Wer den Nenner danebenstehen sieht, kann nicht
 mehr behaupten, hier spreche das Land. Dafür braucht es kein Fachwort und keine Zitierauflage, nur
-die Disziplin, den Nenner nie wegzulassen.
+die Disziplin, den Nenner nie wegzulassen. Dass der Wortlaut festgeschrieben ist und nicht nur seine
+Bestandteile, hat einen zweiten Grund: Eine Regel, die jede Stelle selbst ausformuliert, driftet
+auseinander, und die bescheidenere Variante verliert dabei zuerst.
 
 **Konkret verboten.** „Deutschland sagt", „die Mehrheit der Deutschen", „repräsentative Erhebung".
-Prozentwerte ohne die absolute Zahl daneben. Hochrechnungen. Gewichtungen. Vergleichsgrafiken mit
+Prozentwerte ohne die absolute Zahl daneben — auch der Ergebnisanteil `{P}` ohne `{K}`.
+Hochrechnungen. Gewichtungen. Vergleichsgrafiken mit
 Institutszahlen, die die Gattungsdifferenz verwischen. Widget-Konfigurationen, mit denen ein Einbetter
 die Quote ausblenden kann.
 
@@ -456,9 +500,10 @@ Politik ohnehin nicht durchsetzen könnten, steht hier nicht (Herleitung: [Kodex
 Version 6).
 
 **Status.** `bindend` — und ab Betriebsstufe `öffentlich erreichbar` gilt das für jede ausgelieferte
-Oberfläche, nicht erst für veröffentlichte Ergebnisse (V-001). Der genaue Wortlaut, überall gleich,
-wird in EIP-T-028 festgelegt; das ist eine
-Formulierungsaufgabe, keine offene Regel.
+Oberfläche, nicht erst für veröffentlichte Ergebnisse (V-001). Der Wortlaut steht seit Version 25
+(EIP-T-028) und ist damit keine offene Formulierungsaufgabe mehr. Die Ergebnisdarstellung im Produkt
+erfüllt ihn der Sache nach seit dem 2026-08-02 (EIP-T-025): Nenner mit Quote über den Balken, jeder
+Prozentwert neben seiner absoluten Zahl.
 
 ### § 10 Fehler, Widerruf und Offenlegung
 
@@ -764,8 +809,10 @@ abgeleitet, nicht eigenständig: Maßgeblich ist der Status beim jeweiligen Para
 Ereignis dasteht. Was die Zahl darunter zählt und was sie dabei nicht sieht, steht in § 4 b und
 nicht hier.
 
-**Stand 2026-08-01: 13 von 20 Paragraphen. Die Grenze aus § 4 b liegt bei 8 — sie ist überschritten,
-der Baustopp gilt.**
+**Stand 2026-08-02: 12 von 20 Paragraphen. Die Grenze aus § 4 b liegt bei 8 — sie ist überschritten,
+der Baustopp gilt.** Bis Version 25 stand hier 13; die Tabelle darunter führte durchgehend 12, und
+`scripts/check_kodex.py` zählt sie. Korrigiert mit Version 26 — die Zahl war zu hoch, nicht die
+Lage besser.
 
 Version 20 ist der größte Sprung, den diese Zahl je gemacht hat, und **kein einziger Vermerk
 beschreibt einen neuen Zustand**: § 3, § 7 und § 8 kommen hinzu, § 11 und § 12 bekommen einen
@@ -819,13 +866,13 @@ ein Dokument schreibt.
 |---|---|---|---|---|
 | 1 | Protokollierung beim Hoster (Loadbalancer, TLS-Endpunkt, Cloudflare) — belegt, dass sie stattfindet; Umfang und Frist offen. Die eigene Seite ist erledigt | EIP-T-075 | `öffentlich erreichbar` | 2026-07-26 |
 | 2 | Split-View: zwei parallel geführte Boards. Der Zeitanker steht seit 2026-08-01 (EIP-T-006) und schließt das rückwirkende Umschreiben; Equivocation deckt er prinzipiell nicht auf, dazu braucht es Gegenzeichner | EIP-T-036 | `produktiv` | 2026-07-26 |
+| 2 | Betreibergrenze: Wer beide Vorgänge entgegennimmt, sieht beide zu ihrer Zeit. Für die gespeicherten Daten ist die Trennung gebaut, für den laufenden Betrieb bleibt sie Disziplin — nicht durch Arbeit an dieser Instanz behebbar (EIP-ADR-20260802-003) | EIP-T-040 | `produktiv` | 2026-08-02 |
 | 2 | Netzwerkebene: anonymer Zustellkanal als Option. Entschieden und zur Hälfte gebaut (Verbindungstrennung, Kanalblindheit, EIP-T-034); der Kanal selbst ist eine Betriebsentscheidung und hängt an der Hosterfrage | EIP-T-082 | `produktiv` | 2026-08-01 |
 | 3 | Blindsignatur in ihren Kernschritten selbst geschrieben (EMSA-PSS-ENCODE, MGF1, Blinding-Arithmetik, rohe RSA-Operation), weil es für Python keine geprüfte RFC-9474-Bibliothek gibt. Gedeckt durch die RFC-Testvektoren — Korrektheit, nicht Seitenkanäle. Verstoß V-005 | EIP-T-008 | `produktiv` | 2026-08-01 |
 | 4 | Ballot Stuffing bleibt Disziplin **während der Laufzeit** (Schlüssel liegt allein bei uns; nach Schließung vernichtet, EIP-T-069) | EIP-T-040 | `produktiv` | 2026-07-26 |
 | 5 | Eigener Eingangskanal für Behördenanfragen — Bauform entschieden (Postfach ohne Domain), Einrichtung offen | EIP-T-073 | `produktiv` | 2026-07-31 |
 | 6 | DSGVO-Kollision entschieden und begründet | EIP-T-061 | `produktiv` | 2026-07-26 |
 | 7 | Von den sechs Größen, die vor dem Start feststehen müssen, kennt die App drei. Der Nenner steht seit dem 2026-08-02 (EIP-T-025); Laufzeit und Auswertungsplan gibt es im Datenmodell nicht. Verstoß V-006 | EIP-T-025 | `produktiv` | 2026-08-01 |
-| 8 | Beteiligungsquote und benannter Nenner stehen seit dem 2026-08-02 am Ergebnis (EIP-T-025). Offen ist allein Satz 2 der Regel — die Schwelle, unterhalb derer kein Ergebnis erscheint. Gegen sie ist inzwischen entschieden; solange der Paragraph sie verlangt, ist das kein Umsetzungsrückstand, sondern ein Widerspruch, den erst eine Änderung nach § 17 auflöst | EIP-T-025 | `produktiv` | 2026-08-01 |
 | 11 | eAT-Unterstützung, Barrierefreiheit | EIP-T-064 | `produktiv` | 2026-07-26 |
 | 11 | Hinweispflicht am Ergebnis: Die Ergebnisdarstellung nennt die eID-Verfügbarkeit als Zugangsvoraussetzung nicht. Verstoß V-006 | EIP-T-025 | `produktiv` | 2026-08-01 |
 | 12 | Übergabe der Fragehoheit an ein unabhängiges Gremium | EIP-T-022 | politische Relevanz, spät. `produktiv` | 2026-07-26 |
