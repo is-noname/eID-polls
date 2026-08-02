@@ -27,20 +27,20 @@ TypeScript (@cloudflare/blindrsa-ts) - siehe EIP-T-079 fuer die Client-Seite.
 
 Was daraus folgt, offen benannt:
 
-  Zugekauft (geprueft):  SHA-384 und die RSASSA-PSS-Verifikation kommen aus
+  Zugekauft (geprueft):  SHA-384, die RSASSA-PSS-Verifikation und seit
+                         EIP-T-093 die rohe RSA-Privatoperation kommen aus
                          `cryptography` / OpenSSL. Eine fertige Signatur ist
                          eine ganz gewoehnliche PSS-Signatur und laesst sich
                          von jedem Dritten mit Standardwerkzeug pruefen.
-  Selbst geschrieben:    EMSA-PSS-ENCODE, MGF1, die modulare Arithmetik des
-                         Blindings und die rohe RSA-Signaturoperation. Im
-                         serverseitigen Stimmweg laeuft davon nur die letzte:
-                         poll_service ruft blind_sign(), sonst nichts aus
-                         dieser Datei ausser verify(). Die uebrigen Schritte
-                         gehoeren dem Browser (static/blind.js); hier bedienen
-                         sie testvektor() und die Angriffsdemos in demo.py.
-                         Die serverseitige Restschuld ist deshalb nicht der
-                         fehlende Zukauf, sondern das Zeitverhalten von
-                         blind_sign - siehe dort (EIP-T-093).
+  Selbst geschrieben:    EMSA-PSS-ENCODE, MGF1 und die modulare Arithmetik des
+                         Blindings. Im serverseitigen Stimmweg laeuft davon
+                         seit EIP-T-093 nichts mehr: poll_service ruft
+                         blind_sign(), und dessen Rechenkern liegt in
+                         rsa_raw.private_op() bei OpenSSL. Die uebrigen
+                         Schritte gehoeren dem Browser (static/blind.js); hier
+                         bedienen sie testvektor() und die Angriffsdemos in
+                         demo.py. Die Restschuld aus V-005 ist damit die
+                         Browser-Haelfte (EIP-T-008), nicht mehr der Server.
   Nachgewiesen:          testvektor() rechnet jeden dieser Schritte gegen den
                          Testvektor aus RFC 9474 Anhang A.4 nach - Byte fuer
                          Byte, mit dem Blendfaktor aus dem RFC statt einem
@@ -67,6 +67,8 @@ from pathlib import Path
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
+
+import rsa_raw
 
 VARIANTE = "RSABSSA-SHA384-PSSZERO-Deterministic"
 HASH = hashes.SHA384
@@ -182,22 +184,63 @@ def blind(msg: bytes, n: int, e: int, r: int | None = None) -> tuple[bytes, int]
         return i2osp(z, k), r_inv
 
 
-def blind_sign(blinded_msg: bytes, n: int, d: int, e: int) -> bytes:
-    """Server: signiert blind. Sieht nur die verblindete Form (§6 Phase A.4)."""
+def blind_sign(blinded_msg: bytes, key: rsa.RSAPrivateKey) -> bytes:
+    """Server: signiert blind. Sieht nur die verblindete Form (§6 Phase A.4).
+
+    Die eigentliche Rechnung m^d mod n macht seit EIP-T-093 OpenSSL
+    (rsa_raw.private_op), nicht mehr CPythons pow(): pow() rechnet ohne
+    Base-Blinding und nicht in konstanter Zeit, und der Schluessel, um den es
+    hier geht, stellt Stimmzettel aus. Was hier bleibt, sind Pruefungen und die
+    Rueckrechnung - beides mit oeffentlichen Werten, also ohne Zeitgeheimnis.
+
+    Der Schluessel kommt als Objekt statt als (n, d, e): d muss dafuer nicht
+    mehr als Python-Ganzzahl durch den Aufrufer wandern.
+
+    Raises:
+        ValueError: Die verblindete Nachricht ist ungueltig - Abweisung.
+        rsa_raw.OpenSSLNichtVerfuegbar: Der Server kann nicht gehaertet
+            signieren. Kein Clientfehler; der Aufrufer meldet das ans
+            Debug-Modul, statt ungehaertet weiterzurechnen.
+    """
+    zahlen = key.public_key().public_numbers()
+    n, e = zahlen.n, zahlen.e
     k = (n.bit_length() + 7) // 8
     if len(blinded_msg) != k:
         raise ValueError("Verblindete Nachricht hat die falsche Laenge.")
     m = os2ip(blinded_msg)
     if m >= n:
         raise ValueError("Verblindete Nachricht groesser als der Modulus.")
-    s = pow(m, d, n)
+
+    s = os2ip(rsa_raw.private_op(key, blinded_msg))
+
     # RFC 9474 §4.3 Schritte 3-4: die eigene Rechnung zurueckrechnen und
     # vergleichen. Faengt einen verrechneten Exponenten oder einen Bitfehler
     # ab, bevor eine unbrauchbare Signatur den Server verlaesst - unbemerkt
     # waere das fuer den Client eine abgewiesene Stimme ohne erkennbaren Grund.
+    # Seit die Rechnung bei OpenSSL liegt, prueft dieser Schritt zusaetzlich die
+    # ctypes-Bindung selbst: ein falsch uebergebener Puffer faellt hier auf.
     if pow(s, e, n) != m:
         raise ValueError("Signaturoperation fehlgeschlagen (Rueckrechnung stimmt nicht).")
     return i2osp(s, k)
+
+
+def key_aus_zahlen(n: int, e: int, d: int) -> rsa.RSAPrivateKey:
+    """Baut aus (n, e, d) einen Schluessel - fuer Testvektoren, nicht fuer den Betrieb.
+
+    RFC 9474 Anhang A.4 gibt den Schluessel als d aus, ohne p und q; OpenSSL
+    braucht die CRT-Anteile. rsa_recover_prime_factors() rechnet sie zurueck.
+    Laeuft nur in testvektor(), nie im Stimmweg.
+    """
+    p, q = rsa.rsa_recover_prime_factors(n, e, d)
+    return rsa.RSAPrivateNumbers(
+        p=p,
+        q=q,
+        d=d,
+        dmp1=rsa.rsa_crt_dmp1(d, p),
+        dmq1=rsa.rsa_crt_dmq1(d, q),
+        iqmp=rsa.rsa_crt_iqmp(p, q),
+        public_numbers=rsa.RSAPublicNumbers(e, n),
+    ).private_key()
 
 
 def finalize(
@@ -284,8 +327,12 @@ def testvektor() -> list[str]:
     if inv_ist != inv:
         abweichungen.append("inv (Blind)")
 
+    # Seit EIP-T-093 laeuft BlindSign ueber OpenSSL. Der Vektor prueft damit
+    # nicht mehr nur die Formel, sondern auch die ctypes-Bindung - gegen einen
+    # 4096-Bit-Schluessel, den nicht wir erzeugt haben.
     gleich("blind_sig (BlindSign)",
-           blind_sign(bytes.fromhex(vektor["blinded_msg"]), n, d, e), vektor["blind_sig"])
+           blind_sign(bytes.fromhex(vektor["blinded_msg"]), key_aus_zahlen(n, e, d)),
+           vektor["blind_sig"])
     gleich("sig (Finalize)",
            finalize(bytes.fromhex(vektor["blind_sig"]), inv, n), vektor["sig"])
 
@@ -305,15 +352,30 @@ def selftest(bits: int = KEY_BITS) -> None:
 
     key = generate_key(bits)
     pub = key.public_key().public_numbers()
-    n, e, d = pub.n, pub.e, key.private_numbers().d
+    n, e = pub.n, pub.e
 
     msg = secrets.token_bytes(32)
     blinded, inv = blind(msg, n, e)
-    sig = finalize(blind_sign(blinded, n, d, e), inv, n, key.public_key(), msg)
+    sig = finalize(blind_sign(blinded, key), inv, n, key.public_key(), msg)
     if not verify(key.public_key(), msg, sig):
         raise AssertionError("Blindsignatur-Roundtrip fehlgeschlagen.")
     if verify(key.public_key(), secrets.token_bytes(32), sig):
         raise AssertionError("Signatur gilt fuer eine fremde Nachricht.")
+
+    # Ohne OpenSSL muss blind_sign scheitern, nicht auf pow() zurueckfallen
+    # (EIP-T-093). Ein stiller Rueckfall waere die ungehaertete Operation unter
+    # dem Namen der gehaerteten - und dieser Test die einzige Stelle, an der er
+    # auffiele.
+    echt, ladefehler = rsa_raw._lib, rsa_raw._ladefehler
+    rsa_raw._lib, rsa_raw._ladefehler = None, "Selbsttest: OpenSSL abgeklemmt."
+    try:
+        blind_sign(blinded, key)
+    except rsa_raw.OpenSSLNichtVerfuegbar:
+        pass
+    else:
+        raise AssertionError("blind_sign signiert ohne OpenSSL - stiller Rueckfall auf pow().")
+    finally:
+        rsa_raw._lib, rsa_raw._ladefehler = echt, ladefehler
 
 
 if __name__ == "__main__":

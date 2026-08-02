@@ -31,6 +31,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import rsa_raw
 import stand as stand_modul
 from anker import standard_zeugen
 from auth import AuthError, Authenticator, CodeAuthenticator
@@ -97,6 +98,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     ):
         print(f"[eidpoll] {line}", flush=True)
     log.info("auslieferung", f"Ausgelieferter Stand: {kennung}")
+
+    # Signiert wird ueber OpenSSL, nicht ueber pow() (EIP-T-093, KODEX §3).
+    # Fehlt libcrypto, gibt diese Instanz keine Stimm-Token aus - das soll beim
+    # Start auffallen und nicht erst, wenn die erste Person abstimmen will.
+    # Ein stiller Rueckfall auf die ungehaertete Rechnung waere die Alternative
+    # gewesen und ist ausgeschlossen; deshalb ist das hier eine Betriebsfrage.
+    signieren_ok, signieren_meldung = rsa_raw.verfuegbar()
+    if signieren_ok:
+        log.info("system", signieren_meldung)
+    else:
+        log.error("system", f"Signieroperation nicht einsatzbereit: {signieren_meldung}")
+        print(f"[eidpoll] ACHTUNG: {signieren_meldung}", flush=True)
     # Ohne persistente Platte (Gratis-Hosting) ist die Datenbank nach jedem
     # Neustart leer. Eine leere Startseite waere fuer einen Besucher nicht von
     # einer kaputten Instanz zu unterscheiden.

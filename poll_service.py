@@ -45,6 +45,7 @@ from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 import anker as anker_modul
 import blind
 import board_eintrag
+import rsa_raw
 from anker import AnkerNichtVerfuegbar, Zeitzeuge
 from berechtigung_store import BerechtigungsStore
 from board_eintrag import BoardEntry, TokenIssued, Vote, canonical, parse
@@ -935,16 +936,31 @@ class PollService:
         # Token aus einer anderen Umfrage ist hier strukturell wertlos, und nach
         # dem Schliessen gibt es diesen Schluessel nicht mehr.
         signaturschluessel = self._poll_key(poll_id)
-        zahlen = signaturschluessel.public_key().public_numbers()
         # Signieren steht vor dem Anspruch: es aendert nichts und darf deshalb
         # folgenlos scheitern. Umgekehrt waere bei einer ungueltigen Anfrage die
         # Berechtigung verbraucht, ohne dass jemand ein Token bekommen haette.
         try:
-            blind_sig = blind.blind_sign(
-                blinded_msg, zahlen.n, signaturschluessel.private_numbers().d, zahlen.e
-            )
+            blind_sig = blind.blind_sign(blinded_msg, signaturschluessel)
         except ValueError as exc:
             raise Rejected(f"Verblindete Anfrage ungueltig: {exc}") from exc
+        except rsa_raw.OpenSSLNichtVerfuegbar as exc:
+            # Kein Clientfehler, sondern ein Betriebsfehler dieses Servers: die
+            # gehaertete Signieroperation steht nicht zur Verfuegung
+            # (EIP-T-093). Es wird abgewiesen statt ungehaertet gerechnet, und
+            # zwar sichtbar - unsichtbar waere genau der stille Rueckfall, den
+            # rsa_raw ausschliesst.
+            log_berechtigung.error(
+                "phase-a",
+                f"Signieroperation nicht gehaertet verfuegbar: {exc} Es werden keine "
+                "Stimm-Token ausgegeben, bis das behoben ist.",
+                poll=poll_id,
+            )
+            raise Rejected(
+                "Der Server kann derzeit keine Stimm-Token ausstellen: die abgesicherte "
+                "Signieroperation steht nicht zur Verfuegung. Das ist ein Fehler dieses "
+                "Servers, nicht Ihrer Anfrage. Es wird bewusst abgewiesen, statt "
+                "ungeschuetzt zu signieren."
+            ) from exc
 
         blinded_h = hashlib.sha256(blinded_msg).hexdigest()
 

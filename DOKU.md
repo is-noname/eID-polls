@@ -698,16 +698,57 @@ und Ledger bleiben unberührt.
 keine geprüfte Umsetzung gibt (PyPI-Suche **2026-08-01**: keine Distribution unter
 `blind-rsa-signatures`, `blind_signatures`, `blindsig`, `rsa-blind-signatures`, `pyblindsig`,
 `rsabssa`, `blind-signature`, `pyblind-rsa`, `blindrsa`, `py-blind-rsa`, `rfc9474`).
-Geprüft zugekauft sind SHA-384, die Schlüsselerzeugung und die PSS-Verifikation aus `cryptography`;
-selbst geschrieben sind EMSA-PSS-ENCODE, MGF1 und die Blinding-Arithmetik — in Python und in
-JavaScript. Deutlich besser als der textbook-Chaum des Prototyps, aber kein Ersatz für einen Audit.
+Geprüft zugekauft sind SHA-384, die Schlüsselerzeugung, die PSS-Verifikation (`cryptography`) und
+seit dem 2026-08-02 die serverseitige RSA-Privatoperation (OpenSSL); selbst geschrieben sind
+EMSA-PSS-ENCODE, MGF1 und die Blinding-Arithmetik — im Browser. Deutlich besser als der
+textbook-Chaum des Prototyps, aber kein Ersatz für einen Audit.
 
-Die beiden Seiten tragen daran ungleich. Im serverseitigen Stimmweg läuft genau eine selbst
+Die beiden Seiten tragen daran ungleich. Im serverseitigen Stimmweg lief genau eine selbst
 geschriebene Operation: die rohe RSA-Privatoperation in `blind_sign()`. Die übrigen Schritte laufen
 im Browser (`static/blind.js`); ihre Python-Zwillinge in `blind.py` bedienen den Testvektor und die
 Angriffsdemos. Für die Browserseite gäbe es eine gepflegte Bibliothek (EIP-T-008), für die
-Serverseite ändert eine Bibliothek nichts — sie rechnete dasselbe. Die serverseitige Schuld ist das
-Zeitverhalten: `pow(m, d, n)` läuft in CPython ohne Blinding und ohne konstante Zeit (EIP-T-093).
+Serverseite änderte eine Bibliothek nichts — sie rechnete dasselbe. Die serverseitige Schuld war
+deshalb nicht der fehlende Zukauf, sondern das Zeitverhalten; sie ist mit EIP-T-093 abgetragen.
+
+**Wie serverseitig signiert wird (seit 2026-08-02, EIP-T-093).** `blind_sign()` rechnet
+`m^d mod n` nicht mehr mit CPythons `pow()`, sondern mit OpenSSL: `app/rsa_raw.py` bindet
+`EVP_PKEY_decrypt` mit `RSA_NO_PADDING` über `ctypes` an libcrypto. OpenSSL blendet
+RSA-Privatoperationen intern ab und rechnet sie über die CRT; `pow()` tut beides nicht. Betroffen
+war nicht irgendein Schlüssel, sondern der Signaturschlüssel der Umfrage — wer ihn hat, stellt
+beliebig viele Stimmzettel aus.
+
+Drei Dinge daran sind wichtiger als der Austausch selbst:
+
+- **Kein stiller Rückfall.** Fehlt libcrypto, wirft `rsa_raw` und der Server gibt keine Stimm-Token
+  aus, sichtbar im Debug-Modul und im Startprotokoll. Ein Rückfall auf `pow()` wäre die ungehärtete
+  Operation unter dem Namen der gehärteten. `blind.selftest()` prüft genau das mit.
+- **Der RFC-Testvektor läuft jetzt durch OpenSSL.** A.4 prüft damit auch die ctypes-Bindung, und
+  zwar gegen einen 4096-Bit-Schlüssel, den nicht wir erzeugt haben.
+- **Es ist gemessen, nicht behauptet.** Siehe unten.
+
+**Messung (`app/messung_blind_sign.py`, 2026-08-02).** Gefragt ist nicht die mittlere Dauer, sondern
+ob die Laufzeit verrät, *welche* Nachricht signiert wurde. Gemessen werden feste Eingabeklassen
+gegeneinander, verschränkt; Maß ist die Trennschärfe AUC (0,5 = ununterscheidbar, 1,0 = jede
+einzelne Messung verrät die Klasse). 600 Durchläufe je Klasse, 3072 Bit:
+
+| Weg | klein vs. typisch | zwei typische Nachrichten |
+|---|---|---|
+| `pow(m, d, n)` (bis 2026-08-02) | 62,9 ms / 75,1 ms — **AUC 0,983** | 75,1 ms / 75,1 ms — AUC 0,505 |
+| OpenSSL (jetzt) | 2,93 ms / 2,92 ms — AUC 0,517 | AUC 0,508 |
+| über HTTP, `POST /api/token` | 302,7 ms / 302,9 ms — AUC 0,549 | AUC 0,506 |
+
+Der alte Weg war für eine extreme Eingabe praktisch sicher erkennbar (AUC 0,983); zwei gewöhnliche
+Nachrichten trennte auch er mit dieser Methode nicht. Der neue Weg trennt in keinem Fall — und ist
+dabei rund 25-fach schneller, weil OpenSSL über die CRT rechnet. Die HTTP-Messung lief über
+Loopback, den günstigsten Fall für einen Angreifer; die Signieroperation macht dort etwa ein Prozent
+der Antwortzeit aus.
+
+Was die Messung **nicht** zeigt: Seitenkanalfreiheit. Ein Nullbefund heißt „mit dieser Methode, auf
+dieser Maschine, in dieser Anzahl nicht messbar" — nicht „nicht vorhanden". Ein Nachweis bräuchte
+dudect/ctgrind und eine ruhige Maschine; das bleibt Sache des Audits (EIP-T-094). Eine erste
+Fassung der Messung verglich gegen `m = n-1` und fand einen scheinbar starken Seitenkanal — `n-1`
+ist kongruent zu −1, seine Potenzen sind trivial, gemessen war Schulmathematik. Der Fehlgriff steht
+im Skript, damit ihn niemand wiederholt.
 
 Was seit EIP-T-008 dazugekommen ist und was nicht: Beide Seiten rechnen den **Testvektor aus
 RFC 9474 Anhang A.4** nach, Schritt für Schritt und mit dem Blendfaktor aus dem RFC statt einem

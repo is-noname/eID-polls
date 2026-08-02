@@ -103,7 +103,7 @@ def stuff_ballot(service: PollService, poll_id: str, choice: str) -> None:
     token = secrets.token_bytes(32)
     e = key.public_key().public_numbers().e
     blinded, inv = blind.blind(token, n, e)
-    sig = blind.finalize(blind.blind_sign(blinded, n, key.private_numbers().d, e), inv, n)
+    sig = blind.finalize(blind.blind_sign(blinded, key), inv, n)
     service.cast_vote(poll_id, token, sig, [choice])
     log.error("demo", "Betreiber-Stimme ohne Berechtigung eingeschleust (Demo).", poll=poll_id)
 

@@ -828,7 +828,7 @@ def pruefung_ohne_datenbank() -> None:
 
     key = blind.generate_key(1024)  # klein, weil hier nur der Pfad geprueft wird
     pub = key.public_key()
-    n, e, d = pub.public_numbers().n, pub.public_numbers().e, key.private_numbers().d
+    n, e = pub.public_numbers().n, pub.public_numbers().e
     # Der Schluessel geht ins Board und wird von dort geprueft (EIP-T-069) -
     # der Pruefpfad bekommt ihn nicht mehr von aussen gereicht.
     pub_pem = pub.public_bytes(
@@ -839,7 +839,7 @@ def pruefung_ohne_datenbank() -> None:
     def signiertes_token() -> tuple[bytes, bytes]:
         token = secrets.token_bytes(32)
         blinded, inv = blind.blind(token, n, e)
-        sig = blind.finalize(blind.blind_sign(blinded, n, d, e), inv, n)
+        sig = blind.finalize(blind.blind_sign(blinded, key), inv, n)
         return token, sig
 
     def board(batch_payloads: list[list[dict]]) -> list[Batch]:

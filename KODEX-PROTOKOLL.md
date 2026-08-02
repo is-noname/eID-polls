@@ -15,6 +15,29 @@
 
 ## Änderungsprotokoll
 
+### Version 30 — 2026-08-02
+
+**§ 3 verliert seine Server-Hälfte** (EIP-T-093). Die rohe
+RSA-Privatoperation in `blind_sign()` rechnet nicht mehr CPythons `pow()`, sondern OpenSSL
+(`app/rsa_raw.py`, `EVP_PKEY_decrypt` mit `RSA_NO_PADDING`). Im serverseitigen Stimmweg läuft damit
+kein selbst geschriebener Krypto-Code mehr. Die Zeile fällt aus der Schuldenübersicht; § 3 bleibt
+belastet, weil die Browser-Hälfte (EIP-T-008) und der Audit
+(EIP-T-094) offen sind.
+
+**Die Zahl bewegt sich wieder nicht.** 12 belastete Paragraphen, Baustopp unverändert — § 3 zählt
+weiter, weil ein Paragraph gezählt wird und nicht seine Vermerke. Zum vierten Mal in fünf Versionen
+zeigt die Kennzahl gebaute Arbeit nicht an (§ 4 b, Blindheit der Kennzahl). Das ist hier kein
+Nebenbefund: Wäre die Kennzahl das einzige Maß, hätte sich dieses Ticket nicht gelohnt.
+
+**Was den Eintrag über einen Austausch hinaushebt.** Erstens: kein stiller Rückfall. Fehlt
+libcrypto, weist der Server ab, statt ungehärtet zu rechnen — sichtbar im Debug-Modul und im
+Startprotokoll, geprüft in `blind.selftest()`. Ein Rückfall auf `pow()` wäre die ungehärtete
+Operation unter dem Namen der gehärteten gewesen, also genau die Art Aussage, die § 3 und § 20
+verbieten. Zweitens: Die Härtung ist **gemessen** (`app/messung_blind_sign.py`), nicht behauptet.
+Der alte Weg war für eine extreme Eingabe an der Laufzeit praktisch sicher erkennbar (AUC 0,98), der
+neue in keiner geprüften Klasse (AUC ≈ 0,51), lokal wie über HTTP. Was die Messung nicht kann, steht
+dabei: Sie zeigt Nichtmessbarkeit mit einer Methode auf einer Maschine, nicht Seitenkanalfreiheit.
+
 ### Version 29 — 2026-08-02
 
 **§ 8 entscheidet die offene Frage zum Zwischenstand**
@@ -1377,6 +1400,21 @@ Ereignisse die Hälften auflösen), in `eid-wiki/Grenzen/Was-nicht-geleistet-wir
 EIP-T-008, das auf die Browser-Hälfte zugeschnitten ist. Neu: EIP-T-093 (Seitenkanalhärtung) und
 EIP-T-094 (externer Audit — bis heute ohne eigenes Ticket, obwohl der Eintrag oben unter Punkt 3
 mit ihm argumentiert). § 3 bleibt belastet, die Schuldenzahl unverändert bei 12.
+
+**Zweiter Nachtrag 2026-08-02 — die Server-Hälfte ist behoben** (EIP-T-093, Kodex-Version 30).
+`blind_sign()` rechnet über OpenSSL statt über `pow()`; serverseitig läuft kein eigener Krypto-Code
+mehr im Stimmweg. Damit ist von den drei Wegen, die EIP-T-093 offenließ, der erste gegangen: die
+Privatoperation zukaufen, statt eigenes Blinding zu schreiben (Weg 2) oder das Restrisiko stehen zu
+lassen (Weg 3). Die Trennung aus dem ersten Nachtrag hat sich dabei bezahlt gemacht — die Frage war
+in dem Moment entscheidbar, in dem sie nicht mehr an einer Bibliothek hing, die es nicht gibt.
+
+Zwei Einschränkungen gehören dazu, damit dieser Eintrag nicht mehr behauptet als er trägt. Erstens
+ist ein Zukauf kein Audit: Was OpenSSL an dieser Stelle tut, ist geprüfter Code, aber niemand hat
+*unseren* Gebrauch davon geprüft (EIP-T-094). Zweitens deckt die Härtung allein die
+Signieroperation; über das Zeitverhalten des übrigen Anfragewegs sagt sie nichts.
+
+V-005 bleibt **offen**: Die Browser-Hälfte ist unverändert selbst geschrieben, und sie ist die
+Hälfte, an der das Wahlgeheimnis unmittelbar hängt.
 
 ### V-006 — Ergebnisdarstellung ohne Nenner, Schwelle und Zugangshinweis
 **Datum des Eintrags:** 2026-08-01 · **Paragraphen:** § 7, § 8, § 11, § 18 ·

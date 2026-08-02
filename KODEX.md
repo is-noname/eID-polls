@@ -11,7 +11,7 @@
 > Historie: [Kodex-Protokoll](/kodex/protokoll) · Begriffe: Glossar (projektintern) ·
 > These: EIP-RFC-20260726-001
 
-**Version 29 — 2026-08-02**
+**Version 30 — 2026-08-02**
 
 ---
 
@@ -269,20 +269,26 @@ Selbstgebaute Zufallsquellen. „Nur für den Prototyp" gilt als Begründung nic
 weiterlebt.
 
 **Status.** `bindend` — und **gerissen** (V-005, seit dem 2026-08-01 bekannt, im Betrieb seit
-2026-07-27). Die Blindsignatur ist selbst geschrieben, auf beiden Seiten, und das bleibt sie
-vorerst. Zugekauft und geprüft sind SHA-384, die Schlüsselerzeugung und die PSS-Verifikation aus
-`cryptography`. Hier gilt `Disziplin`, gedeckt durch die Testvektoren aus RFC 9474 A.4 — die belegen
-Korrektheit, nicht Seitenkanalfreiheit und nicht das Sicherheitsziel des Protokolls.
+2026-07-27). Die Blindsignatur ist im Browser selbst geschrieben und bleibt es vorerst. Zugekauft
+und geprüft sind SHA-384, die Schlüsselerzeugung, die PSS-Verifikation (`cryptography`) und seit dem
+2026-08-02 auch die serverseitige RSA-Privatoperation (OpenSSL). Hier gilt `Disziplin`, gedeckt
+durch die Testvektoren aus RFC 9474 A.4 — die belegen Korrektheit, nicht Seitenkanalfreiheit und
+nicht das Sicherheitsziel des Protokolls.
 
 Die beiden Seiten sind ungleich, und der Kodex hat sie bis zum 2026-08-02 gleich behandelt:
 
 - **Browser** (`static/blind.js`): vollständig selbst geschrieben — Kodierung, MGF1, Blendfaktor,
   Entblendung. Hier gibt es eine gepflegte Alternative (`@cloudflare/blindrsa-ts`), also ist die
   Frage entscheidbar und keine Wartefrage → EIP-T-008.
-- **Server** (`app/blind.py`): im Stimmweg läuft genau eine selbst geschriebene Operation, die rohe
-  RSA-Privatoperation in `blind_sign()`. Eine Bibliothek würde daran nichts ändern; sie rechnete
-  dasselbe. Die Schuld ist nicht der Zukauf, sondern das Zeitverhalten →
-  EIP-T-093.
+- **Server** (`app/blind.py`): **erledigt am 2026-08-02** (EIP-T-093). Im Stimmweg lief genau eine
+  selbst geschriebene Operation, die rohe RSA-Privatoperation in `blind_sign()` — ohne Blinding und
+  ohne konstante Zeit. Sie rechnet jetzt OpenSSL (`app/rsa_raw.py`, `EVP_PKEY_decrypt` mit
+  `RSA_NO_PADDING`); eigener Krypto-Code läuft serverseitig nicht mehr. Was blieb, sind Prüfungen
+  und die Rückrechnung nach RFC 9474 § 4.3 — beides mit öffentlichen Werten, also ohne
+  Zeitgeheimnis. Gemessen statt behauptet: `app/messung_blind_sign.py`, Befund in `app/DOKU.md` § 5.
+
+Dass diese Hälfte abgetragen ist, macht § 3 nicht sauber — die Browser-Hälfte trägt den Verstoß
+weiter, und ein Zukauf ist kein Audit (EIP-T-094).
 
 Beides fällig vor Betriebsstufe `produktiv`, ebenso der externe Audit
 (EIP-T-094) — er prüft, was Testvektoren prinzipiell nicht erreichen.
@@ -906,7 +912,6 @@ ein Dokument schreibt.
 | 2 | Betreibergrenze: Wer beide Vorgänge entgegennimmt, sieht beide zu ihrer Zeit. Für die gespeicherten Daten ist die Trennung gebaut, für den laufenden Betrieb bleibt sie Disziplin — nicht durch Arbeit an dieser Instanz behebbar (EIP-ADR-20260802-003) | EIP-T-040 | `produktiv` | 2026-08-02 |
 | 2 | Netzwerkebene: anonymer Zustellkanal als Option. Entschieden und zur Hälfte gebaut (Verbindungstrennung, Kanalblindheit, EIP-T-034); der Kanal selbst ist eine Betriebsentscheidung und hängt an der Hosterfrage | EIP-T-082 | `produktiv` | 2026-08-01 |
 | 3 | Browser-Hälfte der Blindsignatur vollständig selbst geschrieben (`static/blind.js`: Kodierung, MGF1, Blendfaktor, Entblendung). Anders als serverseitig gibt es hier eine gepflegte Alternative, die Frage ist also entscheidbar. Verstoß V-005 | EIP-T-008 | `produktiv` | 2026-08-01 |
-| 3 | Server-Hälfte: die rohe RSA-Privatoperation in `blind_sign()` läuft ohne Blinding und ohne konstante Zeit. Eine Bibliothek löst das nicht — sie rechnete dasselbe. Gedeckt durch die RFC-Testvektoren, die Korrektheit belegen und Zeitverhalten nicht. Verstoß V-005 | EIP-T-093 | `produktiv` | 2026-08-02 |
 | 4 | Ballot Stuffing bleibt Disziplin **während der Laufzeit** (Schlüssel liegt allein bei uns; nach Schließung vernichtet, EIP-T-069) | EIP-T-040 | `produktiv` | 2026-07-26 |
 | 5 | Eigener Eingangskanal für Behördenanfragen — Bauform entschieden (Postfach ohne Domain), Einrichtung offen | EIP-T-073 | `produktiv` | 2026-07-31 |
 | 6 | DSGVO-Kollision entschieden und begründet | EIP-T-061 | `produktiv` | 2026-07-26 |
