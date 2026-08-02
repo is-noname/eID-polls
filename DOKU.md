@@ -115,10 +115,12 @@ Veröffentlichung abgelehnter Fragevorschläge — ist nicht erzwungen und auch 
 ### Als Teilnehmer: abstimmen
 
 1. **Umfragen** → Umfrage öffnen
-2. **Schritt 1 — Identität.** Knopf „Mit Online-Ausweis anmelden" öffnet den Dialog „Ausweis
-   auslesen". Dahinter steckt derzeit `CodeAuthenticator`: ein Zugangscode aus einer
-   konfigurierten Liste ersetzt den geprüften Ausweis, siehe Abschnitt 5. Derselbe Code ergibt
-   immer dasselbe Pseudonym.
+2. **Schritt 1 — Identität.** Knopf „Mit Online-Ausweis anmelden" führt **von der Seite weg**:
+   erst zum eID-Dienst mit der Datenauskunft, dann in die Ausweis-App — Ausweis auflegen, Zugriff
+   erlauben, PIN. Danach kommt man angemeldet zurück. Beide Fremdsysteme sind Attrappen dieser
+   Instanz (`eid_sim.py`, EIP-T-095); dahinter steckt weiterhin `CodeAuthenticator`: Die
+   „Ausweisnummer" ist ein Zugangscode aus einer konfigurierten Liste, die PIN ist `123456`, und
+   derselbe Code ergibt immer dasselbe Pseudonym. Siehe Abschnitt 5 und „Simulierter eID-Flow".
 3. **Schritt 2 — Abstimmen.** Ein Klick, hinter dem zwei Dinge stecken: Der Browser erzeugt das
    Stimm-Token, verblindet es, lässt es signieren, entblindet es wieder — und gibt damit sofort
    die Stimme ab. Mehrfachauswahl ist möglich; die *Kombination* steht so im Board.
@@ -364,6 +366,34 @@ fällt nicht mehr beim nächsten Abstimmen auf, sondern erst beim nächsten voll
 spätestens, sobald jemand die Board-Seite öffnet oder das Board selbst nachrechnet. Gegen einen
 Betreiber mit Schreibzugriff hilft ohnehin nur die externe Verankerung aus §12.
 
+### Simulierter eID-Flow
+
+Was zwischen „Mit Online-Ausweis anmelden" und der zurückgesetzten Anmeldung passiert, sind vier
+Seiten unter `/eid-sim/` (`eid_sim.py`, EIP-T-095):
+
+| Seite | Was sie zeigt |
+|---|---|
+| eID-Dienst — Datenauskunft | Diensteanbieter, Zweck, Berechtigungszertifikat, Gültigkeit; angefordert wird nur das dienste- und kartenspezifische Kennzeichen (Restricted Identification), alle anderen Felder stehen ausdrücklich auf „nicht angefordert" |
+| Ausweis-App — Ausweis auflegen | Die „Ausweisnummer" tritt hier an die Stelle des Chips |
+| Ausweis-App — Zugriff bestätigen | Freigabe des einen Merkmals |
+| Ausweis-App — PIN | PIN `123456`, Fehlversuchszähler 3 → 2 → 1, danach gesperrt |
+
+Der Fehlversuchszähler ist der Grund, warum die PIN überhaupt vorkommt: Ohne ihn wäre sie ein
+Formularfeld ohne Bedeutung. Nach dem dritten Fehlversuch sagt die Simulation, dass im Ernstfall
+die **CAN** von der Ausweisvorderseite nötig wäre — sie bietet diesen Weg nicht an, benennt ihn
+aber, damit die Sperre nicht wie ein Defekt der Umfrage aussieht. Abbrechen geht an jeder Stelle
+und führt zurück zur Umfrage.
+
+**Was das nicht ist.** Kein TR-03124: kein TC-Token, kein Aufruf von `127.0.0.1:24727`, keine
+SAML-Assertion. Der Ablauf ist nachgestellt, nicht nachgebaut. Es wird auch keine reale
+Organisation nachgeahmt — kein Wappen, kein fremdes Logo, nicht der Markenauftritt der echten
+AusweisApp; die Seiten heißen „(Simulation)" und tragen die Kennzeichnung nach KODEX § 4 in einer
+Leiste, die auf keiner Seite fehlt. Sobald ein Authenticator mit `is_real_identity = True`
+eingesetzt wird, hängt `create_app` diese Routen **nicht** mehr ein.
+
+Die Sitzung lebt im Arbeitsspeicher, verfällt nach 15 Minuten und wird beim Abschluss gelöscht;
+die eingegebene Ausweisnummer erscheint in keinem Log (KODEX § 1).
+
 ### Angriffsdemos (Admin)
 
 **Ballot-Stuffing** — der Betreiber signiert sich selbst ein Token und stimmt ab. Die Stimme läuft
@@ -478,6 +508,7 @@ static/ballot.js (+ blind.js)            web.py          HTTP, Cookies
 | Datei | Rolle |
 |---|---|
 | `auth.py` | `authenticate() -> pseudonym`. `CodeAuthenticator` aktiv (Zugangscode statt geprüftem Ausweis); `SamlEidAuthenticator` ist die Hülle für den echten eID-Flow. |
+| `eid_sim.py` | Die nachgestellten Fremdsysteme: eID-Dienst und Ausweis-App (EIP-T-095). Ruft am Ende denselben `Authenticator` auf wie zuvor der Dialog — der Rest der App kennt diesen Umweg nicht. Wird nur eingehängt, solange `is_real_identity` falsch ist. Templates `eidsim_*.html`, Stil `static/eidsim.css`. |
 | `blind.py` | Blindsignatur, Serverseite (RFC 9474, `RSABSSA-SHA384-PSSZERO-Deterministic`, 3072 Bit). `testvektor()` rechnet Anhang A.4 des RFC nach. |
 | `rfc9474_a4.json` | Der Testvektor aus RFC 9474 Anhang A.4, wörtlich übernommen. Python und JavaScript prüfen gegen dieselbe Datei — zwei getrennte Kopien könnten getrennt falsch werden. |
 | `static/blind.js` | Dieselbe Krypto im Browser. Beide Seiten müssen bitgenau gleich rechnen. `finalizeGeprueft()` verifiziert die entblindete Signatur vor der Weitergabe (RFC 9474 §4.4) — mit WebCrypto, nicht mit der eigenen PSS-Implementierung. |
@@ -645,9 +676,12 @@ stillschweigend zu überspringen.
 Zugangscode aus einer konfigurierten Liste (Voreinstellung `testperson1`–`testperson100`). Ein
 Code steht für einen bereits gültig geprüften Ausweis, prüft aber selbst keine Identität — „ein
 Ausweis, eine Stimme" gilt nur innerhalb der ausgegebenen Codeliste, nicht als offene
-Registrierung. Für Teilnehmende zeigt die Oberfläche das **absichtlich nicht** (EIP-T-014): der
-Dialog „Ausweis auslesen" nennt weder Code noch Test noch Simulation, sichtbar ist der aktive
-Modus stattdessen unübersehbar in **Admin** und **Debug**. Der Pseudonym-Präfix
+Registrierung. Die Umfrageseite selbst zeigt das **absichtlich nicht** (EIP-T-014) — sie nennt
+weder Code noch Test noch Simulation, sichtbar ist der aktive Modus stattdessen unübersehbar in
+**Admin** und **Debug**. Seit EIP-T-095 kommt der Weg dorthin über nachgestellte Fremdsysteme
+(`/eid-sim/`), und **die** tragen ihre Kennzeichnung sehr wohl: Sie stellen einen fremden Dienst
+und eine fremde Anwendung dar, und eine Attrappe, die sich dabei nicht als solche zu erkennen
+gibt, wäre keine Vorführung mehr. Der Pseudonym-Präfix
 `STUB-NO-REAL-IDENTITY:` bleibt im gespeicherten Datensatz erhalten, auch wenn er in der
 Oberfläche nirgends mehr auftaucht. Der echte eID-Flow (TR-03124/TR-03130: TC-Token → AusweisApp
 → eID-Server → SAML-Assertion) braucht AusweisApp, einen eID-Server gegen Test-PKI und

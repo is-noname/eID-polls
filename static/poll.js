@@ -6,7 +6,7 @@
 // Stand nachvollziehbar sein (Paragraf 20), und das geht nur bei einer Datei,
 // die unveraendert ausgeliefert wird. Die drei umfragespezifischen Werte
 // kommen deshalb als *Daten* aus der Seite, nicht als eingesetzter Quelltext.
-import { postJSON, toast, download } from "/static/app.js";
+import { toast, download } from "/static/app.js";
 import { castBallot, loadState, pendingBallot, heldBallot } from "/static/ballot.js";
 import { receiptPaper, receiptText, verifyUrl } from "/static/beleg.js";
 
@@ -50,45 +50,11 @@ function showReceipt(state) {
   }
 }
 
-const authOpenButton = document.getElementById("auth-open-button");
-if (authOpenButton) {
-  const modalBackdrop = document.getElementById("auth-modal-backdrop");
-  const credentialInput = document.getElementById("credential");
-  const modalError = document.getElementById("auth-modal-error");
-  const cancelButton = document.getElementById("auth-cancel-button");
-  const confirmButton = document.getElementById("auth-confirm-button");
-
-  const openModal = () => {
-    modalError.textContent = "";
-    credentialInput.value = "";
-    modalBackdrop.classList.remove("hidden");
-    credentialInput.focus();
-  };
-  const closeModal = () => modalBackdrop.classList.add("hidden");
-
-  authOpenButton.addEventListener("click", openModal);
-
-  cancelButton.addEventListener("click", async () => {
-    closeModal();
-    try { await postJSON("/api/auth/abort"); } catch (_) { /* Abbruch selbst darf nicht scheitern */ }
-  });
-
-  const submit = async () => {
-    try {
-      await postJSON("/api/auth", { credential: credentialInput.value });
-      closeModal();
-      location.reload();
-    } catch (err) {
-      modalError.textContent = err.message;
-      toast(err.message, "err");
-    }
-  };
-  confirmButton.addEventListener("click", submit);
-  credentialInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") submit();
-    if (e.key === "Escape") cancelButton.click();
-  });
-}
+// Schritt 1 braucht hier keinen Code mehr: Die Anmeldung verlaesst die Seite
+// (EIP-T-095, /eid-sim/), laeuft ueber Formulare in den simulierten
+// Fremdsystemen und kommt als Redirect mit gesetzter Sitzung zurueck. Das
+// Modal, das bis dahin hier verdrahtet war, ist mitsamt seiner Fehlerausgabe
+// entfallen - Fehler aus dem Flow stehen jetzt serverseitig auf der Seite.
 
 voteButton.addEventListener("click", async () => {
   const choices = [...document.querySelectorAll("input[name=choice]:checked")].map((c) => c.value);

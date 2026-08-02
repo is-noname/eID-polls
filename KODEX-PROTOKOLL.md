@@ -1435,3 +1435,53 @@ Was von V-006 bleibt, betrifft nicht mehr die Darstellung des Ergebnisses, sonde
 feststehen muss: Laufzeit und Auswertungsplan aus § 7
 (EIP-T-091). Dazu die Veröffentlichungsschwelle
 aus § 8 Satz 2, die seit Version 24 kein Rückstand mehr ist, sondern eine gestrichene Regel.
+
+### V-007 — Feature mit Außenwirkung während des Baustopps gebaut
+**Datum des Eintrags:** 2026-08-02 · **Paragraphen:** § 4 b, § 18 ·
+**Ticket:** EIP-T-095 · **Status:** offen
+
+**Was geschah.** Auf Entscheidung des Auftraggebers wurde der eID-Flow als durchgängige
+Simulation gebaut: Weiterleitung zu einem nachgestellten eID-Dienst, Datenauskunft mit
+Berechtigungszertifikat, Wechsel in eine nachgestellte Ausweis-App, Karte auflegen, PIN mit
+Fehlversuchszähler, Rückleitung. Ziel ist der Abschluss von Phase 0 — Testpersonen sollen den
+vollständigen Ablauf erleben, bevor der Probandentest zum Verfahrensverständnis läuft
+(EIP-T-010).
+
+**Warum das ein Verstoß ist.** Die Schuldenübersicht steht bei 12 von 20 Paragraphen, die Grenze
+aus § 4 b liegt bei 8. In diesem Zustand darf nur gebaut werden, was eine bestehende Schuld
+abträgt, einen Fehler oder Verstoß behebt, prüft oder dokumentiert. Diese Arbeit tut nichts davon:
+Sie trägt keinen Vermerk der Übersicht ab und vergrößert Funktionsumfang und Außenwirkung — genau
+das, was der Paragraph in diesem Zustand ausschließt. Stoppfrage 7 der Prüfliste fällt auf `ja`.
+
+Die Begründung „damit härten wir den Kurs" ist ausdrücklich **keine** Rechtfertigung. § 4 b
+verbietet, „die Grenze durch Umdeklarieren eines Features zu Wartung zu umgehen", und ein
+Vorhaben zur Vorbereitungsarbeit zu erklären, weil es einem wichtigen Ziel dient, ist derselbe
+Zug in anderer Formulierung. Der Eintrag steht deshalb hier und nicht als Absatz, der erklärt,
+warum die Regel diesmal nicht gemeint war. Wer den Baustopp für falsch priorisiert hält, ändert
+ihn nach § 17 — mit Version, Begründung und Protokolleintrag. Das ist bewusst nicht geschehen:
+Die Entscheidung war, trotzdem zu bauen, und so steht sie hier.
+
+**Was dabei eingehalten wurde.** Der Verstoß betrifft § 4 b, und nur ihn. Die Paragraphen, die an
+der Betriebsstufe `öffentlich erreichbar` hängen, sind mitgebaut worden statt aufgeschoben:
+
+- § 4 (Kennzeichnung): Jede Simulationsseite trägt eine Leiste „hier wird kein Ausweis gelesen und
+  keine Identität geprüft", der Pfad `/eid-sim/` sagt es zusätzlich in der Adresszeile, und der
+  Demo-Hinweis auf der öffentlichen Instanz nennt die beiden Attrappen jetzt beim Namen. Der
+  Nachtrag in EIP-RFC-20260725-002 nimmt die Kennzeichnung aus der
+  *Teilnehmeransicht*; die Simulationsseiten stellen fremde Systeme dar und fallen nicht darunter.
+- § 1 (Datensparsamkeit): Die Sitzung lebt im Arbeitsspeicher, verfällt nach 15 Minuten, wird beim
+  Abschluss gelöscht; die eingegebene Ausweisnummer geht in kein Log.
+- Keine reale Organisation nachgeahmt: kein Wappen, kein fremdes Logo, nicht der Markenauftritt der
+  echten AusweisApp. Das ist keine Vorsicht, sondern die Grenze zwischen Vorführung und Fälschung,
+  und sie stand nicht zur Abwägung.
+- Sobald ein Authenticator mit `is_real_identity = True` läuft, hängt `create_app` die Routen nicht
+  mehr ein — eine Simulation neben einer echten Prüfung wäre der Zustand, vor dem Schritt 4 des
+  Umsetzungsplans warnt.
+
+**Was offen bleibt.** Der Rückstand ist um dieses Vorhaben gewachsen, ohne dass eine Schuld
+gefallen wäre. Der Baustopp gilt unverändert weiter, und der nächste Bau muss wieder eine Schuld
+abtragen — sonst ist die Grenze keine Grenze, sondern eine Formulierung. Zu prüfen ist außerdem,
+ob die Kennzeichnungsleiste den Probandentest verfälscht: EIP-T-010 fragt, ob Testpersonen an
+die Anonymität glauben, und eine Seite, die sich als Attrappe zu erkennen gibt, beeinflusst diese
+Antwort. Das ist kein Argument, die Leiste zu entfernen — es ist eines, die Beobachtung mit ihr
+zu planen.

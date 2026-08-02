@@ -33,6 +33,29 @@ def check(label: str, cond: bool, detail: str = "") -> None:
         fails.append(label)
 
 
+def anmelden(page, code: str, pin: str = "123456") -> None:
+    """Der vollstaendige eID-Weg, wie eine Testperson ihn geht (EIP-T-095).
+
+    Seit die Anmeldung die Umfrageseite verlaesst, ist sie kein Dialog mehr,
+    sondern eine Folge echter Seitenwechsel: eID-Dienst, Ausweis-App, Karte,
+    Datenauskunft, PIN. Der Test geht denselben Weg statt an ihm vorbei - eine
+    Abkuerzung ueber /api/auth wuerde genau die Strecke ueberspringen, die
+    dieses Ticket gebaut hat.
+    """
+    page.click("#auth-open-button")
+    page.wait_for_selector("#dienst-weiter")
+    page.click("#dienst-weiter")
+    page.wait_for_selector("#ausweisnummer")
+    page.fill("#ausweisnummer", code)
+    page.click("#karte-lesen")
+    page.wait_for_selector("#auskunft-ok")
+    page.click("#auskunft-ok")
+    page.wait_for_selector("#pin")
+    page.fill("#pin", pin)
+    page.click("#pin-ok")
+    page.wait_for_load_state("networkidle")
+
+
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
     page = browser.new_page()
@@ -64,11 +87,9 @@ with sync_playwright() as p:
     # --- Punkt 2: authentifizieren und Token holen (Phase A, Blinding im Browser)
     page.goto(f"{BASE}/poll/{POLL}")
     page.wait_for_load_state("networkidle")
-    page.click("#auth-open-button")
-    page.wait_for_selector("#auth-modal-backdrop:not(.hidden)")
-    page.fill("#credential", "testperson1")
-    page.click("#auth-confirm-button")
-    page.wait_for_timeout(1500)
+    anmelden(page, "testperson1")
+    check("Punkt 2a: eID-Weg endet zurueck auf der Umfrageseite", f"/poll/{POLL}" in page.url,
+          page.url)
     page.goto(f"{BASE}/poll/{POLL}")
     page.wait_for_load_state("networkidle")
     check("Punkt 2: authentifiziert (Schritt 1 erledigt)",
@@ -120,11 +141,7 @@ with sync_playwright() as p:
     # --- zweite Identitaet, damit das Ergebnis nicht trivial ist
     page2 = browser.new_context().new_page()
     page2.goto(f"{BASE}/poll/{POLL}")
-    page2.click("#auth-open-button")
-    page2.wait_for_selector("#auth-modal-backdrop:not(.hidden)")
-    page2.fill("#credential", "testperson2")
-    page2.click("#auth-confirm-button")
-    page2.wait_for_timeout(1500)
+    anmelden(page2, "testperson2")
     page2.goto(f"{BASE}/poll/{POLL}")
     page2.wait_for_load_state("networkidle")
     page2.check("input[value='Nein']")
@@ -134,11 +151,7 @@ with sync_playwright() as p:
     # --- Punkt 5b: zweites Token fuer dieselbe Identitaet (Phase A)
     page3 = browser.new_context().new_page()
     page3.goto(f"{BASE}/poll/{POLL}")
-    page3.click("#auth-open-button")
-    page3.wait_for_selector("#auth-modal-backdrop:not(.hidden)")
-    page3.fill("#credential", "TESTPERSON1")  # gleicher Code, andere Schreibweise
-    page3.click("#auth-confirm-button")
-    page3.wait_for_timeout(1500)
+    anmelden(page3, "TESTPERSON1")  # gleicher Code, andere Schreibweise
     page3.goto(f"{BASE}/poll/{POLL}")
     page3.wait_for_load_state("networkidle")
     page3.check("input[value='Nein']")
@@ -150,27 +163,75 @@ with sync_playwright() as p:
     check("Punkt 5c: Abweisung nennt keine abgeschaffte Sicherungsdatei",
           "Datei" not in message3 and "abgeholt" not in message3, message3)
 
-    # --- Fehlerfaelle im Dialog: unbekannte Nummer, leeres Feld, Abbruch
+    # --- EIP-T-095: die Simulation als eigene Strecke
+    # Geprueft wird nicht, dass sie huebsch ist, sondern dass sie das sagt, was
+    # sie nach KODEX §4 sagen muss, und dass ihre Fehlerwege irgendwo enden.
     page4 = browser.new_context().new_page()
     page4.goto(f"{BASE}/poll/{POLL}")
     page4.click("#auth-open-button")
-    page4.wait_for_selector("#auth-modal-backdrop:not(.hidden)")
-    page4.fill("#credential", "unbekannt-999")
-    page4.click("#auth-confirm-button")
-    page4.wait_for_selector(".toast.err", timeout=10000)
-    check("Fehlerfall: unbekannte Ausweisnummer abgewiesen, finaler Text",
-          "nicht hinterlegt" in page4.inner_text(".toast.err"), page4.inner_text(".toast.err"))
+    page4.wait_for_selector("#dienst-weiter")
+    dienst = page4.content()
+    check("T-095: eID-Dienst kennzeichnet sich als Simulation (KODEX §4)",
+          "Simulation" in page4.inner_text(".sim-leiste")
+          and "kein Ausweis" in page4.inner_text(".sim-leiste"))
+    check("T-095: Datenauskunft nennt das fehlende Berechtigungszertifikat",
+          "Berechtigungszertifikat" in dienst and "simuliert" in dienst)
+    check("T-095: nur das dienstespezifische Kennzeichen wird angefordert",
+          "Restricted Identification" in dienst
+          and "aus" in (page4.get_attribute(".feldzeile:nth-child(2)", "class") or ""))
+    check("T-095: keine Marke einer realen Anwendung nachgebaut",
+          "AusweisApp" not in dienst and "Governikus" not in dienst
+          and "Bundesverwaltungsamt" in dienst)
 
-    page4.fill("#credential", "")
-    page4.click("#auth-confirm-button")
-    page4.wait_for_timeout(500)
-    check("Fehlerfall: leeres Feld abgewiesen, finaler Text",
-          "Ausweisnummer eingeben" in page4.inner_text(".toast.err"), page4.inner_text(".toast.err"))
+    page4.click("#dienst-weiter")
+    page4.wait_for_selector("#karte-lesen")
+    page4.click("#karte-lesen")  # leeres Feld
+    page4.wait_for_load_state("networkidle")
+    check("T-095: ohne Ausweisnummer bleibt der Kartenschritt stehen",
+          "Kein Ausweis erkannt" in page4.content() and page4.query_selector("#ausweisnummer"))
 
-    page4.click("#auth-cancel-button")
-    page4.wait_for_timeout(300)
-    classes = page4.get_attribute("#auth-modal-backdrop", "class") or ""
-    check("Fehlerfall: Dialog abbrechbar, schliesst sich wieder", "hidden" in classes, classes)
+    page4.fill("#ausweisnummer", "unbekannt-999")
+    page4.click("#karte-lesen")
+    page4.wait_for_selector("#auskunft-ok")
+    page4.click("#auskunft-ok")
+    page4.wait_for_selector("#pin")
+
+    # Fehlversuchszaehler: die Stelle, an der Menschen im Ernstfall scheitern
+    for erwartet in ("2", "1"):
+        page4.fill("#pin", "000000")
+        page4.click("#pin-ok")
+        page4.wait_for_selector(".meldung.fehler")
+        check(f"T-095: falsche PIN zaehlt herunter auf {erwartet}",
+              f"Noch {erwartet}" in page4.inner_text(".meldung.fehler").replace("\n", " "),
+              page4.inner_text(".meldung.fehler").replace("\n", " ")[:80])
+
+    page4.fill("#pin", "000000")
+    page4.click("#pin-ok")
+    page4.wait_for_selector("#sim-zurueck")
+    check("T-095: dritter Fehlversuch sperrt den Ausweis und nennt die CAN",
+          "gesperrt" in page4.content() and "CAN" in page4.content())
+
+    page4.click("#sim-zurueck")
+    page4.wait_for_load_state("networkidle")
+    check("T-095: gesperrte Anmeldung landet zurueck auf der Umfrageseite",
+          f"/poll/{POLL}" in page4.url, page4.url)
+
+    # Unbekannter Zugangscode: faellt erst nach der PIN auf, wie im Ernstfall
+    # die Abweisung durch den Dienst - und muss auf der Umfrageseite ankommen.
+    anmelden(page4, "unbekannt-999")
+    check("T-095: unbekannte Ausweisnummer wird auf der Umfrageseite erklaert",
+          "nicht hinterlegt" in page4.content() and page4.query_selector("#auth-open-button"),
+          page4.url)
+
+    # Abbruch muss an jeder Stelle gehen
+    page4.goto(f"{BASE}/poll/{POLL}")
+    page4.click("#auth-open-button")
+    page4.wait_for_selector("#sim-abbruch")
+    page4.click("#sim-abbruch")
+    page4.wait_for_load_state("networkidle")
+    check("T-095: Abbruch beim eID-Dienst fuehrt zurueck, ohne anzumelden",
+          f"/poll/{POLL}" in page4.url and page4.query_selector("#auth-open-button") is not None,
+          page4.url)
 
     # --- EIP-T-021: Abbruch zwischen Signatur und Stimmabgabe
     # Der einzige Moment, in dem die Berechtigung verbraucht ist, ohne dass die
@@ -179,16 +240,16 @@ with sync_playwright() as p:
     # eine zweite Berechtigung gibt der Server bewusst nicht aus.
     page5 = browser.new_context().new_page()
     page5.goto(f"{BASE}/poll/{POLL}")
-    page5.click("#auth-open-button")
-    page5.wait_for_selector("#auth-modal-backdrop:not(.hidden)")
-    page5.fill("#credential", "testperson5")
-    page5.click("#auth-confirm-button")
-    page5.wait_for_timeout(1200)
+    anmelden(page5, "testperson5")
     page5.goto(f"{BASE}/poll/{POLL}")
     page5.wait_for_load_state("networkidle")
 
     page5.route("**/api/vote/**", lambda route: route.abort())  # Netz weg nach der Signatur
-    page5.check("input[value='Teilweise']")
+    # 'Enthaltung' und nicht 'Teilweise': Die Umfrage dieses Tests hat drei
+    # Optionen, und 'Teilweise' ist keine davon - der Klick lief ins Leere und
+    # brach den Durchlauf mit einem Timeout ab, noch bevor T-021 geprueft war.
+    # Vorbestandener Fehler, gefunden beim Umbau auf den eID-Weg (EIP-T-095).
+    page5.check("input[value='Enthaltung']")
     page5.click("#vote-button")
     page5.wait_for_selector(".toast.err", timeout=20000)
     stored_mid = page5.evaluate(f"() => localStorage.getItem('eidpoll:{POLL}')")

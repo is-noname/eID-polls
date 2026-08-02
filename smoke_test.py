@@ -2122,6 +2122,111 @@ def demo_schalter() -> None:
           f"status={ohne_anmeldung.status_code}")
 
 
+def eid_simulation() -> None:
+    """Der nachgestellte eID-Weg fuehrt zu einer echten Anmeldung (EIP-T-095).
+
+    Geprueft wird beides, was an dieser Strecke schiefgehen kann: dass sie
+    ueberhaupt bis zur gesetzten Sitzung durchlaeuft - und dass sie unterwegs
+    sagt, was sie ist. Eine Attrappe, die sich nicht als solche zu erkennen
+    gibt, waere keine Vorfuehrung mehr (KODEX §4, faellig ab Betriebsstufe
+    "oeffentlich erreichbar" - deshalb laeuft dieser Test gegen eine
+    oeffentliche Instanz).
+    """
+    import debug as debug_modul
+
+    app = create_app(
+        store_path=Path(tempfile.mkdtemp()) / "sim.sqlite3",
+        settings=Settings(public=True, admin_token="admin", antwort_floor_s=0, anker=False,
+                          seed_demo=True),
+    )
+    # https, weil die Instanz oeffentlich ist: Dort setzt web.py die Sitzung nur
+    # mit `secure`, und ueber http wuerde der Client sie verwerfen - der Test
+    # saehe eine gescheiterte Anmeldung, wo die Absicherung greift.
+    with TestClient(app, base_url="https://testserver") as c:
+        seite = c.get("/poll/demo")
+        check("eID-Simulation: die Umfrageseite fuehrt weg statt in einen Dialog",
+              "/eid-sim/start/demo" in seite.text and "auth-modal-backdrop" not in seite.text)
+
+        start = c.get("/eid-sim/start/demo", follow_redirects=False)
+        check("eID-Simulation: Start leitet zum eID-Dienst weiter",
+              start.status_code == 303 and "/eid-sim/dienst/" in start.headers.get("location", ""),
+              f"status={start.status_code}")
+        sid = start.headers["location"].rsplit("/", 1)[1]
+
+        dienst = c.get(f"/eid-sim/dienst/{sid}").text
+        check("eID-Simulation: der Dienst kennzeichnet sich (KODEX §4)",
+              "sim-leiste" in dienst and "kein Ausweis gelesen" in dienst)
+        check("eID-Simulation: Datenauskunft nennt das fehlende Berechtigungszertifikat",
+              "Berechtigungszertifikat" in dienst and "Bundesverwaltungsamt" in dienst)
+        check("eID-Simulation: angefordert wird nur das dienstespezifische Kennzeichen",
+              "Restricted Identification" in dienst and "Anschrift" in dienst)
+        # Die Grenze zwischen Vorfuehrung und Faelschung: Der Nachbau darf den
+        # Ablauf zeigen, nicht den Auftritt einer realen Anwendung tragen.
+        check("eID-Simulation: keine reale Marke nachgebaut",
+              "AusweisApp" not in dienst and "Governikus" not in dienst)
+
+        c.post(f"/eid-sim/dienst/{sid}/weiter", follow_redirects=False)
+        c.post(f"/eid-sim/client/{sid}/karte", data={"ausweisnummer": "testperson1"},
+               follow_redirects=False)
+        c.post(f"/eid-sim/client/{sid}/auskunft", follow_redirects=False)
+
+        falsch = c.post(f"/eid-sim/client/{sid}/pin", data={"pin": "000000"},
+                        follow_redirects=False)
+        check("eID-Simulation: falsche PIN meldet zurueck statt anzumelden",
+              falsch.status_code == 303 and "eidpoll_session" not in falsch.headers.get(
+                  "set-cookie", ""))
+        check("eID-Simulation: der Fehlversuchszaehler laeuft sichtbar herunter",
+              "Noch <strong>2</strong>" in c.get(f"/eid-sim/client/{sid}").text)
+
+        fertig = c.post(f"/eid-sim/client/{sid}/pin", data={"pin": "123456"},
+                        follow_redirects=False)
+        check("eID-Simulation: richtige PIN meldet an und fuehrt zur Umfrage zurueck",
+              fertig.status_code == 303
+              and fertig.headers.get("location") == "/poll/demo"
+              and "eidpoll_session" in fertig.headers.get("set-cookie", ""))
+        check("eID-Simulation: die Sitzung der Simulation ist danach weg",
+              c.get(f"/eid-sim/dienst/{sid}").status_code == 404)
+        check("eID-Simulation: die Umfrageseite zeigt die Anmeldung",
+              "Ab hier bist du anonym" in c.get("/poll/demo").text)
+
+        # Drei Fehlversuche sperren - dieselbe Grenze wie am echten Ausweis.
+        zweit = c.get("/eid-sim/start/demo", follow_redirects=False)
+        sid2 = zweit.headers["location"].rsplit("/", 1)[1]
+        c.post(f"/eid-sim/dienst/{sid2}/weiter", follow_redirects=False)
+        c.post(f"/eid-sim/client/{sid2}/karte", data={"ausweisnummer": "testperson2"},
+               follow_redirects=False)
+        c.post(f"/eid-sim/client/{sid2}/auskunft", follow_redirects=False)
+        for _ in range(3):
+            c.post(f"/eid-sim/client/{sid2}/pin", data={"pin": "000000"}, follow_redirects=False)
+        gesperrt = c.get(f"/eid-sim/client/{sid2}").text
+        check("eID-Simulation: dritter Fehlversuch sperrt und nennt die CAN",
+              "gesperrt" in gesperrt and "CAN" in gesperrt)
+
+        # Die Ausweisnummer ist eine Eingabe, kein Protokolleintrag (KODEX §1).
+        check("eID-Simulation: keine Ausweisnummer im Debug-Log",
+              not any("testperson" in str(e.detail) or "testperson" in e.message
+                      for e in debug_modul.events_gesamt("all")))
+
+    # Mit echter Ausweispruefung darf die Attrappe nicht danebenstehen.
+    class EchtStub:
+        name = "eID (echt, nur fuer diesen Test)"
+        is_real_identity = True
+
+        def authenticate(self, credential: str) -> str:
+            return "echt:" + credential
+
+        def sample_codes(self) -> list[str]:
+            return []
+
+    echt = TestClient(create_app(
+        store_path=Path(tempfile.mkdtemp()) / "echt.sqlite3",
+        authenticator=EchtStub(),  # type: ignore[arg-type]
+        settings=Settings(admin_token="admin", antwort_floor_s=0, anker=False),
+    ))
+    check("eID-Simulation: bei echter Ausweispruefung gibt es die Routen nicht",
+          echt.get("/eid-sim/start/demo").status_code == 404)
+
+
 def enthaltungspflicht() -> None:
     """Antwortlisten ohne Enthaltung werden abgewiesen (KODEX §12, EIP-T-085).
 
@@ -2323,6 +2428,7 @@ def main() -> int:
     ausgelieferter_stand()
     nachrechenbarer_client()
     demo_schalter()
+    eid_simulation()
     enthaltungspflicht()
 
     # Angriff 1 - Ballot-Stuffing wird von der Abrechnung entlarvt

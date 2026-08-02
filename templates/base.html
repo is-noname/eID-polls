@@ -58,7 +58,10 @@
           Es wird <strong>keine Identität geprüft</strong>: Statt des Online-Ausweises genügt ein
           offener Zugangscode
           {%- if demo_codes %} (z.&nbsp;B. <code>{{ demo_codes|join('</code>, <code>')|safe }}</code>){% endif %}.
-          Der echte eID-Flow (AusweisApp → eID-Server → SAML-Assertion) ist nicht gebaut.
+          Die Anmeldung führt über einen <strong>nachgestellten</strong> eID-Dienst und eine
+          nachgestellte Ausweis-App — beide sind Attrappen dieser Instanz, keine echten Systeme
+          (PIN <code>123456</code>). Der echte eID-Flow (AusweisApp → eID-Server →
+          SAML-Assertion) ist nicht gebaut.
           Die Instanz läuft ohne dauerhaften Speicher: Umfragen, Stimmen und Belege
           <strong>verschwinden bei jedem Neustart</strong>. Blindsignatur, getrennte Ledger und das
           öffentliche Board arbeiten dagegen echt — sie sind der Gegenstand dieser Demo.

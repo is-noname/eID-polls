@@ -1,0 +1,69 @@
+{% extends "eidsim_base.html" %}
+{% block title %}eID-Dienst (Simulation){% endblock %}
+{% block fenstertitel %}eID-Dienst (Simulation) — Datenauskunft{% endblock %}
+
+{% block inhalt %}
+<h1>Ein Dienst möchte Ihren Ausweis auslesen</h1>
+<p class="lead">
+  Prüfen Sie, wer die Daten anfordert und welche. Erst danach wird Ihr Ausweis gelesen.
+</p>
+
+{# Der Aufbau folgt dem, was ein echter eID-Dienst zeigt: Wer fragt, auf welcher
+   Grundlage, welche Felder, wie lange gueltig. Der Inhalt ist erfunden - dass
+   die Felder existieren, ist der Punkt. #}
+<div class="auskunft">
+  <div class="zeile">
+    <span class="feld">Diensteanbieter</span>
+    <span class="wert">eID-Umfrage (Vorführinstanz)</span>
+  </div>
+  <div class="zeile">
+    <span class="feld">Zweck</span>
+    <span class="wert">Teilnahme an der Umfrage „{{ poll.question }}“</span>
+  </div>
+  <div class="zeile">
+    <span class="feld">Berechtigungszertifikat</span>
+    <span class="wert">
+      <span class="marker">simuliert</span>
+      kein vom Bundesverwaltungsamt ausgestelltes Zertifikat vorhanden
+    </span>
+  </div>
+  <div class="zeile">
+    <span class="feld">Gültig bis</span>
+    <span class="wert">— (ohne Zertifikat keine Gültigkeit)</span>
+  </div>
+</div>
+
+<h2>Angeforderte Daten</h2>
+<div class="felder">
+  <div class="feldzeile an">
+    <span class="haken">✓</span>
+    <span>
+      <strong>Dienste- und kartenspezifisches Kennzeichen</strong>
+      <small>
+        Eine Kennung, die nur für diesen einen Dienst gilt. Sie enthält weder Namen noch
+        Geburtsdatum und lässt sich nicht auf andere Dienste übertragen. Fachlich:
+        Restricted Identification.
+      </small>
+    </span>
+  </div>
+  <div class="feldzeile aus"><span class="haken">—</span><span>Vorname, Familienname</span></div>
+  <div class="feldzeile aus"><span class="haken">—</span><span>Geburtsdatum, Geburtsort</span></div>
+  <div class="feldzeile aus"><span class="haken">—</span><span>Anschrift</span></div>
+  <div class="feldzeile aus"><span class="haken">—</span><span>Dokumentenart, Ausweisnummer</span></div>
+</div>
+
+<p class="hinweis">
+  Der Dienst erfährt durch diesen Vorgang nur, <em>dass</em> ein gültiger Ausweis vorlag — nicht,
+  wem er gehört. Im Ernstfall entscheidet darüber nicht der Dienst, sondern sein
+  Berechtigungszertifikat: Der Chip gibt ausschließlich die dort eingetragenen Felder frei.
+</p>
+
+<div class="knopfreihe">
+  <form method="post" action="/eid-sim/abbruch/{{ sid }}">
+    <button type="submit" class="sekundaer" id="sim-abbruch">Abbrechen</button>
+  </form>
+  <form method="post" action="/eid-sim/dienst/{{ sid }}/weiter">
+    <button type="submit" class="primaer" id="dienst-weiter">Mit Ausweis-App fortfahren</button>
+  </form>
+</div>
+{% endblock %}

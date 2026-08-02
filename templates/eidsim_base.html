@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}eID-Dienst (Simulation){% endblock %}</title>
+  {# Eigenes Stylesheet, nicht app.css: Diese Seiten stellen fremde Systeme dar.
+     Traegen sie die Optik der Umfrage, faellt genau der Kontextwechsel weg, um
+     den es hier geht (EIP-T-095). #}
+  <link rel="stylesheet" href="/static/eidsim.css">
+</head>
+<body>
+  {# KODEX §4, faellig ab Betriebsstufe "oeffentlich erreichbar": Was eine
+     Ausweispruefung darstellt, ohne eine zu sein, sagt das. Die Leiste ist
+     bewusst schmal und nicht modal - sie soll den Ablauf nicht unterbrechen,
+     aber auch von keiner Seite verschwinden. #}
+  <div class="sim-leiste">
+    <strong>Simulation</strong> — hier wird kein Ausweis gelesen und keine Identität geprüft.
+    Nachgestellt ist der Ablauf, nicht das Verfahren.
+  </div>
+
+  <div class="fenster">
+    <div class="fensterleiste">
+      <span class="ampel"><i></i><i></i><i></i></span>
+      <span class="fenstertitel">{% block fenstertitel %}{% endblock %}</span>
+    </div>
+    <div class="fensterinhalt">
+      {% block inhalt %}{% endblock %}
+    </div>
+  </div>
+</body>
+</html>

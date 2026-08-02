@@ -27,28 +27,21 @@
     {% if pseudonym %}
       <div class="muted">Ausweis erfolgreich ausgelesen. Ab hier bist du anonym.</div>
     {% else %}
+      {# Die Anmeldung fuehrt seit EIP-T-095 von dieser Seite weg: erst zum
+         eID-Dienst, dann in die Ausweis-App, dann zurueck. Deshalb ein Link
+         und kein Modal - ein Dialog, der im Hintergrund bleibt, unterschlaegt
+         genau den Kontextwechsel, den es im Ernstfall gibt. #}
+      {% if eid_fehler %}
+        <div class="banner err">
+          Anmeldung nicht abgeschlossen
+          <small>{{ eid_fehler }}</small>
+        </div>
+      {% endif %}
       <p class="step-hint">
         Der Online-Ausweis belegt nur, dass du abstimmen darfst. Dein Name wird nirgends gespeichert.
       </p>
-      <button class="big" id="auth-open-button">Mit Online-Ausweis anmelden</button>
+      <a href="/eid-sim/start/{{ poll.poll_id }}"><button class="big" id="auth-open-button">Mit Online-Ausweis anmelden</button></a>
     {% endif %}
-  </div>
-</div>
-
-<div class="modal-backdrop hidden" id="auth-modal-backdrop">
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
-    <div class="modal-header" id="auth-modal-title">Ausweis auslesen</div>
-    <div class="modal-body">
-      <div class="field">
-        <label for="credential">Ausweisnummer</label>
-        <input type="text" id="credential" autocomplete="off">
-      </div>
-      <div class="faint small" id="auth-modal-error"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="ghost" id="auth-cancel-button">Abbrechen</button>
-      <button id="auth-confirm-button">Bestätigen</button>
-    </div>
   </div>
 </div>
 

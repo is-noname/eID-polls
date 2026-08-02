@@ -1,0 +1,122 @@
+{% extends "eidsim_base.html" %}
+{% block title %}Ausweis-App (Simulation){% endblock %}
+{% block fenstertitel %}Ausweis-App (Simulation){% endblock %}
+
+{% block inhalt %}
+{# Vier Zustaende in einer Seite, serverseitig umgeschaltet. Kein JavaScript:
+   Was hier gezeigt wird, ist ein Schrittwechsel mit Seitenwechsel - genau das,
+   was im Ernstfall passiert, wenn eine zweite Anwendung uebernimmt. #}
+
+<div class="schrittleiste">
+  <span class="{{ 'jetzt' if schritt == 'karte' else 'fertig' }}">1 Ausweis</span>
+  <span class="{{ 'jetzt' if schritt == 'auskunft' else ('fertig' if schritt in ('pin',) else '') }}">2 Auskunft</span>
+  <span class="{{ 'jetzt' if schritt == 'pin' }}">3 PIN</span>
+</div>
+
+{% if fehler %}<div class="meldung fehler">{{ fehler }}</div>{% endif %}
+
+{% if schritt == 'karte' %}
+  <h1>Ausweis auflegen</h1>
+  <p class="lead">
+    Halten Sie Ihren Ausweis an das Lesegerät oder an die Rückseite Ihres Smartphones.
+  </p>
+
+  <div class="kartenfeld">
+    <div class="karte">
+      <div class="chip"></div>
+      <div class="kartenzeile"></div>
+      <div class="kartenzeile kurz"></div>
+    </div>
+    <div class="funk"><i></i><i></i><i></i></div>
+  </div>
+
+  <form method="post" action="/eid-sim/client/{{ sid }}/karte" class="eingabe">
+    <label for="ausweisnummer">Ausweisnummer</label>
+    <input type="text" id="ausweisnummer" name="ausweisnummer" autocomplete="off" autofocus>
+    <small>
+      In dieser Simulation tritt die Eingabe an die Stelle des Chips: Sie ersetzt einen bereits
+      gültig geprüften Ausweis. Ein echter Ausweis würde hier nichts eingeben lassen.
+    </small>
+    <div class="knopfreihe">
+      <button type="submit" class="primaer" id="karte-lesen">Ausweis lesen</button>
+    </div>
+  </form>
+
+{% elif schritt == 'auskunft' %}
+  <h1>Zugriff bestätigen</h1>
+  <p class="lead">
+    Ihr Ausweis wurde erkannt. Bestätigen Sie, dass das folgende Merkmal übermittelt werden darf.
+  </p>
+  <div class="felder">
+    <div class="feldzeile an">
+      <span class="haken">✓</span>
+      <span>
+        <strong>Dienste- und kartenspezifisches Kennzeichen</strong>
+        <small>Gilt nur für diesen Dienst. Kein Name, kein Geburtsdatum, keine Anschrift.</small>
+      </span>
+    </div>
+  </div>
+  <p class="hinweis">
+    Danach werden Sie zur PIN-Eingabe aufgefordert. Erst mit der PIN gibt der Chip das Merkmal frei.
+  </p>
+  <div class="knopfreihe">
+    <form method="post" action="/eid-sim/abbruch/{{ sid }}">
+      <button type="submit" class="sekundaer" id="sim-abbruch">Abbrechen</button>
+    </form>
+    <form method="post" action="/eid-sim/client/{{ sid }}/auskunft">
+      <button type="submit" class="primaer" id="auskunft-ok">Zugriff erlauben</button>
+    </form>
+  </div>
+
+{% elif schritt == 'pin' %}
+  <h1>PIN eingeben</h1>
+  <p class="lead">Ihre sechsstellige Ausweis-PIN.</p>
+
+  {% if versuche_offen < 3 %}
+    <div class="meldung fehler">
+      Falsche PIN. Noch <strong>{{ versuche_offen }}</strong>
+      {{ 'Versuch' if versuche_offen == 1 else 'Versuche' }}, danach wird der Ausweis gesperrt.
+    </div>
+  {% endif %}
+
+  {# Das Bestaetigen liegt ausserhalb seines Formulars und verweist per form=
+     darauf: Nur so stehen Abbrechen und Bestaetigen in einer Reihe, ohne
+     Formulare ineinander zu schachteln - das erlaubt HTML nicht. #}
+  <form method="post" action="/eid-sim/client/{{ sid }}/pin" class="eingabe" id="pin-form">
+    <label for="pin">Ausweis-PIN</label>
+    <input type="password" id="pin" name="pin" inputmode="numeric" maxlength="6"
+           autocomplete="off" class="pin" autofocus>
+    <small>
+      Diese Vorführung akzeptiert <code>{{ sim_pin }}</code>. Eine geheime PIN wäre in einer
+      Simulation keine Sicherheit, sondern eine Sackgasse — der Fehlversuchszähler dagegen ist
+      echt nachgebildet.
+    </small>
+  </form>
+  <div class="knopfreihe">
+    <form method="post" action="/eid-sim/abbruch/{{ sid }}">
+      <button type="submit" class="sekundaer" id="sim-abbruch">Abbrechen</button>
+    </form>
+    <button type="submit" form="pin-form" class="primaer" id="pin-ok">Bestätigen</button>
+  </div>
+
+{% elif schritt == 'gesperrt' %}
+  <h1>Ausweis gesperrt</h1>
+  <div class="meldung fehler">
+    Dreimal die falsche PIN — die Online-Ausweisfunktion ist gesperrt.
+  </div>
+  <p class="hinweis">
+    Im Ernstfall wäre der Ausweis jetzt nur noch mit der <strong>CAN</strong> zu entsperren, der
+    sechsstelligen Zugangsnummer auf der Vorderseite des Ausweises; nach einem weiteren
+    Fehlversuch bräuchte es die PUK. Diese Simulation bietet diesen Weg nicht an — sie zeigt
+    die Sperre, damit sie nicht wie ein Defekt der Umfrage aussieht.
+  </p>
+  <div class="knopfreihe">
+    <form method="post" action="/eid-sim/abbruch/{{ sid }}">
+      <button type="submit" class="primaer" id="sim-zurueck">Zurück zur Umfrage</button>
+    </form>
+  </div>
+
+{% else %}
+  <p class="hinweis">Dieser Schritt ist abgeschlossen.</p>
+{% endif %}
+{% endblock %}

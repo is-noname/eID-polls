@@ -1,0 +1,255 @@
+/* Oberflaeche der simulierten Fremdsysteme (EIP-T-095).
+ *
+ * Bewusst nicht app.css und bewusst ohne Theme-Umschalter: Diese Seiten stellen
+ * einen eID-Dienst und eine Ausweis-App dar, also Systeme, die nicht zu dieser
+ * Umfrage gehoeren. Uebernaehmen sie deren Farben, Topbar und Navigation, waere
+ * der Kontextwechsel weg - und der ist der ganze Gegenstand der Simulation.
+ *
+ * Ebenfalls Absicht: nuechtern und generisch, nicht der Markenauftritt einer
+ * realen Anwendung. Kein Wappen, kein fremdes Logo, keine nachgebaute
+ * Fensterdekoration eines bestimmten Herstellers.
+ */
+
+:root {
+  --sim-bg: #eef1f5;
+  --sim-flaeche: #ffffff;
+  --sim-rand: #d3dae3;
+  --sim-rand-stark: #b3bec9;
+  --sim-text: #1b232c;
+  --sim-gedaempft: #5b6774;
+  --sim-schwach: #8b95a0;
+  --sim-akzent: #10559a;
+  --sim-akzent-stark: #0c4176;
+  --sim-akzent-weich: #e9f1fb;
+  --sim-rot: #b3261e;
+  --sim-rot-bg: #fdeceb;
+  --sim-gelb-bg: #fff4e2;
+  --sim-gelb-rand: #e2c184;
+  --sim-gelb-text: #6b4300;
+  --sim-r: 6px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--sim-bg);
+  color: var(--sim-text);
+  font: 15px/1.55 "Segoe UI", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Kennzeichnung nach KODEX §4 - schmal, aber auf jeder Seite und nicht
+ * wegklickbar. */
+.sim-leiste {
+  background: var(--sim-gelb-bg);
+  border-bottom: 1px solid var(--sim-gelb-rand);
+  color: var(--sim-gelb-text);
+  padding: 9px 16px;
+  font-size: 13px;
+  text-align: center;
+}
+.sim-leiste strong { font-weight: 700; }
+
+/* Fenster - die Andeutung einer zweiten Anwendung, nicht die Nachbildung einer
+ * bestimmten. */
+.fenster {
+  max-width: 620px;
+  margin: 40px auto;
+  background: var(--sim-flaeche);
+  border: 1px solid var(--sim-rand);
+  border-radius: var(--sim-r);
+  box-shadow: 0 8px 30px rgba(20, 35, 55, 0.13);
+  overflow: hidden;
+}
+
+.fensterleiste {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #f5f7fa;
+  border-bottom: 1px solid var(--sim-rand);
+}
+.ampel { display: flex; gap: 6px; }
+.ampel i {
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: var(--sim-rand-stark);
+}
+.fenstertitel { font-size: 13px; font-weight: 600; color: var(--sim-gedaempft); }
+
+.fensterinhalt { padding: 26px 28px 30px; }
+
+h1 { margin: 0 0 6px; font-size: 21px; font-weight: 700; }
+h2 { margin: 26px 0 10px; font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: var(--sim-gedaempft); }
+.lead { margin: 0 0 20px; color: var(--sim-gedaempft); }
+
+/* Datenauskunft des Dienstes */
+.auskunft {
+  border: 1px solid var(--sim-rand);
+  border-radius: var(--sim-r);
+  overflow: hidden;
+}
+.auskunft .zeile {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--sim-rand);
+  font-size: 14px;
+}
+.auskunft .zeile:last-child { border-bottom: none; }
+.auskunft .feld { color: var(--sim-gedaempft); }
+.auskunft .wert { font-weight: 500; }
+
+.marker {
+  display: inline-block;
+  background: var(--sim-gelb-bg);
+  border: 1px solid var(--sim-gelb-rand);
+  color: var(--sim-gelb-text);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-right: 6px;
+}
+
+/* Angeforderte Felder */
+.felder {
+  border: 1px solid var(--sim-rand);
+  border-radius: var(--sim-r);
+  overflow: hidden;
+}
+.feldzeile {
+  display: flex;
+  gap: 10px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--sim-rand);
+  font-size: 14px;
+}
+.feldzeile:last-child { border-bottom: none; }
+.feldzeile.an { background: var(--sim-akzent-weich); }
+.feldzeile.aus { color: var(--sim-schwach); }
+.feldzeile .haken { width: 16px; font-weight: 700; color: var(--sim-akzent); }
+.feldzeile.aus .haken { color: var(--sim-schwach); }
+.feldzeile small { display: block; margin-top: 3px; color: var(--sim-gedaempft); font-size: 12.5px; }
+
+.hinweis { margin: 18px 0 0; font-size: 13px; color: var(--sim-gedaempft); }
+
+/* Schrittleiste der Ausweis-App */
+.schrittleiste {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 22px;
+  font-size: 12px;
+  color: var(--sim-schwach);
+}
+.schrittleiste span {
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: #f2f4f7;
+}
+.schrittleiste .jetzt { background: var(--sim-akzent); color: #fff; font-weight: 600; }
+.schrittleiste .fertig { background: var(--sim-akzent-weich); color: var(--sim-akzent-stark); }
+
+/* Karte auflegen */
+.kartenfeld {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  padding: 26px 0 22px;
+}
+.karte {
+  width: 150px; height: 95px;
+  background: linear-gradient(140deg, #dfe6ee, #c8d3de);
+  border: 1px solid var(--sim-rand-stark);
+  border-radius: 8px;
+  padding: 12px;
+}
+.chip {
+  width: 26px; height: 20px;
+  background: #c9a94e;
+  border: 1px solid #a98d3c;
+  border-radius: 3px;
+  margin-bottom: 14px;
+}
+.kartenzeile { height: 6px; background: rgba(27, 35, 44, .18); border-radius: 3px; margin-bottom: 6px; }
+.kartenzeile.kurz { width: 55%; }
+
+.funk { display: flex; flex-direction: column; gap: 5px; }
+.funk i {
+  display: block;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--sim-akzent);
+  opacity: .3;
+  animation: funken 1.4s infinite;
+}
+.funk i:nth-child(2) { animation-delay: .2s; }
+.funk i:nth-child(3) { animation-delay: .4s; }
+@keyframes funken { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .funk i { animation: none; opacity: .5; }
+}
+
+/* Eingaben */
+.eingabe { margin-top: 6px; }
+.eingabe label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
+.eingabe input {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--sim-rand-stark);
+  border-radius: var(--sim-r);
+  font: inherit;
+  background: #fff;
+  color: var(--sim-text);
+}
+.eingabe input:focus {
+  outline: 2px solid var(--sim-akzent);
+  outline-offset: 1px;
+  border-color: var(--sim-akzent);
+}
+.eingabe input.pin { letter-spacing: .5em; font-size: 19px; text-align: center; }
+.eingabe small { display: block; margin-top: 7px; color: var(--sim-gedaempft); font-size: 12.5px; }
+code { background: #f2f4f7; border: 1px solid var(--sim-rand); border-radius: 3px; padding: 0 4px; font-size: 12.5px; }
+
+/* Meldungen */
+.meldung {
+  padding: 10px 13px;
+  border-radius: var(--sim-r);
+  font-size: 13.5px;
+  margin-bottom: 16px;
+}
+.meldung.fehler { background: var(--sim-rot-bg); border: 1px solid #eebbb7; color: var(--sim-rot); }
+
+/* Knoepfe */
+.knopfreihe {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 22px;
+}
+.knopfreihe form { margin: 0; }
+button {
+  font: inherit;
+  font-size: 14px;
+  padding: 9px 17px;
+  border-radius: var(--sim-r);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+button.primaer { background: var(--sim-akzent); color: #fff; font-weight: 600; }
+button.primaer:hover { background: var(--sim-akzent-stark); }
+button.sekundaer { background: #fff; border-color: var(--sim-rand-stark); color: var(--sim-gedaempft); }
+button.sekundaer:hover { border-color: var(--sim-schwach); color: var(--sim-text); }
+button:focus-visible { outline: 2px solid var(--sim-akzent); outline-offset: 2px; }
+
+@media (max-width: 640px) {
+  .fenster { margin: 0; border: none; border-radius: 0; box-shadow: none; min-height: 100vh; }
+  .fensterinhalt { padding: 20px 16px 26px; }
+  .auskunft .zeile { grid-template-columns: 1fr; gap: 2px; }
+  .knopfreihe { flex-direction: column-reverse; }
+  .knopfreihe form, .knopfreihe button { width: 100%; }
+}

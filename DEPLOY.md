@@ -197,7 +197,12 @@ Ein Ablauf, der das trägt:
    zeigt die App erst nach dem Schließen. Nicht sagen, es gebe keinen Zwischenstand — unter
    *Nachweise* stehen die abgegebenen Stimmen samt gewählter Option, wer will, zählt ihn aus
    (EIP-T-056).
-2. **Ausweisen** mit `testperson1`, **Stimmrecht abholen** — der aufklappbare Block zeigt, dass der
+2. **Ausweisen** mit `testperson1`, PIN `123456`. Der Weg führt über den nachgestellten eID-Dienst
+   und die nachgestellte Ausweis-App (EIP-T-095) — die Datenauskunft ist die vorführbare Stelle:
+   angefordert wird **nur** das dienstespezifische Kennzeichen, nicht Name, Geburtsdatum oder
+   Anschrift. Beide Seiten sagen in einer Leiste, dass sie Attrappen sind; das gehört zur
+   Vorführung und wird nicht weggeklickt. Wer den Fehlversuchszähler zeigen will, tippt zuerst
+   eine falsche PIN. Danach **Stimmrecht abholen** — der aufklappbare Block zeigt, dass der
    Token im Browser entsteht und verblindet zum Server geht.
 3. **Abstimmen**, **Beleg sichern**, unter *Stimme prüfen* den eigenen Eintrag im Board finden.
 4. **Zweiter Versuch mit `testperson1`** — abgewiesen, obwohl der Server nicht weiß, wie diese

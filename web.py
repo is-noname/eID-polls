@@ -206,6 +206,16 @@ def create_app(
         import demo
 
         app.include_router(demo.router)
+    # Simulierter eID-Flow (EIP-T-095): Diensteanbieter und Ausweis-App als
+    # nachgestellte Fremdsysteme, damit Testpersonen den vollstaendigen Ablauf
+    # erleben. Haengt am Authenticator und nicht an einem eigenen Schalter -
+    # sobald hier ein echter Ausweis geprueft wird, waere eine daneben
+    # erreichbare Simulation genau der Zustand, vor dem
+    # EIP-RFC-20260725-002 Schritt 4 warnt.
+    if not app.state.deps.authenticator.is_real_identity:
+        import eid_sim
+
+        app.include_router(eid_sim.router)
     return app
 
 
@@ -392,6 +402,11 @@ async def poll_page(request: Request, poll_id: str) -> HTMLResponse:
         e=hex(e)[2:],
         batch_k=service.batch_k,
         batch_deckel_h=service.batch_deckel_s // 3600,
+        # Rueckmeldung aus dem eID-Flow (EIP-T-095). Sie kommt als Query-Wert
+        # zurueck, weil die Simulation die Seite verlaesst und ueber einen
+        # Redirect zurueckkommt - ein Fehler aus einem fremden System hat sonst
+        # keinen Weg an die Stelle, an der er entstanden ist.
+        eid_fehler=request.query_params.get("eid_fehler"),
     )
 
 
