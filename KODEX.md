@@ -11,7 +11,7 @@
 > Historie: [Kodex-Protokoll](/kodex/protokoll) · Begriffe: Glossar (projektintern) ·
 > These: EIP-RFC-20260726-001
 
-**Version 35 — 2026-08-03**
+**Version 36 — 2026-08-03**
 
 ---
 
@@ -53,7 +53,9 @@ Bei jeder Entscheidung durchgehen (§ 19).
 4. Steht irgendwo eine Zahl ohne ihren Nenner — oder behauptet die Darstellung mehr, als die beiden Zahlen hergeben? (§ 8, § 9)
 5. Bekommt jemand Einfluss auf Fragen oder Ergebnisse, weil er zahlt oder Reichweite bringt? (§ 12, § 13)
 6. Weicht der ausgelieferte Client vom veröffentlichten Code ab — oder lässt sich das nicht von außen nachprüfen? (§ 20)
-7. Steht die Schuldenübersicht über der Grenze — und trägt das Vorhaben keine Schuld ab? (§ 4 b)
+7. Steht die **Fälligkeitszahl** der Schuldenübersicht über der Grenze — und trägt das Vorhaben
+   keine Schuld ab? (§ 4 b; gezählt wird, was auf der laufenden Stufe fällig ist, nicht der
+   Gesamtrückstand)
 
 **Begleitfragen.** Kein Stopp, aber ohne Antwort ist die Entscheidung nicht getroffen.
 
@@ -114,13 +116,22 @@ ihre Form.
 ausschließlich die folgenden. **Ein Ereignis, das hier nicht steht, ist eines, auf das sich niemand
 berufen kann** — ein Vermerk, der ein anderes nennt, ist formfehlerhaft.
 
-- `öffentlich erreichbar` — Betriebsstufe, siehe oben
-- `produktiv` — Betriebsstufe, siehe oben
-- ersten echten Durchlauf — die erste Umfrage, deren Ergebnis zählen soll
-- ersten Frage außerhalb einer Vorführung — auch dann, wenn niemand das Ergebnis ernst nimmt
-- ersten Einbettung — die erste Einbindung auf einer fremden Seite
-- Annahme von Geld — die erste, gleich von wem und in welcher Höhe
-- Trägerwechsel — das Projekt wechselt den Betreiber oder die Rechtsform
+- `öffentlich erreichbar` — Betriebsstufe, siehe oben · **eingetreten 2026-07-27**
+- `produktiv` — Betriebsstufe, siehe oben · **nicht eingetreten**
+- ersten echten Durchlauf — die erste Umfrage, deren Ergebnis zählen soll · **nicht eingetreten**
+- ersten Frage außerhalb einer Vorführung — auch dann, wenn niemand das Ergebnis ernst nimmt · **nicht eingetreten**
+- ersten Einbettung — die erste Einbindung auf einer fremden Seite · **nicht eingetreten**
+- Annahme von Geld — die erste, gleich von wem und in welcher Höhe · **nicht eingetreten**
+- Trägerwechsel — das Projekt wechselt den Betreiber oder die Rechtsform · **nicht eingetreten**
+
+**Der Vermerk hinter jedem Ereignis ist seit Version 36 Pflicht** und der Grund, warum § 4 b
+überhaupt nach Fälligkeit unterscheiden kann. Bis dahin stand im Prüfskript ausdrücklich, es könne
+nicht wissen, ob ein Ereignis eingetreten ist — „das weiß das Dateisystem nicht". Es weiß es jetzt,
+weil es hier steht. Ein Ereignis von `nicht eingetreten` auf eingetreten zu setzen, ist eine
+Änderung nach § 17 mit Version, Protokolleintrag und Begründung — und zugleich der Moment, in dem
+alle daran hängenden Schulden schlagartig zählen. **Wer die Stufe erreicht, ohne den Vermerk zu
+setzen, umgeht § 4 b**; das ist derselbe Verstoß wie ein unmarkierter Betriebsstufenwechsel und
+gehört ins Verstoßprotokoll.
 
 Diese Liste ist Kodextext, nicht Konfiguration: Sie zu erweitern ist eine Änderung nach § 17 und
 braucht Version, Protokolleintrag und Begründung. `scripts/check_kodex.py` **liest sie von hier**
@@ -336,11 +347,33 @@ zusätzlich:
 auflösendes Ticket und das Ereignis, vor dem er aufgelöst sein muss. Ein Vermerk ohne beides ist
 unzulässig; der betroffene Paragraph gilt bis zur Nachbesserung als verletzt.
 
-**b) Schuldengrenze.** Stehen mehr als **acht** Paragraphen ganz oder teilweise auf `offen` oder
-`Disziplin`, darf kein Feature mehr gebaut werden, das nicht eine bestehende Schuld abträgt.
-Erlaubt bleiben in diesem Zustand: Arbeit an einem Paragraphen der Schuldenübersicht, Korrektur von
-Fehlern und Verstößen, Prüfwerkzeuge, Dokumentation, Sicherheitsarbeit. Nicht erlaubt: alles, was
-Reichweite, Funktionsumfang oder Außenwirkung vergrößert.
+**b) Schuldengrenze.** Stehen mehr als **zwei** Paragraphen ganz oder teilweise auf `offen` oder
+`Disziplin`, **deren Fälligkeitsereignis bereits eingetreten ist**, darf kein Feature mehr gebaut
+werden, das nicht eine bestehende Schuld abträgt. Erlaubt bleiben in diesem Zustand: Arbeit an einem
+Paragraphen der Schuldenübersicht, Korrektur von Fehlern und Verstößen, Prüfwerkzeuge,
+Dokumentation, Sicherheitsarbeit. Nicht erlaubt: alles, was Reichweite, Funktionsumfang oder
+Außenwirkung vergrößert.
+
+**Gezählt wird nach Fälligkeit, seit Version 36.** Bis dahin zählte die Regel alle belasteten
+Paragraphen gegen eine Grenze von acht. Das traf die Prototypenphase falsch: Von zehn belasteten
+Paragraphen waren neun vor Ereignissen fällig, die nicht eingetreten sind — `produktiv`, erste
+Einbettung, erste Annahme von Geld, Trägerwechsel. Der Baustopp bremste damit die Arbeit an einer
+frühen Stufe fast vollständig mit Schulden späterer Stufen aus, und zwar dauerhaft: Keine dieser
+Schulden ist auflösbar, bevor die Stufe existiert, für die sie gilt. Eine Regel, die niemals wieder
+grün werden kann, wird umgangen statt befolgt.
+
+**Das ist keine Anhebung der Grenze, und der Unterschied ist prüfbar.** Eine Anhebung erlaubt mehr
+Rückstand. Diese Fassung erlaubt keinen zusätzlichen: Kein Vermerk verschwindet, die Übersicht führt
+unverändert alle, und mit jedem eingetretenen Ereignis zählen die daran hängenden Schulden sofort
+mit — beim Sprung auf `produktiv` heute neun auf einen Schlag, weit über jeder Grenze. **Der
+Baustopp ist damit nicht abgeschafft, sondern an die Stufe gebunden, auf der er wirken soll.** Wer
+prüfen will, ob hier ein Freikauf stattgefunden hat, vergleiche die Gesamtzahl vor und nach der
+Änderung: Sie ist dieselbe.
+
+**Die Grenze sank von acht auf zwei**, weil sie sonst wirkungslos geworden wäre — gegen eine
+Fälligkeitszahl von eins ist eine Acht keine Grenze, sondern eine Verzierung. Zwei ist eng genug,
+dass der Stopp auf jeder Stufe eintreten kann, und weit genug, dass eine einzelne offene Auskunft
+eines Dritten nicht das ganze Projekt anhält.
 
 **Gezählt werden Paragraphen, nicht Vermerke.** Ein Paragraph mit drei Vermerken zählt einmal. Das
 ist gewählt, nicht zufällig: Die Vermerksgrenze ist rein redaktionell — wer einen Absatz teilt,
@@ -378,6 +411,10 @@ verboten: einen Vermerk auf `offen`
 stehen lassen, ohne Ticket und Ereignis zu
 nennen; die Grenze aus b) durch Umdeklarieren eines Features zu „Wartung" umgehen; die Grenze
 anheben, statt eine Schuld abzutragen (das wäre eine Änderung nach § 17 und braucht deren Begründung).
+Ebenfalls hierher gehört, seit es die Fälligkeitszählung gibt: **ein eingetretenes Ereignis nicht als
+eingetreten vermerken.** Das senkt die Zahl, ohne eine Schuld abzutragen, und ist damit dasselbe wie
+eine Anhebung — nur unsichtbarer. Die Umstellung auf Fälligkeit selbst (Version 36) ist keine
+Anhebung: Die Gesamtzahl blieb unverändert, und die Gegenprobe steht in der Schuldenübersicht.
 Ebenfalls verboten, seit Version 22 ausdrücklich: **eine Schuld in einen bereits belasteten
 Paragraphen umhängen.** Die Zahl fällt dabei um eins, ohne dass sich etwas ändert — und weil die
 Bewegung im Fließtext eines Paragraphen stattfindet, ist sie von außen nicht als Umgehung erkennbar.
@@ -900,8 +937,20 @@ abgeleitet, nicht eigenständig: Maßgeblich ist der Status beim jeweiligen Para
 Ereignis dasteht. Was die Zahl darunter zählt und was sie dabei nicht sieht, steht in § 4 b und
 nicht hier.
 
-**Stand 2026-08-03: 10 von 20 Paragraphen. Die Grenze aus § 4 b liegt bei 8 — sie ist weiterhin
-überschritten, der Baustopp gilt.** Bis Version 25 stand hier 13; die Tabelle darunter führte
+**Stand 2026-08-03: 10 von 20 Paragraphen belastet — davon 1 jetzt fällig.** Die Grenze aus § 4 b
+liegt seit Version 36 bei 2 und zählt nur, was fällig ist: **1 von 2, der Baustopp ist aufgehoben.**
+
+Beide Zahlen stehen hier, und die erste ist die wichtigere. Zehn Paragraphen tragen eine Schuld; das
+ist der Rückstand des Projekts und er ist durch Version 36 um nichts kleiner geworden. Neun davon
+hängen an Ereignissen, die nicht eingetreten sind — sie zählen nicht gegen den Baustopp, weil sie
+auf dieser Stufe niemand auflösen könnte, und sie zählen alle mit, sobald ihre Stufe kommt. **Beim
+Sprung auf `produktiv` steht die Fälligkeitszahl bei 9 und der Baustopp sofort wieder.** Wer nur die
+kleine Zahl liest, liest, was gerade blockiert — nicht, was das Projekt schuldig ist.
+
+Die eine jetzt fällige Schuld ist § 1: die Protokollierung beim Hoster, fällig an `öffentlich
+erreichbar`, gerissen seit dem 2026-07-27 → EIP-T-075.
+
+Bis Version 25 stand hier 13; die Tabelle darunter führte
 durchgehend 12, und `scripts/check_kodex.py` zählt sie. Korrigiert mit Version 26 — die Zahl war zu
 hoch, nicht die Lage besser.
 

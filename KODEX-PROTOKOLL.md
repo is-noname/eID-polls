@@ -15,6 +15,63 @@
 
 ## Änderungsprotokoll
 
+### Version 36 — 2026-08-03
+
+**§ 4 b zählt nicht mehr alle Schulden, sondern die fälligen. Die Grenze sinkt von acht auf zwei.**
+Stand danach: 1 von 2, der Baustopp ist aufgehoben. Der Gesamtrückstand bleibt bei 10 von 20 — er
+ist durch diese Änderung um nichts kleiner geworden.
+
+**Der Anlass war ein Einwand des Betreibers, und er war berechtigt.** Die Regel traf die
+Prototypenphase falsch: Von zehn belasteten Paragraphen waren neun vor Ereignissen fällig, die nicht
+eingetreten sind — `produktiv`, erste Einbettung, erste Annahme von Geld, Trägerwechsel. Der
+Baustopp bremste die Arbeit an einer frühen Stufe fast vollständig mit Schulden späterer Stufen aus,
+und zwar ohne Ausweg: **Keine dieser Schulden ist auflösbar, bevor die Stufe existiert, für die sie
+gilt.** § 12 verlangt ein unabhängiges Gremium, § 16 einen Entzugsmechanismus für eine Einbettung,
+die es nicht gibt, § 13 ein Finanzierungsmodell für Geld, das niemand angeboten hat. Eine Regel, die
+nicht wieder grün werden kann, wird umgangen statt befolgt — und § 4 nennt das Umdeklarieren zu
+„Wartung" nicht ohne Grund als naheliegende Umgehung.
+
+§ 4 b benannte seine eigenen Schwächen bereits: die Blindheit gegenüber Zuwachs und Abtrag innerhalb
+eines belasteten Paragraphen steht seit Version 22 dort. **Die Fälligkeitsblindheit stand nicht
+dabei.** Sie ist beim Schreiben der Regel niemandem aufgefallen, weil es zu diesem Zeitpunkt nur
+eine Betriebsstufe gab.
+
+**Warum das keine Anhebung ist, und woran man es nachprüft.** Eine Anhebung erlaubt mehr Rückstand.
+Diese Fassung erlaubt keinen zusätzlichen: Kein Vermerk verschwindet, die Übersicht führt unverändert
+alle zehn, und die Gesamtzahl steht weiter an erster Stelle — im Kodex wie in der Ausgabe des
+Prüfskripts. Was sich ändert, ist allein, welche Schulden *blockieren*.
+
+Die Gegenprobe ist ausgeführt und nicht nur behauptet: Setzt man `produktiv` versuchsweise auf
+eingetreten, meldet `check_kodex.py` sofort **9 fällige Paragraphen** (§ 1, 2, 3, 4, 5, 11, 12, 14,
+16) gegen eine Grenze von 2 — Baustopp, Exit 1. Der Stopp ist also nicht abgeschafft, sondern an die
+Stufe gebunden, auf der er wirken soll.
+
+**Die Grenze musste mitsinken.** Gegen eine Fälligkeitszahl von eins wäre eine Acht keine Grenze,
+sondern eine Verzierung gewesen — dann hätte die Umstellung den Baustopp tatsächlich abgeschafft.
+Zwei ist eng genug, dass er auf jeder Stufe eintreten kann, und weit genug, dass eine einzelne
+ausstehende Auskunft eines Dritten nicht das ganze Projekt anhält.
+
+**Was diese Änderung erst möglich gemacht hat: Der Kodex sagt jetzt, welche Ereignisse eingetreten
+sind.** Bis heute stand im Prüfskript ausdrücklich, es könne das nicht wissen — „ob die Instanz
+öffentlich erreichbar ist, weiß das Dateisystem nicht". Die Ereignisliste trägt seit dieser Version
+je Eintrag einen Vermerk. Damit ist der Eintritt einer Fälligkeit eine Änderung nach § 17 mit
+Version, Begründung und Protokolleintrag — und keine Beobachtung mehr, die jeder anders machen kann.
+
+**Neu verboten, und das ist der Preis dieser Änderung:** ein eingetretenes Ereignis nicht als
+eingetreten zu vermerken. Das senkt die Zahl, ohne eine Schuld abzutragen, ist also dasselbe wie eine
+Anhebung — nur unsichtbarer. Steht in § 4 unter *Konkret verboten*. **Die Angriffsfläche hat sich
+damit verschoben, nicht geschlossen:** Vorher konnte man die Grenze nur offen anheben, jetzt kann man
+still einen Vermerk stehen lassen. Ob das ein guter Tausch war, wird sich beim Sprung auf `produktiv`
+zeigen — an dem Tag, an dem das Setzen eines einzigen Vermerks den Bau anhält.
+
+**Fehler, die das Skript beim Umbau selbst gefunden hat**, beide in Formulierungen, die seit Wochen
+unbemerkt dastanden: Die Übersichtstabelle nannte für § 12 „erste Frage außerhalb einer Vorführung",
+die Ereignisliste „ersten Frage außerhalb einer Vorführung" — ein Ereignis, auf das sich nach dem
+Wortlaut niemand hätte berufen können. Und `ZAHLWORT` im Prüfskript kannte keine Zahl unter drei; die
+neue Grenze wäre schlicht nicht erkannt worden, mit dem Befund „Grenze nicht auffindbar". Das Skript
+zählt jetzt zusätzlich als Befund, wenn eine Übersichtszeile ein Ereignis nennt, das der Kodex nicht
+kennt — unbekannt gilt dabei als fällig, damit ein Tippfehler den Baustopp nicht senken kann.
+
 ### Version 35 — 2026-08-03
 
 **§ 6 ist eingelöst — die DSGVO-Kollision ist entschieden, dokumentiert und öffentlich begründet**
