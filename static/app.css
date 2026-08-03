@@ -200,7 +200,10 @@ html[data-theme="dark"] .icon-moon { display: none; }
 html:not([data-theme="dark"]) .icon-sun { display: none; }
 
 /* -- Layout --------------------------------------------------------------- */
-.content { padding: 32px 24px 72px; max-width: 800px; margin: 0 auto; }
+/* position/z-index halten den Inhalt ueber dem Pulsschleier (.pulse-bg, ganz
+   unten in dieser Datei). Ohne die beiden Angaben legt sich der fixierte Layer
+   je nach Stapelkontext ueber den Text. */
+.content { padding: 32px 24px 72px; max-width: 800px; margin: 0 auto; position: relative; z-index: 1; }
 body.dense .content { max-width: 1060px; margin: 0; padding: 20px 24px; }
 
 h1 {
@@ -696,4 +699,119 @@ body.dense .receipt-paper { font-size: 10px; padding: 16px 14px 20px; }
   .brand { margin-right: 10px; }
   .row { flex-wrap: wrap; gap: 8px 12px; }
   .field-row { flex-direction: column; align-items: stretch; }
+}
+
+/* -- Pulsschleier --------------------------------------------------------- */
+/* Das Motiv ist die Wortmarke als Bild: eine flache Grundlinie mit einem
+   einzelnen Ausschlag, gezeichnet aus tausenden Knoten und Verbindungen. Kein
+   einzelner Punkt ist zu erkennen, nur die Summe hat Kontur - genau das, was
+   das Verfahren behauptet.
+
+   Bewegt wird nichts verformt. Drei Kopien desselben Bildes liegen mit
+   winzigem Versatz uebereinander und driften mit verschieden langen,
+   teilerfremden Perioden. Weil das Motiv aus feinen Linien besteht,
+   interferieren die Kopien und es entstehen wandernde Helligkeiten - das
+   Mesh wirkt lebendig, obwohl die Kurve stillsteht. Kein Canvas, kein
+   JavaScript, ein einziges Bild im Netzwerk.
+
+   Die Drift bleibt bewusst unter einem Prozent: Wird sie groesser, liest man
+   sie als Schwenk statt als Flimmern, und der Schleier faengt an, vom Text
+   abzulenken. */
+.pulse-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* Der Schleier gehoert zur Flaeche, nicht zum Inhalt. Vorlesewerkzeuge und
+     die Textsuche haben hier nichts zu finden. */
+  user-select: none;
+}
+.pulse-bg i {
+  position: absolute;
+  left: -8vw;
+  right: -8vw;
+  bottom: 0;
+  /* Unten verankert statt oben: Der Ausschlag steht sonst senkrecht im
+     Fliesstext, und ein Schleier, den man lesen muss, ist keiner. Unten ist
+     auf fast jeder Seite Luft.
+     Die Hoehe ist frei gewaehlt statt aus dem Seitenverhaeltnis abgeleitet -
+     das Bild wird also flacher gezogen. Bei einer Pulskurve ist das kein
+     Schaden, sondern macht sie ruhiger; die Fasern bleiben Fasern. */
+  /* Flaches Band statt grosser Flaeche: Auf einer Seite mit Karten bleibt unten
+     nur ein schmaler Streifen frei, und ein hoher Schleier verschwindet mit
+     seiner Spitze hinter dem Inhalt - uebrig blieb ein Buschel ohne Puls. Stark
+     gestaucht liest sich die Kurve als Signallinie und passt ganz ins Bild. */
+  height: 22vh;
+  min-height: 150px;
+  max-height: 240px;
+  transform-origin: 50% 70%;
+  background: url("/static/pulse.webp") no-repeat center bottom / 100% 100%;
+  /* Keine Verlaufsmaske: Die weichen Kanten kommen aus dem Alphakanal des
+     Bildes, und jeder Verlauf ueber die Hoehe hat die Spitze weggeschnitten -
+     uebrig blieb ein Fransenbuschel ohne erkennbaren Puls. */
+  will-change: transform, opacity;
+}
+.pulse-bg i:nth-child(1) { opacity: 0.50; animation: pulse-drift-a 41s ease-in-out infinite; }
+.pulse-bg i:nth-child(2) { opacity: 0.34; animation: pulse-drift-b 57s ease-in-out infinite; }
+.pulse-bg i:nth-child(3) { opacity: 0.26; animation: pulse-drift-c 73s ease-in-out infinite; }
+
+@keyframes pulse-drift-a {
+  0%, 100% { transform: scale(1) translate3d(0, 0, 0); }
+  50%      { transform: scale(1.006) translate3d(0.35%, -0.5%, 0); }
+}
+@keyframes pulse-drift-b {
+  0%, 100% { transform: scale(1.004) translate3d(-0.3%, 0.25%, 0); opacity: 0.34; }
+  50%      { transform: scale(0.998) translate3d(0.4%, -0.2%, 0); opacity: 0.22; }
+}
+@keyframes pulse-drift-c {
+  0%, 100% { transform: scale(0.997) translate3d(0.25%, 0.3%, 0); opacity: 0.26; }
+  50%      { transform: scale(1.005) translate3d(-0.35%, -0.35%, 0); opacity: 0.15; }
+}
+
+/* Helles Theme: Die Fasern sind blass und wuerden auf hellem Grund
+   verschwinden. Statt das Bild einzufaerben dient es hier als Maske - die
+   Farbe kommt aus dem Theme, die Form aus dem Bild. Die Teal- und
+   Amberpunkte gehen dabei verloren; auf Weiss waeren sie ohnehin Dreck. */
+html:not([data-theme="dark"]) .pulse-bg i {
+  background: linear-gradient(to bottom, #6b5fa8 0%, #4a7f96 55%, #3f6f5e 100%);
+  -webkit-mask: url("/static/pulse.webp") no-repeat center bottom / 100% 100%;
+  mask: url("/static/pulse.webp") no-repeat center bottom / 100% 100%;
+}
+html:not([data-theme="dark"]) .pulse-bg i:nth-child(1) { opacity: 0.26; }
+html:not([data-theme="dark"]) .pulse-bg i:nth-child(2) { opacity: 0.17; }
+html:not([data-theme="dark"]) .pulse-bg i:nth-child(3) { opacity: 0.13; }
+
+/* Betreiberseiten arbeiten mit dichten Tabellen und langen Sitzungen. Dort ist
+   der Schleier Stoerung, kein Schmuck. */
+body.dense .pulse-bg { display: none; }
+
+/* Ebenso auf den Lesetexten - Manifest, Kodex, Protokoll, Transparenzbericht.
+   Deren Text laeuft ueber die volle Seitenhoehe und damit zwangslaeufig durch
+   die Fasern. Ein Kodex, der ernst genommen werden soll, wird nicht hinterlegt;
+   der Schleier gehoert auf die Seiten, wo abgestimmt wird. */
+body:has(.prose) .pulse-bg { display: none; }
+
+/* Auf kleinen Schirmen liegt der Ausschlag sonst quer ueber dem gesamten
+   sichtbaren Text - das Bild ist doppelt so breit wie hoch, der Viewport
+   hochkant. Kleiner und weiter oben. */
+@media (max-width: 640px) {
+  .pulse-bg i { height: 16vh; min-height: 110px; }
+  /* Auf dem Telefon deckt der Inhalt das Band fast vollstaendig ab. Die
+     Interferenz der drei Kopien waere dort nicht zu sehen, kostet aber
+     weiter Rechenzeit - eine Ebene genuegt. */
+  .pulse-bg i:nth-child(2), .pulse-bg i:nth-child(3) { display: none; }
+}
+
+/* Wer Bewegung abbestellt hat, bekommt dasselbe Bild - nur still. Der Schleier
+   verschwindet nicht, sonst saehe die Seite fuer diese Leute anders aus als
+   fuer alle anderen. */
+@media (prefers-reduced-motion: reduce) {
+  /* Die :nth-child-Regeln oben setzen die Animation und schlagen einen
+     schlichten `.pulse-bg i` per Spezifitaet - abbestellte Bewegung lief
+     deshalb weiter. Die Abschaltung muss dieselben Selektoren treffen. */
+  .pulse-bg i,
+  .pulse-bg i:nth-child(1),
+  .pulse-bg i:nth-child(2),
+  .pulse-bg i:nth-child(3) { animation: none; }
 }

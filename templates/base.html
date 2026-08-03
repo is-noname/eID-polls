@@ -13,6 +13,11 @@
 </head>
 {# Betreiberseiten laufen kompakt weiter (.dense), Teilnehmerseiten luftig. #}
 <body class="{{ 'dense' if active in ('admin', 'debug') }}">
+  {# Pulsschleier: das Namensmotiv als Flaeche hinter der Seite. Drei Kopien
+     desselben Bildes, die gegeneinander driften - siehe .pulse-bg in app.css.
+     aria-hidden, weil hier nichts steht, was jemand hoeren muesste. #}
+  <div class="pulse-bg" aria-hidden="true"><i></i><i></i><i></i></div>
+
   <div class="topbar">
     <a href="/" class="brand"><span class="brand-dot"></span>EID<span>POLL</span></a>
     <nav>
