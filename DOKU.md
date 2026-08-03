@@ -124,6 +124,10 @@ Veröffentlichung abgelehnter Fragevorschläge — ist nicht erzwungen und auch 
 3. **Schritt 2 — Abstimmen.** Ein Klick, hinter dem zwei Dinge stecken: Der Browser erzeugt das
    Stimm-Token, verblindet es, lässt es signieren, entblindet es wieder — und gibt damit sofort
    die Stimme ab. Mehrfachauswahl ist möglich; die *Kombination* steht so im Board.
+   Über dem Knopf steht seit dem 2026-08-03, dass der Eintrag dauerhaft bleibt und warum er nicht
+   entfernt wird (`EIP-T-061`, Art. 13 DSGVO). Das stand vorher nur im Beleg — also **nach** der
+   Entscheidung, über die es informieren soll. Die vollständige Position zu Auskunft und Löschung
+   liegt unter `/transparenz`, hergeleitet in `EIP-RFC-20260803-001`.
 4. **Schritt 3 — Beleg.** Als `.txt` sichern. Er enthält das Stimm-Token, den Blatt-Hash des
    Eintrags, die zugesagte Batch-Nummer und die Ed25519-Signatur des Betreibers über diese
    Zusage. Die Stimme erscheint im Board erst mit ihrem Batch — der Beleg bindet sofort.

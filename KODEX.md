@@ -11,7 +11,7 @@
 > Historie: [Kodex-Protokoll](/kodex/protokoll) · Begriffe: Glossar (projektintern) ·
 > These: EIP-RFC-20260726-001
 
-**Version 34 — 2026-08-03**
+**Version 35 — 2026-08-03**
 
 ---
 
@@ -436,8 +436,25 @@ Wahlgeheimnis brechen, das wir zusagen; diese Spannung ist nicht auflösbar, nur
 **Konkret verboten.** So zu tun, als bestünde der Konflikt nicht. Nachträgliches Aufweichen von § 2, um
 einen Auskunftsanspruch bedienen zu können.
 
-**Status.** `offen` → EIP-T-061, fällig vor Betriebsstufe
-`produktiv`.
+**Status.** `bindend` seit Version 35 (2026-08-03). Die Entscheidung steht in
+EIP-RFC-20260803-001, die öffentliche Begründung unter
+[Transparenzbericht](/transparenz) und auf der Instanz unter `/transparenz`; der Hinweis auf die Unlöschbarkeit des
+Board-Eintrags steht seit demselben Tag **vor** der Stimmabgabe und nicht erst im Beleg (Art. 13).
+
+Kurzfassung: Rechtsgrundlage ist Art. 6 Abs. 1 lit. f, nicht die Einwilligung — deren Widerruf
+zöge eine Löschpflicht ohne Abwägung nach sich. Auskunft zur Teilnahmeliste während der Laufzeit
+ja, danach nicht mehr möglich (Art. 11 Abs. 2 DSGVO, Folge der Schlüsselvernichtung). Löschung in
+der Teilnahmeliste während der Laufzeit begründet abgelehnt, danach gegenstandslos. Board-Einträge
+werden nicht gelöscht.
+
+**Was dieser Paragraph nicht behauptet.** Eine anwaltliche Prüfung liegt nicht vor, und eine Stelle
+bleibt streitig: Wer seinen Beleg vorlegt, kann seinen Board-Eintrag identifizieren — dann lebt der
+Anspruch aus Art. 15 bis 20 für diesen Eintrag wieder auf (§ 6 des RFC). Das ist im
+Transparenzbericht benannt, nicht weggeschrieben. Der Paragraph gilt trotzdem als erfüllt: Er
+verlangt eine vorab getroffene, dokumentierte und öffentlich begründete Entscheidung, nicht deren
+gerichtliche Bestätigung. Wer das anders handhabt, macht jede Schuld unauflösbar. Die anwaltliche
+Prüfung bleibt sinnvoll → EIP-T-098; sie belastet diesen
+Paragraphen nicht, weil sie über seinen Text hinausgeht.
 
 ---
 
@@ -883,10 +900,20 @@ abgeleitet, nicht eigenständig: Maßgeblich ist der Status beim jeweiligen Para
 Ereignis dasteht. Was die Zahl darunter zählt und was sie dabei nicht sieht, steht in § 4 b und
 nicht hier.
 
-**Stand 2026-08-03: 11 von 20 Paragraphen. Die Grenze aus § 4 b liegt bei 8 — sie ist weiterhin
+**Stand 2026-08-03: 10 von 20 Paragraphen. Die Grenze aus § 4 b liegt bei 8 — sie ist weiterhin
 überschritten, der Baustopp gilt.** Bis Version 25 stand hier 13; die Tabelle darunter führte
 durchgehend 12, und `scripts/check_kodex.py` zählt sie. Korrigiert mit Version 26 — die Zahl war zu
 hoch, nicht die Lage besser.
+
+Version 35 nimmt § 6 heraus: Die DSGVO-Kollision ist entschieden, dokumentiert und öffentlich
+begründet (EIP-RFC-20260803-001,
+EIP-T-061). **Es ist der erste Abtrag, bei dem kein Code die
+Schuld getilgt hat, sondern eine Entscheidung** — und deshalb der, bei dem die Versuchung am
+größten war, ihn nicht zu buchen: Eine anwaltliche Prüfung liegt nicht vor, und eine Stelle bleibt
+streitig. Der Paragraph verlangt sie aber nicht. Wer eine Schuld erst dann abträgt, wenn jede
+Restunsicherheit beseitigt ist, hält die Zahl hoch und nennt es Sorgfalt. Die Gegenprobe steht in
+§ 6 selbst und im Transparenzbericht, wo die streitige Stelle benannt ist statt weggeschrieben.
+Zwei Abträge an einem Tag (§ 7 mit Version 34, § 6 mit Version 35) hat es bisher nicht gegeben.
 
 Version 34 nimmt § 7 heraus: Laufzeit und Auswertungsplan stehen seit dem 2026-08-03 vor dem Start
 fest und im Board (EIP-T-091, V-006 behoben). Das
@@ -956,7 +983,6 @@ ein Dokument schreibt.
 | 3 | Browser-Hälfte der Blindsignatur vollständig selbst geschrieben (`static/blind.js`: Kodierung, MGF1, Blendfaktor, Entblendung). Die einzige gepflegte Alternative ist am 2026-08-03 geprüft und abgelehnt (EIP-T-008: nicht auditiert, sjcl-Abhängigkeit, § 20) — abtragbar nur noch durch Prüfung des eigenen Codes. Verstoß V-005 | EIP-T-094 | `produktiv` | 2026-08-01 |
 | 4 | Ballot Stuffing bleibt Disziplin **während der Laufzeit** (Schlüssel liegt allein bei uns; nach Schließung vernichtet, EIP-T-069) | EIP-T-040 | `produktiv` | 2026-07-26 |
 | 5 | Eigener Eingangskanal für Behördenanfragen — Bauform entschieden (Postfach ohne Domain), Einrichtung offen | EIP-T-073 | `produktiv` | 2026-07-31 |
-| 6 | DSGVO-Kollision entschieden und begründet | EIP-T-061 | `produktiv` | 2026-07-26 |
 | 11 | eAT-Unterstützung, Barrierefreiheit | EIP-T-064 | `produktiv` | 2026-07-26 |
 | 12 | Übergabe der Fragehoheit an ein unabhängiges Gremium | EIP-T-022 | politische Relevanz, spät. `produktiv` | 2026-07-26 |
 | 12 | Zwischenregel bis zur Übergabe: die Enthaltungsoption ist seit dem 2026-08-01 erzwungen (EIP-T-085); neutrale Formulierung und Veröffentlichung abgelehnter Vorschläge bleiben Disziplin — das eine ist maschinell nicht prüfbar, das andere braucht einen Eingangsweg für Vorschläge | EIP-T-022 | erste Frage außerhalb einer Vorführung | 2026-08-01 |

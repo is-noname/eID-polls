@@ -65,6 +65,47 @@ Je Vorgang, innerhalb von 14 Tagen ab Eingang der Anfrage — auch wenn der Vorg
 eine betroffene Person identifizierbar machen. Der Bericht schützt Teilnehmende; er stellt niemanden
 an den Pranger.
 
+## Ihre eigenen Rechte: Auskunft und Löschung
+
+**Stand 2026-08-03.** Bis hierher ging es um Anfragen *Dritter*. Dieser Abschnitt betrifft Ansprüche,
+die Sie selbst haben — Auskunft (Art. 15 DSGVO) und Löschung (Art. 17 DSGVO). Die Entscheidung
+darüber steht vor der ersten Anfrage fest, weil sie sonst unter Fristdruck entstünde; die
+ausführliche Begründung liegt in `EIP-RFC-20260803-001`.
+
+**Rechtsgrundlage ist unser berechtigtes Interesse** (Art. 6 Abs. 1 lit. f), nicht Ihre
+Einwilligung. Das klingt nach der schwächeren Position für Sie und ist bewusst so gewählt: Eine
+Einwilligung wäre widerruflich, und der Widerruf zwänge uns zur Löschung ohne jede Abwägung — bei
+einem Board, dessen Unveränderlichkeit die Auszählung für alle anderen trägt. Wir hätten eine
+Zusage gegeben, die wir nicht halten können. Ihre Teilnahme bleibt selbstverständlich freiwillig;
+das ist eine andere Frage als die Rechtsgrundlage.
+
+**Auskunft.** Solange eine Umfrage läuft, können wir Ihnen zur Teilnahmeliste sagen, was dort steht
+— nämlich genau eine Angabe: ob zu Ihrem Ausweis eine Stimmberechtigung ausgegeben wurde. Mehr liegt
+dort nicht. Nach dem Schließen der Umfrage können wir es nicht mehr, weil der Schlüssel vernichtet
+ist, mit dem sich die Liste auf einen Ausweis zurückrechnen ließe — für uns wie für Sie. Art. 11
+Abs. 2 DSGVO regelt genau diesen Fall und nimmt uns die Auskunftspflicht ab; er verbietet uns
+zugleich, Daten nur deshalb aufzubewahren, um später Auskunft geben zu können.
+
+**Zu Ihrer Stimme lautet die Auskunft: Wir wissen es nicht.** Nicht „wir sagen es nicht".
+
+**Löschung.** Während eine Umfrage läuft, lehnen wir die Löschung Ihres Eintrags in der
+Teilnahmeliste ab — ohne ihn könnten Sie ein zweites Mal abstimmen, und die Zusage „ein Ausweis,
+eine Stimme" gilt gegenüber allen anderen Teilnehmenden. Nach dem Schließen ist die Verkettung
+ohnehin vernichtet; es gibt dann nichts mehr zu löschen, was zu Ihnen führen würde. Gegen unsere
+Ablehnung steht Ihnen die Beschwerde bei einer Aufsichtsbehörde offen (Art. 77 DSGVO).
+
+**Ihren Eintrag im Board löschen wir nicht.** Er trägt Ihren Namen nicht und ist für uns niemandem
+zuzuordnen. Entfernen könnten wir ihn nur, indem wir die Prüfkette brechen — und damit die
+Nachprüfbarkeit jeder anderen Stimme. Deshalb steht dieser Hinweis auch vor der Stimmabgabe und
+nicht erst hier.
+
+**Eine Stelle, an der wir uns nicht sicher sind, und das sagen wir lieber selbst.** Wer seinen Beleg
+aufbewahrt, kann seinen Board-Eintrag benennen und beweisen, dass er ihm gehört. Damit könnte man
+argumentieren, dass dieser eine Eintrag sehr wohl ein personenbezogenes Datum ist und gelöscht
+werden muss. Wir würden ablehnen und uns auf die Rechte der übrigen Teilnehmenden berufen
+(Art. 17 Abs. 3 lit. e). Ob das trägt, ist nicht entschieden, und ein Gericht könnte es anders
+sehen. Wir behaupten hier nicht mehr Sicherheit, als wir haben.
+
 ## Der eigentliche Schutz liegt woanders
 
 Der wirksamste Teil der Antwort auf eine Herausgabeanordnung ist nicht dieser Bericht, sondern was

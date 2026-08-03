@@ -15,6 +15,61 @@
 
 ## Änderungsprotokoll
 
+### Version 35 — 2026-08-03
+
+**§ 6 ist eingelöst — die DSGVO-Kollision ist entschieden, dokumentiert und öffentlich begründet**
+(EIP-RFC-20260803-001,
+EIP-T-061). Der Paragraph verlässt die Schuldenübersicht:
+11 → 10. Zweiter Abtrag desselben Tages, und der erste überhaupt, den **kein Code** getilgt hat.
+
+**Keine Regel wurde geändert.** § 6 stand seit Version 1 so da und verlangte eine Entscheidung; sie
+fehlte. Die Statuszeile geht von `offen` auf `bindend`.
+
+**Was entschieden wurde.** Drei Punkte, von denen der erste der folgenreichste ist:
+
+1. **Rechtsgrundlage ist Art. 6 Abs. 1 lit. f, nicht die Einwilligung.** Die Einwilligung wäre die
+   naheliegende Wahl gewesen — die Teilnahme ist freiwillig — und genau deshalb die falsche: Sie ist
+   nach Art. 7 Abs. 3 widerruflich, und der Widerruf löst über Art. 17 Abs. 1 lit. b eine
+   Löschpflicht **ohne Abwägung** aus. Das Projekt hätte sich für ein append-only Board eine
+   unabwägbare Löschpflicht eingehandelt. Freiwilligkeit der Teilnahme und Einwilligung als
+   Rechtsgrundlage sind zwei verschiedene Dinge; sie zu verwechseln ist der teuerste Fehler, den
+   dieses Dokument vermeidet.
+2. **Auskunft** zur Teilnahmeliste während der Laufzeit ja — dort liegt genau eine Angabe. Danach
+   nicht mehr möglich: Die Vernichtung von `poll_secret` beim Schließen stellt exakt den Zustand von
+   Art. 11 Abs. 2 DSGVO her, und zwar symmetrisch — auch die betroffene Person kann keine
+   Zusatzinformation mehr liefern. Die Norm nimmt die Auskunftspflicht und verbietet zugleich, Daten
+   nur für künftige Auskünfte aufzubewahren. **Das ist der Punkt, an dem eine technische
+   Entscheidung von 2026-07-31 eine juristische Frage von 2026-08-03 beantwortet** — nicht
+   umgekehrt.
+3. **Löschung** in der Teilnahmeliste während der Laufzeit begründet abgelehnt (Rechte der übrigen
+   Teilnehmenden), danach gegenstandslos. Board-Einträge werden nicht gelöscht.
+
+**Was gebaut wurde**, und es ist wenig: ein Hinweis vor der Stimmabgabe, dass der Board-Eintrag
+dauerhaft ist und warum wir ihn nicht entfernen (Art. 13). Er stand bisher nur im Beleg, also
+*nach* der Entscheidung, über die er informieren soll.
+
+**Die unbequeme Stelle, und warum sie hier steht statt in einer Fußnote.** Wer seinen Beleg
+aufbewahrt, kann seinen Board-Eintrag benennen — das ist die „zusätzliche Information" aus
+Art. 11 Abs. 2, und der Anspruch lebt für diesen einen Eintrag wieder auf. Das ist kein Versehen,
+sondern die individuelle Nachprüfbarkeit selbst; sie abzuschaffen hieße, das Verfahren
+abzuschaffen. Wir würden ablehnen und uns auf Art. 17 Abs. 3 lit. e berufen. **Ob das trägt, ist
+nicht entschieden**, und das steht so im Transparenzbericht — sichtbar für jeden, der abstimmt, und
+nicht nur hier.
+
+**Warum der Paragraph trotzdem abgetragen ist.** Eine anwaltliche Prüfung liegt nicht vor. § 6
+verlangt sie nicht: Er fordert eine vorab getroffene, dokumentierte und öffentlich begründete
+Entscheidung. Wer eine Schuld erst dann bucht, wenn jede Restunsicherheit beseitigt ist, hält die
+Zahl hoch und nennt es Sorgfalt — und macht die Schuldengrenze zur Dekoration, weil keine Schuld
+dieser Art je auflösbar wäre. Die Prüfung bleibt sinnvoll und ist als
+EIP-T-098 festgehalten; sie belastet § 6 nicht, weil sie über
+seinen Text hinausgeht. Wer das für einen Freikauf hält, prüfe die Gegenprobe: Der Text von § 6 ist
+unverändert, die Grenze aus § 4 b ist unverändert, und die streitige Stelle steht öffentlich.
+
+**Der Baustopp gilt weiter.** 10 von 20 bei einer Grenze von 8. Zwei Paragraphen fehlen, und beide
+hängen nicht am Code, sondern an zwei Handgriffen des Betreibers: die Auskunft von Render (§ 1,
+EIP-T-075) und das Postfach für Behördenanfragen (§ 5,
+EIP-T-073).
+
 ### Version 34 — 2026-08-03
 
 **§ 7 ist eingelöst — Laufzeit und Auswertungsplan stehen vor dem Start fest**

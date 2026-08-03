@@ -46,7 +46,7 @@
 </div>
 
 <!-- Schritt 2 — Stimmabgabe. Stimmberechtigung (Phase A, Teil 2) und Stimme
-     (Phase B) entstehen hier in einem Zug: MC-ADR-20260725-002. -->
+     (Phase B) entstehen hier in einem Zug: EIP-ADR-20260725-002. -->
 <div class="step {{ 'blocked' if not pseudonym }}" id="step-vote">
   <div class="step-head"><span class="step-num">2</span> Abstimmen</div>
   <div class="step-body">
@@ -59,6 +59,15 @@
         </label>
       {% endfor %}
     </div>
+    {# Art. 13 DSGVO: Die Unloeschbarkeit muss vor der Stimmabgabe bekannt sein, nicht erst
+       im Beleg danach - EIP-RFC-20260803-001 Abschnitt 6. #}
+    <p class="step-hint">
+      Dein Eintrag bleibt dauerhaft im Board. Entfernen könnten wir ihn nur, indem wir die Prüfkette
+      brechen — und damit die Nachprüfbarkeit <em>jeder</em> anderen Stimme. Deshalb tun wir es
+      nicht, auch nicht auf Verlangen. Dein Name steht nicht darin; wer seinen Beleg aufbewahrt,
+      kann die eigene Stimme aber darin wiederfinden. Was das für Auskunft und Löschung bedeutet,
+      steht im <a href="/transparenz">Transparenzbericht</a>.
+    </p>
     <button class="big" id="vote-button" {{ 'disabled' if not pseudonym or poll.closed }}>Stimme abgeben</button>
 
     <details class="explain" style="margin-top:20px">
