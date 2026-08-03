@@ -15,6 +15,50 @@
 
 ## Änderungsprotokoll
 
+### Version 31 — 2026-08-03
+
+**`Disziplin` deckt ab jetzt auch fremdverursachte Lücken**
+(EIP-T-087, gefunden in
+EIP-AUD-20260801-005 Abschnitt 2). Der Leitfaden definierte das Wort als „die
+Zusage wird heute nur durch **unser Verhalten** gedeckt". Bei § 1 traf das auf den offenen Rest
+nicht mehr zu: Seit dem 2026-07-31 ist die eigene Seite erledigt
+(EIP-T-041, `EIP-RPT-20260731-002`), übrig bleibt, was
+Renders Loadbalancer, der TLS-Endpunkt und Cloudflare mitschreiben. Das deckt kein Verhalten von
+uns — wir können es weder tun noch lassen. Der Vermerk behauptete damit eine Selbstbindung, die es
+nicht gab, und ließ die Lage besser aussehen, als sie ist.
+
+**Was jetzt dasteht.** Die Definition benennt den Fall ausdrücklich und sagt, worin die Zusage dort
+besteht: den Zustand nicht hinzunehmen — nachfragen, die Antwort veröffentlichen, die Lücke
+benennen, solange sie offen ist, und den Anbieter wechseln, wenn sie sich nicht klären lässt. Das
+ist eine Zusage, die wir tatsächlich einlösen können, und sie ist prüfbar, weil ein solcher Vermerk
+zusätzlich die **deckende Handlung** nennen muss. § 1 nennt sie seitdem; der irreführende Halbsatz
+„die Umsetzung im Betrieb ist noch nicht abgeschlossen" ist raus — er las sich wie liegengebliebene
+eigene Arbeit und war seit dem 2026-07-31 falsch.
+
+**Verworfen: ein viertes Statuswort** (Arbeitsname `fremdverursacht`). Es wäre genauer gewesen,
+hätte aber in § 4 a, in die Schuldenübersicht und in `scripts/check_kodex.py` gemusst — und vor
+allem hätte es die Frage aufgeworfen, ob es für die Grenze aus § 4 b mitzählt. Beide Antworten sind
+schlecht: Zählt es nicht mit, sinkt die Schuldenzahl ohne jede Änderung der Lage, und das Projekt
+kann sich durch Umdeklarieren freikaufen — die Umgehung, die § 4 b seit Version 22 ausdrücklich
+verbietet. Zählt es mit, ist der Zugewinn rein beschreibend und der Preis eine eigene Kategorie
+„liegt nicht an uns". Der Kodex bleibt bei drei Wörtern; eines trägt dafür zwei Bedeutungen, und
+diese Bedeutungen stehen beide da.
+
+**Geprüft, wo sonst noch fremdverursachte Lücken als `Disziplin` geführt werden.** Ein Grenzfall:
+die Betreibergrenze in § 2 — behebbar nur durch eine zweite Partei, die wir nicht kontrollieren
+(EIP-ADR-20260802-003). Sie benennt ihre Fremdheit bereits im Text
+und nennt mit EIP-T-040 die deckende Handlung; der
+Vermerk bleibt unverändert. Alle übrigen `Disziplin`-Vermerke (§ 3 Krypto-Zukauf, § 4 Ballot
+Stuffing, § 12 Neutralität und abgelehnte Vorschläge, § 20 Server-Code) beschreiben eigenes
+Verhalten im alten Wortsinn. Die Netzwerkebene in § 2 steht auf `offen` und ist eigene Bauarbeit;
+dass Renders Loadbalancer davorsteht, ist dort schon als Grenze der Maßnahme benannt, nicht als
+Status.
+
+**Die Zahl ändert sich nicht.** 12 belastete Paragraphen, Baustopp unverändert — § 1 trägt seine
+Schuld weiter, sie heißt nur nicht mehr, was sie nicht ist. Diese Änderung trägt keine Schuld ab;
+sie beseitigt eine Beschönigung, und das ist unter § 4 b erlaubte Arbeit (Korrektur an einem
+Paragraphen der Schuldenübersicht).
+
 ### Version 30 — 2026-08-02
 
 **§ 3 verliert seine Server-Hälfte** (EIP-T-093). Die rohe

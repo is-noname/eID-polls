@@ -11,7 +11,7 @@
 > Historie: [Kodex-Protokoll](/kodex/protokoll) · Begriffe: Glossar (projektintern) ·
 > These: EIP-RFC-20260726-001
 
-**Version 30 — 2026-08-02**
+**Version 31 — 2026-08-03**
 
 ---
 
@@ -91,6 +91,17 @@ Der Status ist `bindend` (gilt jetzt, verhandelbar nur über § 17), `offen` (di
 der Paragraph markiert die Lücke bewusst) oder `Disziplin` (die Zusage wird heute nur durch unser
 Verhalten gedeckt, nicht durch Technik).
 
+**`Disziplin` deckt auch Lücken, die wir nicht selbst verursacht haben** — was ein Hoster, ein
+Netzbetreiber oder eine Zertifikatsstelle tut, können wir weder herstellen noch abstellen. Die
+Zusage besteht dort in etwas anderem, aber sie besteht: den Zustand nicht hinzunehmen. Nachfragen,
+die Antwort veröffentlichen, die Lage benennen, solange sie ungeklärt ist, und den Anbieter
+wechseln, wenn sie sich nicht klären lässt. Was außerhalb unserer Reichweite liegt, entlastet uns
+nicht; es verschiebt nur, worin die Disziplin besteht. Ein Vermerk dieser Art nennt deshalb
+zusätzlich, **welche Handlung** ihn deckt — sonst ist er die Beschönigung, gegen die § 4 geschrieben
+ist. Ein eigenes viertes Statuswort dafür ist am 2026-08-03 verworfen worden: Es hätte die Kategorie
+„liegt nicht an uns" geschaffen und die Frage aufgeworfen, ob sie für § 4 b mitzählt — mit beiden
+Antworten schlecht (Version 31, Begründung im [Kodex-Protokoll](/kodex/protokoll)).
+
 `Disziplin` ist kein Makel, sondern eine Schuld — und **jede Schuld ist fällig gestellt**: Ein
 `offen`- oder `Disziplin`-Vermerk nennt das **Ticket**, das ihn auflöst, und das **Ereignis**, vor dem
 er aufgelöst sein muss. Ohne beides ist der Vermerk unzulässig und der Paragraph gilt als verletzt
@@ -141,9 +152,16 @@ zur Missbrauchsabwehr — dafür haben wir die eID. Speichern des Referrers der 
 Stimmen-Ebene. Übernahme weiterer eID-Datenfelder in die Anfrage an den eID-Server, selbst wenn das
 Berechtigungszertifikat sie erlaubt.
 
-**Status.** `bindend`. Die Umsetzung im Betrieb ist noch nicht abgeschlossen und bis dahin
-`Disziplin` → EIP-T-075, fällig ab Betriebsstufe
-`öffentlich erreichbar`. **Diese Fälligkeit ist gerissen** — maßgeblich ist der **Nachtrag vom
+**Status.** `bindend`. Die eigene Seite ist seit dem 2026-07-31 umgesetzt; was bleibt, ist die
+Protokollierung beim Hoster — und die deckt kein Verhalten von uns, weil wir sie weder tun noch
+lassen können. Sie steht trotzdem auf `Disziplin`, und zwar in der Bedeutung, die der Leitfaden dem
+Wort seit Version 31 gibt: Die Zusage besteht hier darin, den Zustand nicht hinzunehmen — die
+Auskunft einzuholen, sie zu veröffentlichen, die Lücke bis dahin überall zu benennen, wo wir
+Datensparsamkeit behaupten, und den Hoster zu wechseln, wenn die Antwort sie nicht schließt
+→ EIP-T-075, fällig ab Betriebsstufe `öffentlich erreichbar`.
+Bis Version 30 stand hier „die Umsetzung im Betrieb ist noch nicht abgeschlossen": Das las sich wie
+liegengebliebene eigene Arbeit und war seit dem 2026-07-31 falsch (EIP-T-087).
+**Diese Fälligkeit ist gerissen** — maßgeblich ist der **Nachtrag vom
 2026-07-31 zu V-002**, nicht dessen Kopf: Der Eintrag selbst steht auf „behoben", weil der
 uvicorn-Zugriffslog aus ist; der Nachtrag sagt im letzten Satz, was hier gilt — *„V-002 ist
 geschlossen, § 1 ist es nicht."* Ein zweiter Verstoßeintrag über denselben Sachverhalt wäre die
