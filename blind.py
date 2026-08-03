@@ -22,8 +22,12 @@ PyPI-Suche vom 2026-08-01 lieferte fuer blind-rsa-signatures, blind_signatures,
 blindsig, rsa-blind-signatures, pyblindsig, rsabssa, blind-signature,
 pyblind-rsa, blindrsa, py-blind-rsa und rfc9474 jeweils keine Distribution
 (Vorbefund gleichen Inhalts vom 2026-07-25). Gepruefte Umsetzungen gibt es in
-Rust (jedisct1/blind-rsa-signatures), Go (cloudflare/circl) und inzwischen in
-TypeScript (@cloudflare/blindrsa-ts) - siehe EIP-T-079 fuer die Client-Seite.
+Rust (jedisct1/blind-rsa-signatures), Go (cloudflare/circl) und in TypeScript
+(@cloudflare/blindrsa-ts). Letztere ist fuer die Client-Seite geprueft und am
+2026-08-03 abgelehnt worden (EIP-T-008): nicht auditiert, sondern nur mit
+Testvektoren belegt, dazu sjcl als abgekuendigter Rechenunterbau und ein
+Buildschritt, der die Nachrechenbarkeit aus Paragraf 20 kostet. Begruendung in
+DOKU.md Paragraf 5.
 
 Was daraus folgt, offen benannt:
 

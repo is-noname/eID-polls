@@ -11,7 +11,7 @@
 > Historie: [Kodex-Protokoll](/kodex/protokoll) · Begriffe: Glossar (projektintern) ·
 > These: EIP-RFC-20260726-001
 
-**Version 31 — 2026-08-03**
+**Version 34 — 2026-08-03**
 
 ---
 
@@ -296,8 +296,12 @@ nicht das Sicherheitsziel des Protokolls.
 Die beiden Seiten sind ungleich, und der Kodex hat sie bis zum 2026-08-02 gleich behandelt:
 
 - **Browser** (`static/blind.js`): vollständig selbst geschrieben — Kodierung, MGF1, Blendfaktor,
-  Entblendung. Hier gibt es eine gepflegte Alternative (`@cloudflare/blindrsa-ts`), also ist die
-  Frage entscheidbar und keine Wartefrage → EIP-T-008.
+  Entblendung. Die gepflegte Alternative (`@cloudflare/blindrsa-ts`) ist am 2026-08-03 geprüft und
+  **abgelehnt** (EIP-T-008, Begründung in `app/DOKU.md`
+  § 5). Sie ist nicht auditiert, sondern gepflegt — belegt mit Testvektoren, also derselben
+  Beweisklasse, die hier schon liegt —, und rechnet ihre Großzahlarithmetik mit sjcl, das seine
+  eigenen Maintainer für neue Projekte abraten. Der Tausch ersetzte ungeprüften eigenen Code durch
+  ungeprüften fremden und kostete zusätzlich die Nachrechenbarkeit aus § 20.
 - **Server** (`app/blind.py`): **erledigt am 2026-08-02** (EIP-T-093). Im Stimmweg lief genau eine
   selbst geschriebene Operation, die rohe RSA-Privatoperation in `blind_sign()` — ohne Blinding und
   ohne konstante Zeit. Sie rechnet jetzt OpenSSL (`app/rsa_raw.py`, `EVP_PKEY_decrypt` mit
@@ -305,11 +309,15 @@ Die beiden Seiten sind ungleich, und der Kodex hat sie bis zum 2026-08-02 gleich
   und die Rückrechnung nach RFC 9474 § 4.3 — beides mit öffentlichen Werten, also ohne
   Zeitgeheimnis. Gemessen statt behauptet: `app/messung_blind_sign.py`, Befund in `app/DOKU.md` § 5.
 
-Dass diese Hälfte abgetragen ist, macht § 3 nicht sauber — die Browser-Hälfte trägt den Verstoß
-weiter, und ein Zukauf ist kein Audit (EIP-T-094).
+Dass die Serverhälfte abgetragen ist, macht § 3 nicht sauber — die Browser-Hälfte trägt den Verstoß
+weiter. Seit der Ablehnung vom 2026-08-03 trägt ihn nichts mehr ab, was zu kaufen wäre: Die einzige
+gepflegte Umsetzung ist geprüft und verworfen, und ein Zukauf wäre ohnehin kein Audit gewesen. Die
+Schuld hängt damit an der Prüfung des eigenen Codes → EIP-T-094, fällig
+vor Betriebsstufe `produktiv`. Er prüft, was Testvektoren prinzipiell nicht erreichen.
 
-Beides fällig vor Betriebsstufe `produktiv`, ebenso der externe Audit
-(EIP-T-094) — er prüft, was Testvektoren prinzipiell nicht erreichen.
+**Das ist eine schlechtere Lage als vorher, nicht dieselbe.** Solange die Bibliotheksfrage offen
+war, gab es einen Weg, der ohne Träger und ohne Geld gangbar aussah. Den gibt es nicht; er sah nur
+so aus. Wer das als Entlastung liest, hat den Paragraphen falsch gelesen.
 
 Zwei Befunde stehen hier über der Abweichung selbst. Dass dieser Paragraph bis zum 2026-08-01 ohne
 Vermerk dastand, während der Code seine Abweichung im eigenen Docstring benannte — und dass er
@@ -446,14 +454,22 @@ Maßstabs. Präregistrierung ist der einzige Schutz dagegen, der ohne Vertrauen 
 **Konkret verboten.** Nachträgliche Änderung des Nenners. Verlängerung einer laufenden Umfrage wegen des
 Zwischenstands. Nachträglich hinzugefügte Untergruppen-Auswertungen, die vorher nicht geplant waren.
 
-**Status.** `bindend`, und der zweite Satz ist technisch erzwungen: Es gibt keinen Weg, Frage oder
-Optionen einer laufenden Umfrage zu ändern. Der **erste** ist `offen` — von den fünf Größen, die
-vor dem Start feststehen müssen, kennt die App drei. Der **Nenner** steht seit dem 2026-08-02 fest
-und öffentlich (EIP-T-025, § 8). Laufzeit und Auswertungsplan
-existieren im Datenmodell nicht (V-006) →
-EIP-T-091, fällig vor Betriebsstufe `produktiv`. Ohne sie
-gibt es nichts, woran eine nachträgliche Änderung sich messen ließe — die Präregistrierung schützt
-dann eine Zusage, die nie gemacht wurde.
+**Status.** `bindend`, und beide Sätze sind technisch erzwungen. Alle fünf Größen stehen vor dem
+Start fest: Frage und Antwortoptionen sind einer laufenden Umfrage ohnehin nicht zu ändern, der
+**Nenner** steht seit dem 2026-08-02 fest und öffentlich (EIP-T-025, § 8), **Laufzeit** und
+**Auswertungsplan** seit dem 2026-08-03 (EIP-T-091, V-006 behoben). Die beiden letzten liegen im
+POLL_OPEN-Eintrag des Boards und damit unter der Merkle-Wurzel — wer sie nachträglich verschiebt,
+bricht die Kette. Die Laufzeit ist dabei nicht nur festgehalten, sondern wirksam: Nach ihrem Ende
+werden weder Berechtigungen noch Stimmen angenommen, und die Umfrage schließt von selbst. Eine
+Verlängerung gibt es nicht; eine **Verkürzung** durch vorzeitiges Schließen bleibt möglich, wird
+aber im Betriebslog vermerkt und ist am Board sichtbar.
+
+Was das **nicht** erzwingt: den Inhalt des Auswertungsplans. Ein Grundplan, der von vornherein
+nichts zusagt, wäre formal eingehalten und praktisch wertlos — dagegen hilft nur der Text selbst
+(`app/config.py`), und der ist damit ein bindender Satz wie die hier. Und wer den Betreiberzugang
+hat, kann eine Umfrage vorzeitig schließen, sobald ihm der Zwischenstand nicht gefällt; das ist
+keine Verlängerung, aber es ist eine Wahl über den Zeitpunkt. Sie fällt auf, sie ist nicht
+verhindert (§ 4, EIP-ADR-20260802-003).
 
 ### § 8 Zahlen-Ehrlichkeit
 
@@ -502,9 +518,11 @@ Version 24). Damit ist dieser Paragraph vollständig eingelöst.
 
 Nicht zu verwechseln mit der **Anonymitätsschwelle** (`min_anonymity_threshold` der Basisidee):
 Die schützt die Teilnehmenden statt die Öffentlichkeit, führt zu einem Warnlabel am Ergebnis statt
-zu seinem Wegfall. Sie ist eine Frage des Wahlgeheimnisses, nicht der Zahlen-Ehrlichkeit; ihr
-Umsetzungsstand wird in EIP-T-090 geführt und gehört
-nicht in diesen Paragraphen.
+zu seinem Wegfall. Sie ist eine Frage des Wahlgeheimnisses, nicht der Zahlen-Ehrlichkeit, und
+gehört deshalb nicht in diesen Paragraphen. Seit dem 2026-08-03 ist sie gebaut (EIP-T-090): Sie
+steht im `POLL_OPEN`-Eintrag des Boards, und unterhalb der Schwelle erscheint das Ergebnis **mit**
+Warnlabel — dass es erscheint, ist die Anforderung dieses Paragraphen und wird im Smoke-Test
+geprüft.
 
 ### § 9 Sprachregeln
 
@@ -865,10 +883,16 @@ abgeleitet, nicht eigenständig: Maßgeblich ist der Status beim jeweiligen Para
 Ereignis dasteht. Was die Zahl darunter zählt und was sie dabei nicht sieht, steht in § 4 b und
 nicht hier.
 
-**Stand 2026-08-02: 12 von 20 Paragraphen. Die Grenze aus § 4 b liegt bei 8 — sie ist überschritten,
-der Baustopp gilt.** Bis Version 25 stand hier 13; die Tabelle darunter führte durchgehend 12, und
-`scripts/check_kodex.py` zählt sie. Korrigiert mit Version 26 — die Zahl war zu hoch, nicht die
-Lage besser.
+**Stand 2026-08-03: 11 von 20 Paragraphen. Die Grenze aus § 4 b liegt bei 8 — sie ist weiterhin
+überschritten, der Baustopp gilt.** Bis Version 25 stand hier 13; die Tabelle darunter führte
+durchgehend 12, und `scripts/check_kodex.py` zählt sie. Korrigiert mit Version 26 — die Zahl war zu
+hoch, nicht die Lage besser.
+
+Version 34 nimmt § 7 heraus: Laufzeit und Auswertungsplan stehen seit dem 2026-08-03 vor dem Start
+fest und im Board (EIP-T-091, V-006 behoben). Das
+ist der zweite Abtrag seit Version 19 und der erste, bei dem ein Verstoß mitgeht statt nur ein
+Vermerk. Die Zahl sinkt trotzdem nur um eins, obwohl der Paragraph zwei Größen schuldig war — sie
+zählt Paragraphen, nicht Schulden, und das gilt auch in dieser Richtung.
 
 Version 28 trägt einen Vermerk ab, ohne dass die Zahl sinkt: Die Hinweispflicht am Ergebnis ist
 eingelöst (EIP-T-092), § 11 bleibt aber wegen eAT
@@ -929,11 +953,10 @@ ein Dokument schreibt.
 | 2 | Split-View: zwei parallel geführte Boards. Der Zeitanker steht seit 2026-08-01 (EIP-T-006) und schließt das rückwirkende Umschreiben; Equivocation deckt er prinzipiell nicht auf, dazu braucht es Gegenzeichner | EIP-T-036 | `produktiv` | 2026-07-26 |
 | 2 | Betreibergrenze: Wer beide Vorgänge entgegennimmt, sieht beide zu ihrer Zeit. Für die gespeicherten Daten ist die Trennung gebaut, für den laufenden Betrieb bleibt sie Disziplin — nicht durch Arbeit an dieser Instanz behebbar (EIP-ADR-20260802-003) | EIP-T-040 | `produktiv` | 2026-08-02 |
 | 2 | Netzwerkebene: anonymer Zustellkanal als Option. Entschieden und zur Hälfte gebaut (Verbindungstrennung, Kanalblindheit, EIP-T-034); der Kanal selbst ist eine Betriebsentscheidung und hängt an der Hosterfrage | EIP-T-082 | `produktiv` | 2026-08-01 |
-| 3 | Browser-Hälfte der Blindsignatur vollständig selbst geschrieben (`static/blind.js`: Kodierung, MGF1, Blendfaktor, Entblendung). Anders als serverseitig gibt es hier eine gepflegte Alternative, die Frage ist also entscheidbar. Verstoß V-005 | EIP-T-008 | `produktiv` | 2026-08-01 |
+| 3 | Browser-Hälfte der Blindsignatur vollständig selbst geschrieben (`static/blind.js`: Kodierung, MGF1, Blendfaktor, Entblendung). Die einzige gepflegte Alternative ist am 2026-08-03 geprüft und abgelehnt (EIP-T-008: nicht auditiert, sjcl-Abhängigkeit, § 20) — abtragbar nur noch durch Prüfung des eigenen Codes. Verstoß V-005 | EIP-T-094 | `produktiv` | 2026-08-01 |
 | 4 | Ballot Stuffing bleibt Disziplin **während der Laufzeit** (Schlüssel liegt allein bei uns; nach Schließung vernichtet, EIP-T-069) | EIP-T-040 | `produktiv` | 2026-07-26 |
 | 5 | Eigener Eingangskanal für Behördenanfragen — Bauform entschieden (Postfach ohne Domain), Einrichtung offen | EIP-T-073 | `produktiv` | 2026-07-31 |
 | 6 | DSGVO-Kollision entschieden und begründet | EIP-T-061 | `produktiv` | 2026-07-26 |
-| 7 | Von den sechs Größen, die vor dem Start feststehen müssen, kennt die App drei. Der Nenner steht seit dem 2026-08-02 (EIP-T-025, erledigt); Laufzeit und Auswertungsplan gibt es im Datenmodell nicht. Verstoß V-006 | EIP-T-091 | `produktiv` | 2026-08-01 |
 | 11 | eAT-Unterstützung, Barrierefreiheit | EIP-T-064 | `produktiv` | 2026-07-26 |
 | 12 | Übergabe der Fragehoheit an ein unabhängiges Gremium | EIP-T-022 | politische Relevanz, spät. `produktiv` | 2026-07-26 |
 | 12 | Zwischenregel bis zur Übergabe: die Enthaltungsoption ist seit dem 2026-08-01 erzwungen (EIP-T-085); neutrale Formulierung und Veröffentlichung abgelehnter Vorschläge bleiben Disziplin — das eine ist maschinell nicht prüfbar, das andere braucht einen Eingangsweg für Vorschläge | EIP-T-022 | erste Frage außerhalb einer Vorführung | 2026-08-01 |

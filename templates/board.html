@@ -9,6 +9,47 @@
   wie gestimmt hat. <a href="/poll/{{ poll.poll_id }}">Zurück zur Umfrage</a>
 </p>
 
+{# Praeregistrierung (EIP-T-091, KODEX § 7). Ganz oben und nicht beim Ergebnis:
+   Was vor dem Start zugesagt wurde, muss lesbar sein, *bevor* Zahlen da sind —
+   danach gelesen ist es nur noch die Beschreibung dessen, was ohnehin geschah.
+   Die Werte kommen aus dem POLL_OPEN-Eintrag des Boards, nicht aus den
+   Einstellungen dieser Instanz; wer sie nachrechnen will, findet sie im Export. #}
+<div class="card" style="margin-top:14px">
+  <div class="card-header">Vorab festgelegt — vor der ersten Stimme, unveränderlich</div>
+  <div class="card-body">
+    {% if laufzeit_ende %}
+      <p>
+        <strong>Laufzeit:</strong>
+        {{ laufzeit_start.strftime('%d.%m.%Y, %H:%M') }} bis
+        {{ laufzeit_ende.strftime('%d.%m.%Y, %H:%M') }} Uhr.
+        {% if not poll.closed %}
+          Die Umfrage schließt zu diesem Zeitpunkt von selbst — verlängert wird nicht.
+        {% endif %}
+      </p>
+    {% else %}
+      <p class="banner err">
+        Dieses Board nennt keine vorab festgelegte Laufzeit. Damit lässt sich nicht feststellen,
+        ob länger abgestimmt wurde als zugesagt — ein Befund, kein zulässiger Zustand
+        (<a href="/kodex">§ 7</a>).
+      </p>
+    {% endif %}
+    {% if auswertungsplan %}
+      <p style="margin-top:10px"><strong>Auswertungsplan:</strong></p>
+      <p class="muted">{{ auswertungsplan }}</p>
+    {% else %}
+      <p class="banner err">
+        Dieses Board nennt keinen vorab festgelegten Auswertungsplan (<a href="/kodex">§ 7</a>).
+      </p>
+    {% endif %}
+    <div class="faint small" style="margin-top:10px">
+      Beides steht im Eröffnungseintrag des Boards und damit unter der Merkle-Wurzel des ersten
+      Bündels: Wer es nachträglich ändert, bricht die Kette und wird oben als Bruch angezeigt.
+      Ohne diese Festlegung gäbe es nichts, woran sich eine nachträgliche Änderung messen ließe —
+      die Umfrage schützte dann eine Zusage, die nie gemacht wurde.
+    </div>
+  </div>
+</div>
+
 {% if status.ok and status.signatures_ok and accounting.ok %}
   <div class="banner ok">
     Alle Prüfungen bestanden.
@@ -208,6 +249,17 @@
       Nenner wäre genau der Methodentrick, gegen den dieses Verfahren antritt.
     </small>
   </div>
+  {# Anonymitaetsschwelle (EIP-T-090, Basisidee §3.1). Vor den Balken aus
+     demselben Grund wie der Nenner: Was man nach dem Ergebnis liest, liest man
+     nicht. Das Label sagt, dass die *Anonymitaetsmenge* klein ist - ueber die
+     Aussagekraft steht der Satz darueber. Und es haelt nichts zurueck: Das
+     Ergebnis folgt unveraendert, alles andere waere ein Verstoss gegen §8. #}
+  {% if anonymitaetshinweis %}
+    <div class="banner warn" style="margin-bottom:12px">
+      Kleine Anonymitätsmenge
+      <small>{{ anonymitaetshinweis }}</small>
+    </div>
+  {% endif %}
   <div class="rows">
     {% for option, count in result.items() %}
       {% set share = (100 * count / voters) if voters else 0 %}

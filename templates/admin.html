@@ -39,6 +39,29 @@
           <a href="/kodex">§ 12</a> verboten und werden abgewiesen.
         </div>
       </div>
+      {# Praeregistrierung nach KODEX § 7 (EIP-T-091). Die Felder stehen hier und
+         nicht in einem spaeteren Bearbeiten-Dialog, weil es den nicht geben darf:
+         Nach dem Anlegen sind beide Angaben im Board und nicht mehr aenderbar. #}
+      <div class="field">
+        <label for="laufzeit-ende">Ende der Laufzeit</label>
+        <input type="datetime-local" id="laufzeit-ende">
+        <div class="faint" style="margin-top:6px">
+          Leer lassen übernimmt die Vorgabe dieser Instanz ({{ laufzeit_tage }} Tage).
+          <strong>Danach ist das Ende nicht mehr zu verschieben</strong> — die Umfrage schließt zu
+          diesem Zeitpunkt von selbst, und eine Verlängerung wegen des Zwischenstands verbietet
+          <a href="/kodex">§ 7</a>.
+        </div>
+      </div>
+      <div class="field">
+        <label for="auswertungsplan-zusatz">Auswertungsplan — Zusatz für diese Umfrage (optional)</label>
+        <textarea id="auswertungsplan-zusatz" rows="3" placeholder="Was zusätzlich zum Grundplan für genau diese Frage gilt."></textarea>
+        <div class="faint" style="margin-top:6px">
+          Der Grundplan gilt immer und ist nicht je Umfrage wählbar — aus demselben Grund wie der
+          Nenner. Der Zusatz darf ergänzen, nichts davon zurücknehmen, und ist nachträglich nicht
+          erweiterbar:
+        </div>
+        <div class="muted small" style="margin-top:6px">{{ auswertungsplan }}</div>
+      </div>
       <button id="create-button">Anlegen</button>
       <span class="faint" style="margin-left:10px">Eine Frage, feste Optionen, kein Freitext (§8).</span>
     </div>

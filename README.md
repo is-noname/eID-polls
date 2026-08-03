@@ -118,7 +118,10 @@ dafür (PyPI-Suche **2026-08-01** unter `blind-rsa-signatures`, `blind_signature
 PSS-Verifikation (`cryptography`) und seit EIP-T-093 die rohe RSA-Privatoperation (OpenSSL über
 `rsa_raw.py`); selbst geschrieben sind EMSA-PSS-ENCODE, MGF1 und die Blinding-Arithmetik — im
 Browser. Im serverseitigen Stimmweg läuft damit kein eigener Krypto-Code mehr; die Härtung ist
-gemessen, siehe `DOKU.md` § 5. Im Browser prüft seit EIP-T-080
+gemessen, siehe `DOKU.md` § 5. Für den Browser gäbe es `@cloudflare/blindrsa-ts` — geprüft und am
+**2026-08-03 abgelehnt** (nicht auditiert, abgekündigte sjcl-Abhängigkeit, Buildschritt gegen § 20;
+Begründung in `DOKU.md` § 5). Die Browser-Krypto bleibt damit handgeschrieben, und das ist keine
+Übergangslösung mehr, sondern der Stand. Im Browser prüft seit EIP-T-080
 **WebCrypto** die entblindete Signatur (RFC 9474 §4.4 Schritt 5) — bewusst nicht die eigene
 PSS-Implementierung, sonst bestätigte handgeschriebener Code handgeschriebenen Code.
 

@@ -22,6 +22,7 @@ import os
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -35,7 +36,7 @@ import rsa_raw
 import stand as stand_modul
 from anker import standard_zeugen
 from auth import AuthError, Authenticator, CodeAuthenticator
-from config import Settings
+from config import Settings, anonymitaetshinweis
 import debug
 from debug import kategorie_fuer_pfad, log, log_berechtigung, log_board, log_fuer
 from poll_service import PollService, Rejected
@@ -127,6 +128,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async def _batch_deckel() -> None:
         while True:
             await asyncio.sleep(60)
+            # Erst schliessen, dann veroeffentlichen: close_poll leert den
+            # Puffer ohnehin, und eine Umfrage, deren Laufzeit vorbei ist, soll
+            # nicht noch einen Batch als offene erzeugen (EIP-T-091).
+            try:
+                d.service.schliesse_abgelaufene()
+            except Exception as exc:
+                log.exception("poll", exc)
             d.service.publiziere_faellige()
             # Derselbe Takt fuer den Ablauf des Wiederhol-Puffers (EIP-T-070):
             # eine Lebensdauer, die nur beim naechsten Zugriff geprueft wird,
@@ -177,6 +185,9 @@ def create_app(
             anker_frist_s=int(effective.anker_frist_h * 3600),
             anker_upgrade_s=int(effective.anker_upgrade_h * 3600),
             anker_toleranz_s=int(effective.anker_toleranz_min * 60),
+            anonymitaetsschwelle=effective.anonymitaetsschwelle,
+            laufzeit_tage=effective.laufzeit_tage,
+            auswertungsplan=effective.auswertungsplan,
         ),
         authenticator=authenticator if authenticator is not None else CodeAuthenticator(),
         settings=effective,
@@ -467,6 +478,23 @@ async def board_page(request: Request, poll_id: str) -> HTMLResponse:
         accounting=accounting,
         result=result,
         result_error=result_error,
+        # Aus dem Board gelesen, nicht aus den Einstellungen (EIP-T-090): Die
+        # Schwelle gilt fuer *diese* Umfrage und steht in ihrem
+        # POLL_OPEN-Eintrag. Ein Wert aus der laufenden Konfiguration waere
+        # nachtraeglich zu drehen, bis das Label ausbleibt.
+        anonymitaetsschwelle=bericht.anonymitaetsschwelle,
+        anonymitaetshinweis=(
+            anonymitaetshinweis(accounting.n_votes, bericht.anonymitaetsschwelle)
+            if bericht.anonymitaetswarnung
+            else None
+        ),
+        # Aus demselben Grund aus dem Board und nicht aus den Einstellungen
+        # (EIP-T-091): Was die Seite als zugesagte Laufzeit und zugesagten Plan
+        # zeigt, muss das sein, was im POLL_OPEN-Eintrag steht - sonst zeigt sie
+        # die gerade geltende Absicht und nennt sie Praeregistrierung.
+        laufzeit_start=bericht.laufzeit_start,
+        laufzeit_ende=bericht.laufzeit_ende,
+        auswertungsplan=bericht.auswertungsplan,
         public_key=service.poll_pubkey_pem(poll_id),
         beleg_public_key=service.beleg_public_key_pem,
         batch_k=service.batch_k,
@@ -647,7 +675,17 @@ async def transparenz_page(request: Request) -> HTMLResponse:
 
 @router.get("/admin", response_class=HTMLResponse)
 async def admin_page(request: Request) -> HTMLResponse:
-    return page(request, "admin.html", polls=deps(request).service.polls())
+    d = deps(request)
+    return page(
+        request,
+        "admin.html",
+        polls=d.service.polls(),
+        # Die Vorgaben der Praeregistrierung gehoeren an das Formular, an dem sie
+        # verbindlich werden (EIP-T-091): Wer anlegt, soll den Grundplan gelesen
+        # haben, den er damit unterschreibt.
+        laufzeit_tage=d.settings.laufzeit_tage,
+        auswertungsplan=d.settings.auswertungsplan,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -877,6 +915,28 @@ async def api_status(request: Request, poll_id: str) -> JSONResponse:
             "nenner_bezeichnung": settings.nenner_bezeichnung,
             "nenner_quelle": settings.nenner_quelle,
             "zugang": settings.zugang_hinweis,
+            # Wie Nenner und Zugangshinweis: Das Warnlabel darf beim
+            # Weitertragen nicht abfallen (EIP-T-090). Der Wert kommt aus dem
+            # POLL_OPEN-Eintrag dieser Umfrage, nicht aus den Einstellungen.
+            "min_anonymity_threshold": bericht.anonymitaetsschwelle,
+            "anonymitaetswarnung": bericht.anonymitaetswarnung,
+            "anonymitaetshinweis": (
+                anonymitaetshinweis(accounting.n_votes, bericht.anonymitaetsschwelle)
+                if bericht.anonymitaetswarnung
+                else None
+            ),
+            # Die Praeregistrierung geht mit dem Ergebnis mit (EIP-T-091,
+            # KODEX §7), aus dem Grund, der schon fuer Nenner und Warnlabel
+            # gilt: Wer die Zahl von hier holt, soll die Zusage danebenhaben -
+            # sonst faellt genau der Massstab weg, an dem eine nachtraegliche
+            # Aenderung erkennbar waere.
+            "laufzeit_start": (
+                bericht.laufzeit_start.isoformat() if bericht.laufzeit_start else None
+            ),
+            "laufzeit_ende": (
+                bericht.laufzeit_ende.isoformat() if bericht.laufzeit_ende else None
+            ),
+            "auswertungsplan": bericht.auswertungsplan,
             "result": result,
             "result_error": result_error,
         }
@@ -910,8 +970,24 @@ async def api_admin_login(request: Request, payload: dict) -> JSONResponse:
 async def api_admin_create(request: Request, payload: dict) -> JSONResponse:
     require_admin(request)
     options = [str(o) for o in payload.get("options", [])]
+    # Laufzeit-Ende als ISO-8601 aus dem Formular (EIP-T-091). Unlesbar heisst
+    # abweisen und nicht "dann eben die Vorgabe": Wer ein Ende angibt, hat eines
+    # gemeint, und still ein anderes zu praeregistrieren waere die Sorte
+    # Abweichung, gegen die dieser ganze Eintrag steht.
+    ende_roh = str(payload.get("laufzeit_ende", "")).strip()
+    try:
+        ende = datetime.fromisoformat(ende_roh) if ende_roh else None
+    except ValueError as exc:
+        raise Rejected(
+            f"Das Ende der Laufzeit ist kein lesbarer Zeitpunkt: '{ende_roh}'. "
+            "Erwartet wird ISO 8601, etwa 2026-08-17T18:00."
+        ) from exc
     poll = deps(request).service.create_poll(
-        str(payload.get("poll_id", "")), str(payload.get("question", "")), options
+        str(payload.get("poll_id", "")),
+        str(payload.get("question", "")),
+        options,
+        laufzeit_ende=ende,
+        auswertungsplan_zusatz=str(payload.get("auswertungsplan_zusatz", "")),
     )
     return JSONResponse({"ok": True, "poll_id": poll.poll_id})
 

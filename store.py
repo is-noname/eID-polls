@@ -399,7 +399,10 @@ class Store(SqliteStore):
 
         1. Ketten-Format vor EIP-ADR-20260728-001 (board.idx).
         2. Boards ohne Token-Schluessel im POLL_OPEN-Eintrag (vor EIP-T-069).
-        3. Kombinierte Datenbank vor Baustein G (eligibility-Tabelle in
+        3. Boards, deren POLL_OPEN keine Anonymitaetsschwelle nennt
+           (vor EIP-T-090).
+        4. Boards, deren POLL_OPEN keine Laufzeit nennt (vor EIP-T-091).
+        5. Kombinierte Datenbank vor Baustein G (eligibility-Tabelle in
            derselben Datei wie das Board): Die Trennung der Speicher laesst
            sich nicht dadurch herstellen, dass die alte Datei einfach zur
            Board-Datei erklaert wird - der Eligibility-Bestand laege dann
@@ -429,6 +432,37 @@ class Store(SqliteStore):
                     "Boards nennen keinen Schluessel und waeren nach dem Start nicht mehr "
                     "pruefbar. Sie enthaelt nur Vorfuehrdaten und wird verworfen: Datei "
                     "loeschen oder EIDPOLL_DB auf einen neuen Pfad setzen, dann neu starten."
+                )
+            ohne_schwelle = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM board "
+                "WHERE payload LIKE '%\"POLL_OPEN\"%' "
+                "AND payload NOT LIKE '%\"min_anonymity_threshold\"%'"
+            ).fetchone()
+            if ohne_schwelle and int(ohne_schwelle["n"]):
+                raise RuntimeError(
+                    f"Die Datenbank {self.path} stammt aus der Zeit vor EIP-T-090 (die "
+                    "Anonymitaetsschwelle stand noch nicht in der Poll-Definition). Ihre "
+                    "Boards sagen nicht, ab wann das Warnlabel am Ergebnis faellig ist, und "
+                    "ein nachtraeglich gesetzter Wert waere genau die Schwelle, die der "
+                    "Eintrag verhindern soll. Sie enthaelt nur Vorfuehrdaten und wird "
+                    "verworfen: Datei loeschen oder EIDPOLL_DB auf einen neuen Pfad setzen, "
+                    "dann neu starten."
+                )
+            ohne_laufzeit = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM board "
+                "WHERE payload LIKE '%\"POLL_OPEN\"%' "
+                "AND payload NOT LIKE '%\"laufzeit_ende\"%'"
+            ).fetchone()
+            if ohne_laufzeit and int(ohne_laufzeit["n"]):
+                raise RuntimeError(
+                    f"Die Datenbank {self.path} stammt aus der Zeit vor EIP-T-091 (Laufzeit "
+                    "und Auswertungsplan standen noch nicht in der Poll-Definition). Ihre "
+                    "Boards nennen kein Ende und keinen Plan - eine nachtraeglich "
+                    "eingetragene Laufzeit waere genau die Verlaengerung, die KODEX § 7 "
+                    "verbietet, und niemand koennte sie noch von einer Zusage "
+                    "unterscheiden. Sie enthaelt nur Vorfuehrdaten und wird verworfen: "
+                    "Datei loeschen oder EIDPOLL_DB auf einen neuen Pfad setzen, dann neu "
+                    "starten."
                 )
         if self._hat_tabelle("eligibility"):
             raise RuntimeError(

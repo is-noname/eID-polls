@@ -23,6 +23,11 @@ if (create) {
         poll_id: document.getElementById("poll-id").value,
         question: document.getElementById("question").value,
         options,
+        // Praeregistrierung nach KODEX § 7 (EIP-T-091). Der Wert eines
+        // datetime-local-Feldes ist bereits ISO 8601 ohne Zone; leer heisst
+        // "Vorgabe der Instanz" und wird serverseitig aufgeloest, nicht hier.
+        laufzeit_ende: document.getElementById("laufzeit-ende").value,
+        auswertungsplan_zusatz: document.getElementById("auswertungsplan-zusatz").value,
       });
       location.reload();
     } catch (err) { toast(err.message, "err"); }

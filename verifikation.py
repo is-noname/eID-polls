@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Iterable, Sequence
 
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -73,7 +74,10 @@ __all__ = [
     "canonical",
     "pruefe",
     "pruefe_weiter",
+    "laufzeit_aus_board",
+    "plan_aus_board",
     "schluessel_aus_board",
+    "schwelle_aus_board",
     "verify_batches",
 ]
 
@@ -113,6 +117,47 @@ def verify_batches(batches: Sequence[Batch]) -> tuple[bool, int | None]:
     return True, None
 
 
+def _poll_open(batches: Sequence[Batch]) -> list[PollOpen]:
+    """Alle POLL_OPEN-Eintraege des Boards, ueber alle Batches hinweg."""
+    return [
+        eintrag
+        for batch in batches
+        for entry in batch.entries
+        if isinstance(eintrag := parse(entry), PollOpen)
+    ]
+
+
+def schwelle_aus_board(batches: Sequence[Batch]) -> int | None:
+    """Anonymitaetsschwelle der Umfrage aus ihrem POLL_OPEN-Eintrag (EIP-T-090).
+
+    ``None`` heisst: keine oder keine eindeutige Eroeffnung im Board. Dann sagt
+    dieses Board nichts darueber, ab wann die Anonymitaetsmenge klein ist - und
+    ein hier eingesetzter Vorgabewert waere eine Behauptung ueber ein Board, das
+    ihn nicht traegt. Warum die Schwelle dort und nicht in der Datenbank steht:
+    ``board_eintrag.poll_open``.
+    """
+    offen = _poll_open(batches)
+    return offen[0].min_anonymity_threshold if len(offen) == 1 else None
+
+
+def laufzeit_aus_board(batches: Sequence[Batch]) -> tuple[datetime, datetime] | None:
+    """Praeregistrierte Laufzeit (Start, Ende) aus dem POLL_OPEN-Eintrag (EIP-T-091).
+
+    ``None`` heisst wie bei der Schwelle: keine oder keine eindeutige
+    Eroeffnung. Ein hier ersatzweise gesetztes Ende waere eine Zusage, die
+    dieses Board nicht traegt - und gegen die sich eine Verlaengerung dann auch
+    nicht mehr messen liesse (KODEX § 7).
+    """
+    offen = _poll_open(batches)
+    return (offen[0].laufzeit_start, offen[0].laufzeit_ende) if len(offen) == 1 else None
+
+
+def plan_aus_board(batches: Sequence[Batch]) -> str | None:
+    """Praeregistrierter Auswertungsplan aus dem POLL_OPEN-Eintrag (EIP-T-091)."""
+    offen = _poll_open(batches)
+    return offen[0].auswertungsplan if len(offen) == 1 else None
+
+
 def schluessel_aus_board(
     batches: Sequence[Batch],
 ) -> tuple[rsa.RSAPublicKey | None, str | None, str | None]:
@@ -127,12 +172,7 @@ def schluessel_aus_board(
     ein POLL_OPEN muss es geben - zwei hiessen zwei Schluessel fuer dieselbe
     Umfrage, und welcher gilt, waere Auslegung.
     """
-    offen = [
-        eintrag
-        for batch in batches
-        for entry in batch.entries
-        if isinstance(eintrag := parse(entry), PollOpen)
-    ]
+    offen = _poll_open(batches)
     if not offen:
         return None, None, "Kein POLL_OPEN-Eintrag im Board - kein Token-Schluessel (EIP-T-069)"
     if len(offen) > 1:
@@ -215,6 +255,17 @@ class Pruefbericht:
     Board fehlt, doppelt ist, nicht lesbar ist oder einem unabhaengig
     mitgegebenen Schluessel widerspricht (EIP-T-069). Ohne pruefbaren Schluessel
     ist keine Signatur pruefbar, also ist auch kein Ergebnis belastbar.
+
+    ``anonymitaetsschwelle`` ist die Schwelle aus dem POLL_OPEN-Eintrag
+    (EIP-T-090). Sie sperrt nichts: Unterschreitet ``accounting.n_votes`` sie,
+    meldet ``anonymitaetswarnung`` das, und das Ergebnis wird trotzdem
+    ausgegeben - Zurueckhalten waere ein Verstoss gegen KODEX §8.
+
+    ``laufzeit_start``/``laufzeit_ende`` und ``auswertungsplan`` kommen aus
+    demselben Eintrag (EIP-T-091, KODEX § 7). Sie sind das, woran sich eine
+    nachtraegliche Aenderung messen laesst: Wer das Board hat, sieht die zugesagte
+    Laufzeit und den zugesagten Plan - und kann beides gegen das halten, was
+    tatsaechlich passiert ist.
     """
 
     batches: tuple[Batch, ...]
@@ -227,6 +278,22 @@ class Pruefbericht:
     schluessel_pem: str | None = None
     schluessel_fehler: str | None = None
     stimmen_je_batch: tuple[int, ...] = ()
+    anonymitaetsschwelle: int | None = None
+    laufzeit_start: datetime | None = None
+    laufzeit_ende: datetime | None = None
+    auswertungsplan: str | None = None
+
+    @property
+    def anonymitaetswarnung(self) -> bool:
+        """Teilnehmerzahl unter der Schwelle aus dem Board (EIP-T-090).
+
+        Kein Vorgabewert, wenn das Board keine Schwelle nennt: Ohne Angabe im
+        POLL_OPEN-Eintrag ist nicht entschieden, ab wann gewarnt wird, und eine
+        Warnung nach eigenem Massstab waere eine Aussage ueber ein fremdes
+        Board.
+        """
+        schwelle = self.anonymitaetsschwelle
+        return schwelle is not None and self.accounting.n_votes < schwelle
 
     @property
     def entries(self) -> tuple[BoardEntry, ...]:
@@ -418,6 +485,16 @@ def _pruefe(
         schluessel_pem=schluessel_pem,
         schluessel_fehler=schluessel_fehler,
         stimmen_je_batch=tuple(stimmen_je_batch),
+        # Wie der Schluessel bei jedem Durchlauf neu aus dem Board gelesen, auch
+        # beim Fortschreiben: Eine Schwelle, die sich unterwegs aendert, darf
+        # nicht deshalb unbemerkt bleiben, weil der erste Durchlauf sie kannte.
+        anonymitaetsschwelle=schwelle_aus_board(batches),
+        # Aus demselben Grund bei jedem Durchlauf neu gelesen (EIP-T-091): Ein
+        # verschobenes Ende darf nicht deshalb unbemerkt bleiben, weil der
+        # erste Durchlauf das urspruengliche kannte.
+        laufzeit_start=(laufzeit[0] if (laufzeit := laufzeit_aus_board(batches)) else None),
+        laufzeit_ende=(laufzeit[1] if laufzeit else None),
+        auswertungsplan=plan_aus_board(batches),
     )
 
 
@@ -473,6 +550,40 @@ def _report_lines(export: dict[str, Any], bericht: Pruefbericht, key_source: str
         + ("" if acc.ok else f"  -> UEBERSCHUSS +{acc.surplus}"),
         "Stimmen je Batch: "
         + (f"kleinste Menge {min(mengen)}, groesste {max(mengen)}" if mengen else "keine"),
+        # Aus dem POLL_OPEN-Eintrag, nicht aus einer Voreinstellung dieses
+        # Werkzeugs (EIP-T-090): Wer die Datei prueft, soll die Schwelle sehen,
+        # die diese Umfrage sich gegeben hat - und nachrechnen koennen, ob das
+        # Warnlabel auf der Seite zu Recht steht oder fehlt.
+        "Anonymitaetsschwelle: "
+        + (
+            "keine im Board genannt"
+            if bericht.anonymitaetsschwelle is None
+            else f"{bericht.anonymitaetsschwelle} Stimmen"
+            + (
+                "  -> UNTERSCHRITTEN, Ergebnis gehoert mit Warnlabel veroeffentlicht"
+                if bericht.anonymitaetswarnung
+                else ""
+            )
+        ),
+        # Die beiden praeregistrierten Groessen aus KODEX § 7 (EIP-T-091). Wer
+        # die Datei prueft, soll die Zusage sehen und nicht nur das Ergebnis:
+        # Ein Ende, das nach dem letzten Batch liegt, oder ein Plan, der etwas
+        # anderes verspricht als die Zahlen darueber, ist von hier aus
+        # feststellbar - und sonst nirgends.
+        "Praeregistrierte Laufzeit: "
+        + (
+            "keine im Board genannt"
+            if bericht.laufzeit_ende is None
+            else f"{bericht.laufzeit_start:%Y-%m-%d %H:%M} bis "
+            f"{bericht.laufzeit_ende:%Y-%m-%d %H:%M}"
+        ),
+        "",
+        "Praeregistrierter Auswertungsplan:",
+        (
+            "  keiner im Board genannt"
+            if bericht.auswertungsplan is None
+            else "\n".join(f"  {z}" for z in bericht.auswertungsplan.split(" — "))
+        ),
         "",
     ]
     if bericht.schluessel_fehler is not None:

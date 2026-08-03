@@ -54,6 +54,7 @@ import hashlib
 import json
 import secrets
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, ClassVar, Iterable, Sequence
 
 GENESIS = "0" * 64
@@ -146,7 +147,14 @@ class BoardEntry:
 
 
 def poll_open(
-    poll_id: str, question: str, options: Sequence[str], pubkey_pem: str
+    poll_id: str,
+    question: str,
+    options: Sequence[str],
+    pubkey_pem: str,
+    min_anonymity_threshold: int,
+    laufzeit_start: str,
+    laufzeit_ende: str,
+    auswertungsplan: str,
 ) -> dict[str, Any]:
     """Eroeffnung fuers Board - mit dem oeffentlichen Token-Schluessel dieser Umfrage.
 
@@ -158,6 +166,28 @@ def poll_open(
     Schliessen ueberleben, sonst ist die Auszaehlung danach nicht mehr
     nachpruefbar. Weil POLL_OPEN sofort veroeffentlicht wird, steht die
     Festlegung vor der ersten Teilnahme.
+
+    ``min_anonymity_threshold`` steht aus demselben Grund hier (EIP-T-090,
+    Basisidee §3.1): Eine Schwelle, die erst beim Auszaehlen gewaehlt wird, ist
+    keine - sie waere nachtraeglich so zu setzen, dass das Warnlabel gerade
+    ausbleibt. Im POLL_OPEN-Eintrag liegt sie unter der Merkle-Root und steht
+    damit vor der ersten Stimme fest, nachrechenbar aus dem Export.
+
+    ``laufzeit_start``/``laufzeit_ende`` und ``auswertungsplan`` sind die
+    letzten beiden der fuenf Groessen aus KODEX § 7, die vor dem Start
+    feststehen muessen (EIP-T-091, Verstoss V-006). Sie stehen hier aus einem
+    Grund, der ueber "auch praktisch" hinausgeht: § 7 verbietet die
+    "Verlaengerung einer laufenden Umfrage wegen des Zwischenstands" und
+    "nachtraeglich hinzugefuegte Untergruppen-Auswertungen". Beides ist nur
+    feststellbar, wenn die urspruengliche Zusage irgendwo liegt, wo sie nicht
+    mehr zu bewegen ist. In einer Datenbankspalte waere sie es nicht - dort
+    liesse sich ein Ende lautlos verschieben und ein Plan nachtraeglich
+    erweitern, und der Verstoss haette keine Spur. Unter der Merkle-Root und in
+    der Batch-Kette hat er eine: Wer sie aendert, bricht die Kette.
+
+    Beide Zeitpunkte sind ISO 8601 mit Sekunden. Die Zeitzone bleibt die des
+    Betreibersystems - eine Genauigkeit, die dieses Verfahren nicht herstellen
+    kann, sollte es auch nicht behaupten.
     """
     return {
         "type": POLL_OPEN,
@@ -165,6 +195,10 @@ def poll_open(
         "question": question,
         "options": [str(o) for o in options],
         "pubkey": pubkey_pem,
+        "min_anonymity_threshold": int(min_anonymity_threshold),
+        "laufzeit_start": str(laufzeit_start),
+        "laufzeit_ende": str(laufzeit_ende),
+        "auswertungsplan": str(auswertungsplan),
     }
 
 
@@ -205,6 +239,10 @@ class PollOpen:
     question: str
     options: tuple[str, ...]
     pubkey: str
+    min_anonymity_threshold: int
+    laufzeit_start: datetime
+    laufzeit_ende: datetime
+    auswertungsplan: str
 
 
 @dataclass(frozen=True)
@@ -289,11 +327,55 @@ def parse(entry: BoardEntry) -> Eintrag:
         pubkey = data.get("pubkey")
         if not isinstance(pubkey, str) or "PUBLIC KEY" not in pubkey:
             return Unlesbar(leaf, "Feld 'pubkey' fehlt oder ist kein PEM (EIP-T-069)")
-        return PollOpen(leaf, poll, question, tuple(options), pubkey)
+        # Pflichtangabe wie 'pubkey': Fehlt sie, ist unbekannt, ab wann das
+        # Warnlabel faellig waere - und ein stillschweigender Vorgabewert waere
+        # genau die nachtraeglich gesetzte Schwelle, die der Eintrag verhindern
+        # soll (EIP-T-090).
+        schwelle = data.get("min_anonymity_threshold")
+        if not isinstance(schwelle, int) or isinstance(schwelle, bool) or schwelle < 0:
+            return Unlesbar(
+                leaf,
+                "Feld 'min_anonymity_threshold' fehlt oder ist keine nicht-negative "
+                "Ganzzahl (EIP-T-090)",
+            )
+        # Laufzeit und Auswertungsplan sind Pflichtangaben wie die Schwelle
+        # (EIP-T-091, KODEX § 7). Ein fehlendes Feld hier als "unbegrenzt" oder
+        # "kein Plan" zu lesen, waere genau die Zusage, die nie gemacht wurde -
+        # und gegen die sich dann auch kein Verstoss messen liesse.
+        start = _zeitpunkt(data.get("laufzeit_start"))
+        ende = _zeitpunkt(data.get("laufzeit_ende"))
+        if start is None or ende is None:
+            return Unlesbar(
+                leaf,
+                "Feld 'laufzeit_start'/'laufzeit_ende' fehlt oder ist kein ISO-8601-"
+                "Zeitpunkt (EIP-T-091)",
+            )
+        if ende <= start:
+            return Unlesbar(
+                leaf, "Laufzeit endet nicht nach ihrem Beginn (EIP-T-091)"
+            )
+        plan = data.get("auswertungsplan")
+        if not isinstance(plan, str) or not plan.strip():
+            return Unlesbar(
+                leaf, "Feld 'auswertungsplan' fehlt oder ist leer (EIP-T-091)"
+            )
+        return PollOpen(
+            leaf, poll, question, tuple(options), pubkey, schwelle, start, ende, plan
+        )
     if kind == POLL_CLOSED:
         return PollClosed(leaf, poll)
 
     return Unlesbar(leaf, f"unbekannter Eintragstyp {kind!r}")
+
+
+def _zeitpunkt(wert: Any) -> datetime | None:
+    """Ein ISO-8601-Zeitpunkt aus dem Payload, sonst ``None`` (EIP-T-091)."""
+    if not isinstance(wert, str):
+        return None
+    try:
+        return datetime.fromisoformat(wert)
+    except ValueError:
+        return None
 
 
 def _ist_hex(s: str) -> bool:

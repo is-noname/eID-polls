@@ -56,6 +56,7 @@ from verifikation import (
     Batch,
     ChainStatus,
     Pruefbericht,
+    laufzeit_aus_board,
     pruefe,
     pruefe_weiter,
     schluessel_aus_board,
@@ -176,6 +177,9 @@ class PollService:
         anker_frist_s: int = 3600,
         anker_upgrade_s: int = 24 * 3600,
         anker_toleranz_s: int = 900,
+        anonymitaetsschwelle: int = 100,
+        laufzeit_tage: float = 14.0,
+        auswertungsplan: str = "",
     ) -> None:
         """``batch_k`` und ``batch_deckel_s`` sind die Parameter aus ADR E3:
         Mindest-Anonymitaetsmenge je Batch und Zeitdeckel, beide nach aussen zu
@@ -192,12 +196,27 @@ class PollService:
         ``zeugen`` sind die externen Zeitzeugen aus EIP-ADR-20260801-002; eine
         leere Folge schaltet die Verankerung ab. Injiziert statt hier
         zusammengebaut, damit ein Test sie ohne Netz durchspielen kann - das
-        Muster aus EIP-T-048."""
+        Muster aus EIP-T-048.
+
+        ``anonymitaetsschwelle`` ist der Vorgabewert fuer neue Umfragen
+        (EIP-T-090). Verbindlich wird der Wert, den ``create_poll`` in den
+        POLL_OPEN-Eintrag schreibt; danach aendert ihn kein Parameter mehr.
+        Nicht zu verwechseln mit ``batch_k``: k ist die Menge je Batch, dies
+        hier die Menge ueber die ganze Umfrage.
+
+        ``laufzeit_tage`` und ``auswertungsplan`` sind ebenso nur Vorgaben fuer
+        neue Umfragen (EIP-T-091, KODEX § 7). Verbindlich ist, was ``create_poll``
+        in den POLL_OPEN-Eintrag schreibt - danach ist die Laufzeit weder ueber
+        einen Parameter noch ueber die Datenbank zu verschieben, und der Plan
+        nicht mehr zu ergaenzen."""
         self.board_store = Store(db_path)
         self.berechtigung = BerechtigungsStore(berechtigungs_pfad(db_path))
         self.batch_k = max(1, int(batch_k))
         self.batch_deckel_s = max(60, int(batch_deckel_s))
         self.retry_cache_s = max(0, int(retry_cache_s))
+        self.anonymitaetsschwelle = max(0, int(anonymitaetsschwelle))
+        self.laufzeit_tage = max(0.0, float(laufzeit_tage))
+        self.auswertungsplan = auswertungsplan.strip()
         self.zeugen: dict[str, Zeitzeuge] = {z.name: z for z in (zeugen or ())}
         self.anker_max_versuche = max(1, int(anker_max_versuche))
         # Die drei Fristen der Ankeraufsicht (ADR E6.2-E6.4). Bewusst grosszuegig:
@@ -368,6 +387,25 @@ class PollService:
         _, pem, _ = schluessel_aus_board(self.board_store.veroeffentlichte_batches(poll_id))
         return pem or ""
 
+    def praeregistrierte_laufzeit(self, poll_id: str) -> tuple[datetime, datetime] | None:
+        """Zugesagte Laufzeit dieser Umfrage - aus dem Board (EIP-T-091, KODEX § 7).
+
+        Aus derselben Quelle und aus demselben Grund wie ``poll_pubkey``: In der
+        polls-Tabelle waere das Ende eine Spalte, die sich mit einem UPDATE
+        verschieben liesse, und die Verlaengerung wegen des Zwischenstands
+        haette keine Spur hinterlassen. Im Board liegt sie unter der
+        Merkle-Root.
+
+        ``None`` heisst, dass das Board keine eindeutige Eroeffnung traegt. Der
+        Fall ist ein Befund, kein Betriebszustand - check_consistency meldet
+        ihn; hier wird deshalb nichts ersatzweise angenommen.
+        """
+        return laufzeit_aus_board(self.board_store.veroeffentlichte_batches(poll_id))
+
+    def _laufzeit_abgelaufen(self, poll_id: str) -> bool:
+        laufzeit = self.praeregistrierte_laufzeit(poll_id)
+        return laufzeit is not None and datetime.now() > laufzeit[1]
+
     def poll_params(self, poll_id: str) -> tuple[int, int]:
         """(n, e) fuer das Blinding im Browser - die oeffentlichen Parameter
         genau dieser Umfrage."""
@@ -515,7 +553,26 @@ class PollService:
     def polls(self) -> list[PollRow]:
         return self.board_store.polls()
 
-    def create_poll(self, poll_id: str, question: str, options: list[str]) -> PollRow:
+    def create_poll(
+        self,
+        poll_id: str,
+        question: str,
+        options: list[str],
+        min_anonymity_threshold: int | None = None,
+        laufzeit_ende: datetime | None = None,
+        auswertungsplan_zusatz: str = "",
+    ) -> PollRow:
+        """``min_anonymity_threshold`` ueberschreibt den Vorgabewert der Instanz
+        fuer genau diese Umfrage (EIP-T-090). Er geht in den POLL_OPEN-Eintrag
+        und steht damit vor der ersten Stimme fest.
+
+        ``laufzeit_ende`` und ``auswertungsplan_zusatz`` sind die beiden
+        Groessen aus EIP-T-091. Beide muessen *hier* feststehen, nicht spaeter:
+        Nach dem POLL_OPEN-Eintrag gibt es keinen Weg mehr, die Laufzeit zu
+        verlaengern oder dem Plan eine Auswertung hinzuzufuegen. Ohne
+        ``laufzeit_ende`` gilt die Vorgabe der Instanz - eine unbegrenzte
+        Laufzeit ist keine zulaessige Wahl, weil eine Umfrage ohne Ende nie
+        gegen ihre Zusage verstossen kann und § 7 damit leerliefe."""
         poll_id = poll_id.strip()
         question = question.strip()
         options = [o.strip() for o in options if o.strip()]
@@ -538,6 +595,40 @@ class PollService:
             )
         if self.board_store.poll(poll_id) is not None:
             raise Rejected(f"Umfrage '{poll_id}' existiert bereits.")
+        schwelle = (
+            self.anonymitaetsschwelle
+            if min_anonymity_threshold is None
+            else int(min_anonymity_threshold)
+        )
+        if schwelle < 0:
+            raise Rejected("Anonymitaetsschwelle darf nicht negativ sein.")
+
+        start = datetime.now().replace(microsecond=0)
+        ende = (
+            start + timedelta(days=self.laufzeit_tage)
+            if laufzeit_ende is None
+            else laufzeit_ende.replace(microsecond=0)
+        )
+        if ende <= start:
+            raise Rejected(
+                "Das Ende der Laufzeit muss nach ihrem Beginn liegen. Eine Umfrage, die "
+                "bereits abgelaufen anfaengt, kann keine Zusage nach KODEX §7 tragen."
+            )
+        plan = self.auswertungsplan
+        zusatz = auswertungsplan_zusatz.strip()
+        if zusatz:
+            plan = f"{plan}\n\nZusätzlich für diese Umfrage: {zusatz}"
+        if not plan:
+            # Ein leerer Plan waere die Praeregistrierung ohne ihren Gegenstand:
+            # Die Umfrage sagt dann nicht, was sie auswerten wird, und jede
+            # spaetere Aufschluesselung waere von einer geplanten nicht mehr zu
+            # unterscheiden (KODEX §7, "nachtraeglich hinzugefuegte
+            # Untergruppen-Auswertungen").
+            raise Rejected(
+                "Es ist kein Auswertungsplan hinterlegt. KODEX §7 verlangt ihn vor dem "
+                "Start; ohne ihn gibt es nichts, woran eine nachtraegliche Auswertung sich "
+                "messen liesse."
+            )
 
         # Beide Schluessel vor der Umfrage: eine Umfrage, die es gibt, aber fuer
         # die noch keine Berechtigung ableitbar oder signierbar waere, gibt es
@@ -545,23 +636,56 @@ class PollService:
         self._erzeuge_poll_secret(poll_id)
         pubkey_pem = self._erzeuge_poll_key(poll_id)
         self.board_store.create_poll(
-            poll_id, question, options, datetime.now().isoformat(timespec="seconds")
+            poll_id, question, options, start.isoformat(timespec="seconds")
         )
         self.board_store.puffer_eintrag(
-            poll_id, board_eintrag.poll_open(poll_id, question, options, pubkey_pem)
+            poll_id,
+            board_eintrag.poll_open(
+                poll_id,
+                question,
+                options,
+                pubkey_pem,
+                schwelle,
+                start.isoformat(timespec="seconds"),
+                ende.isoformat(timespec="seconds"),
+                plan,
+            ),
         )
         # POLL_OPEN wird sofort veroeffentlicht: das Anlegen ist eine
         # Betreiberhandlung, ihr Zeitpunkt ist ohnehin oeffentlich (die Umfrage
         # erscheint auf der Startseite). Die Mindestmenge k schuetzt
         # Teilnahme-Eintraege, nicht Verwaltungsakte.
         self.beauftrage_anker(self.board_store.publiziere(poll_id))
-        log.info("poll", f"Umfrage '{poll_id}' angelegt.", options=options)
+        log.info(
+            "poll",
+            f"Umfrage '{poll_id}' angelegt.",
+            options=options,
+            anonymitaetsschwelle=schwelle,
+            laufzeit_ende=ende.isoformat(timespec="seconds"),
+        )
         return self.poll(poll_id)
 
     def close_poll(self, poll_id: str) -> None:
         poll = self.poll(poll_id)
         if poll.closed:
             raise Rejected("Umfrage ist bereits geschlossen.")
+        # Vorzeitiges Schliessen ist zulaessig - eine Verkuerzung ist keine
+        # Verlaengerung, und sie kann gute Gruende haben. Sie faellt aber einmal
+        # auf (EIP-T-091): Wer das Board liest, sieht den POLL_CLOSED-Eintrag
+        # vor dem zugesagten Ende, und der Betreiber sieht hier, dass es passiert
+        # ist. Als *dauerhafte* Inkonsistenz steht es bewusst nicht in
+        # check_consistency: ein Befund, der ab dann bei jedem Aufruf jeder
+        # vorzeitig geschlossenen Umfrage leuchtet, wird weggeklickt - und dann
+        # faellt der echte auch nicht mehr auf.
+        laufzeit = self.praeregistrierte_laufzeit(poll_id)
+        if laufzeit is not None and datetime.now() < laufzeit[1]:
+            log.info(
+                "poll",
+                f"Umfrage '{poll_id}' wird vor ihrem praeregistrierten Ende "
+                f"({laufzeit[1]:%Y-%m-%d %H:%M}) geschlossen - Verkuerzung, keine "
+                "Verlaengerung (KODEX §7).",
+                poll=poll_id,
+            )
         self.board_store.close_poll(poll_id)
         self.board_store.puffer_eintrag(poll_id, board_eintrag.poll_closed(poll_id))
         # Beim Schliessen wird der gesamte Puffer sofort veroeffentlicht
@@ -598,6 +722,34 @@ class PollService:
         # erst mit seiner Lebensdauer.
         self.berechtigung.verwirf_wiederhol_puffer(poll_id)
         log.info("poll", f"Umfrage '{poll_id}' geschlossen.")
+
+    def schliesse_abgelaufene(self) -> list[str]:
+        """Schliesst Umfragen, deren praeregistrierte Laufzeit vorbei ist (EIP-T-091).
+
+        Laeuft im Minutentakt aus derselben Hintergrundaufgabe wie der
+        Zeitdeckel (web.py). Dass die App selbst schliesst und nicht der
+        Betreiber, ist der Punkt: Ein Ende, das jemand von Hand herbeifuehren
+        muss, ist eines, das er beim Blick auf den Zwischenstand auch
+        aufschieben kann - und genau das verbietet KODEX § 7.
+
+        Vorzeitiges Schliessen von Hand bleibt moeglich (close_poll). Es ist
+        keine Verlaengerung, sondern eine Verkuerzung, und es faellt auf: Der
+        Abgleich in ``check_consistency`` meldet es, das Board zeigt den
+        POLL_CLOSED-Eintrag vor dem zugesagten Ende.
+        """
+        geschlossen: list[str] = []
+        for poll in self.board_store.polls():
+            if poll.closed or not self._laufzeit_abgelaufen(poll.poll_id):
+                continue
+            log.info(
+                "poll",
+                f"Laufzeit von '{poll.poll_id}' abgelaufen - Umfrage wird geschlossen "
+                "(EIP-T-091, KODEX §7).",
+                poll=poll.poll_id,
+            )
+            self.close_poll(poll.poll_id)
+            geschlossen.append(poll.poll_id)
+        return geschlossen
 
     # -- Batch-Veroeffentlichung (EIP-ADR-20260728-001, E3) -----------------
     @staticmethod
@@ -930,6 +1082,16 @@ class PollService:
                 "Diese Umfrage ist bereits geschlossen - es werden keine Stimm-Token mehr "
                 "ausgegeben. Das Ergebnis steht auf dem oeffentlichen Board."
             )
+        # Die praeregistrierte Laufzeit bindet auch dann, wenn das Schliessen
+        # noch aussteht (EIP-T-091): Der Minutentakt schliesst mit bis zu einer
+        # Minute Verzug, und in dieser Minute darf keine Berechtigung mehr
+        # entstehen. Sonst waere das Ende eine Absichtserklaerung mit Kulanz.
+        if self._laufzeit_abgelaufen(poll_id):
+            raise Rejected(
+                "Die Laufzeit dieser Umfrage ist abgelaufen - es werden keine Stimm-Token "
+                "mehr ausgegeben. Das Ende stand vor dem Start fest und steht im "
+                "Eroeffnungseintrag des Boards; verlaengert wird nicht."
+            )
 
         key = self.voter_key(pseudonym, poll_id)
         # Signiert wird mit dem Schluessel *dieser* Umfrage (EIP-T-069): Ein
@@ -1039,6 +1201,18 @@ class PollService:
             raise Rejected(
                 "Diese Umfrage ist geschlossen - es werden keine Stimmen mehr angenommen. Das "
                 "Ergebnis steht auf dem oeffentlichen Board."
+            )
+        # Wie in Phase A (EIP-T-091). Die Haerte hat einen Preis, der hier
+        # genannt gehoert: Wer sein Token kurz vor Schluss abgeholt und noch
+        # nicht abgestimmt hat, verliert seine Stimme. Das ist die Folge einer
+        # festen Laufzeit und keine Panne - die Alternative waere eine Nachfrist,
+        # und eine Nachfrist ist eine Verlaengerung, ueber deren Laenge jemand
+        # nach Sicht des Zwischenstands entscheiden koennte.
+        if self._laufzeit_abgelaufen(poll_id):
+            raise Rejected(
+                "Die Laufzeit dieser Umfrage ist abgelaufen - es werden keine Stimmen mehr "
+                "angenommen. Das Ende stand vor dem Start fest und steht im "
+                "Eroeffnungseintrag des Boards; eine Nachfrist gibt es nicht."
             )
         if not choices:
             raise Rejected("Keine Option gewaehlt.")
@@ -1357,13 +1531,40 @@ class PollService:
                 f"({anzahl} Eintraege) - Veroeffentlichung haengt"
             )
 
+        # Praeregistrierte Laufzeit gegen den tatsaechlichen Zustand
+        # (EIP-T-091, KODEX §7). Die drei Faelle sind verschieden schwer, aber
+        # alle drei sind Befunde: Ohne diese Zeilen waere die Zusage aus dem
+        # POLL_OPEN-Eintrag nur ein Text, den niemand gegen die Wirklichkeit
+        # haelt - und die Praeregistrierung schuetzte eine Zusage, deren Bruch
+        # keine Spur hinterlaesst.
+        jetzt = datetime.now()
+        geschlossen = self.poll(poll_id).closed
+        laufzeit = laufzeit_aus_board(bericht.batches)
+        if laufzeit is None:
+            findings.append(
+                "Das Board nennt keine eindeutige praeregistrierte Laufzeit - ohne sie ist "
+                "nicht feststellbar, ob diese Umfrage laenger laeuft als zugesagt (KODEX §7)"
+            )
+        else:
+            start, ende = laufzeit
+            if not geschlossen and jetzt > ende:
+                findings.append(
+                    f"Umfrage laeuft ueber ihre praeregistrierte Laufzeit hinaus: Ende war "
+                    f"{ende:%Y-%m-%d %H:%M}, sie ist seit {jetzt - ende} darueber und noch "
+                    "offen - das automatische Schliessen greift nicht"
+                )
+            if start > jetzt:
+                findings.append(
+                    f"Praeregistrierter Beginn der Laufzeit liegt in der Zukunft "
+                    f"({start:%Y-%m-%d %H:%M}) - die Systemzeit oder der Eintrag stimmt nicht"
+                )
+
         # Lebenszyklus des Umfrage-Schluessels (EIP-T-033, D). Beide Richtungen
         # sind Befunde: Ein Schluessel, der eine geschlossene Umfrage ueberlebt,
         # haelt die Rueckrechenbarkeit auf Pseudonyme am Leben, die wir nach
         # aussen ausschliessen. Ein fehlender Schluessel bei offener Umfrage
         # heisst, dass niemand mehr teilnehmen kann - was ohne diese Zeile eine
         # stille Abweisung pro Versuch waere statt eines sichtbaren Zustands.
-        geschlossen = self.poll(poll_id).closed
         hat_schluessel = self.berechtigung.get_config(POLL_SECRET + poll_id) is not None
         if geschlossen and hat_schluessel:
             findings.append(

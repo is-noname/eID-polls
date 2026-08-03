@@ -219,6 +219,28 @@ Zahlen hervor: Sie ist die Anonymitätsmenge, die für die dort liegenden Stimme
 Liegt sie unter k, sagt die Seite das (`EIP-T-076`). Auch das ist nachrechenbar — das Prüfwerkzeug
 gibt dieselben Zahlen aus dem Export aus.
 
+Liegt die Zahl der Stimmen **insgesamt** unter der Anonymitätsschwelle der Umfrage, steht über den
+Balken ein Warnlabel (`EIP-T-090`). Es hält nichts zurück: Das Ergebnis erscheint daneben
+unverändert. Die Schwelle selbst steht im `POLL_OPEN`-Eintrag — Näheres unter *Einstellungen*.
+
+**Ganz oben auf der Seite, vor allen Zahlen, steht die Präregistrierung** (`EIP-T-091`, KODEX § 7):
+die **Laufzeit** dieser Umfrage und ihr **Auswertungsplan**. Beides wurde vor der ersten Stimme
+festgelegt und liegt im `POLL_OPEN`-Eintrag, also unter der Merkle-Wurzel des ersten Bündels — wer
+es nachträglich ändert, bricht die Kette und wird eine Zeile darunter als Bruch angezeigt. Es steht
+*vor* dem Ergebnis aus demselben Grund wie der Nenner: Was man nach den Zahlen liest, liest man
+nicht.
+
+Die Laufzeit ist dabei nicht nur eine Angabe. Nach ihrem Ende gibt die Instanz keine Berechtigungen
+mehr aus, nimmt keine Stimmen mehr an und schließt die Umfrage im Minutentakt von selbst. Das gilt
+auch für ein Token, das kurz vor Schluss abgeholt und nicht mehr eingelöst wurde: Es verfällt. Eine
+Nachfrist wäre eine Verlängerung, über deren Länge jemand nach Sicht des Zwischenstands entscheiden
+könnte — genau das verbietet § 7.
+
+Ein vorzeitiges Schließen von Hand bleibt möglich. Es ist keine Verlängerung, sondern eine
+Verkürzung, es wird im Debug-Modul vermerkt und ist am Board sichtbar (der `POLL_CLOSED`-Eintrag
+liegt vor dem zugesagten Ende). Verhindert ist es nicht — dieselbe Grenze des Einzelbetreibers, die
+`EIP-ADR-20260802-003` beschreibt.
+
 Unten stehen der **öffentliche Token-Schlüssel** und der **Beleg-Schlüssel**. Damit lässt sich
 jede Stimme unabhängig prüfen (RSASSA-PSS über SHA-384, Salt-Länge 0) und jeder Beleg verifizieren.
 Das Board rechnet sich nach über `leaf = sha256(0x00‖payload)`, je Batch einen Merkle-Baum über
@@ -605,6 +627,8 @@ bleibende Meldung ist ein Befund, eine verschwindende war der Schnappschuss-Effe
 | `EIDPOLL_ANTWORT_FLOOR_S` | `0.3` | Mindest-Antwortzeit der Phasen-Routen in Sekunden, `0` schaltet ab (EIP-T-033 F) |
 | `EIDPOLL_RETRY_CACHE_H` | `24` | Lebensdauer des Wiederhol-Puffers der Token-Ausgabe in Stunden, `0` schaltet ab (EIP-T-070) |
 | `EIDPOLL_NENNER` | `59200000` | Nenner der Beteiligungsquote (EIP-T-025) |
+| `EIDPOLL_ANONYMITAETSSCHWELLE` | `100` | Anonymitätsschwelle **neuer** Umfragen; verbindlich ist der Wert im `POLL_OPEN`-Eintrag (EIP-T-090) |
+| `EIDPOLL_LAUFZEIT_TAGE` | `14` | Laufzeit **neuer** Umfragen in Tagen; verbindlich ist das Ende im `POLL_OPEN`-Eintrag (EIP-T-091) |
 
 **Der Nenner.** Jedes Ergebnis erscheint als Quote, nie als bloße Teilnahmezahl: *N von
 59.200.000 Wahlberechtigten*. Der Nenner sind die Deutschen ab 18 im Inland nach der
@@ -629,6 +653,32 @@ Ein je Umfrage passend gewählter Nenner wäre genau der Methodentrick, gegen de
 antritt. Eine **Veröffentlichungsschwelle** gibt es bewusst nicht: Jedes Ergebnis erscheint mit
 seiner Quote, auch eine sehr kleine — was Dritte daraus machen, regelt Transparenz, nicht
 Zurückhaltung.
+
+**Die Anonymitätsschwelle ist etwas anderes** (EIP-T-090, Basisidee §3.1). Sie schützt nicht die
+Öffentlichkeit vor Fehldeutung, sondern die Teilnehmenden vor Deanonymisierung, und sie hält
+nichts zurück:
+
+| | schützt | Folge bei Unterschreitung |
+|---|---|---|
+| Veröffentlichungsschwelle (**gibt es nicht**) | die Öffentlichkeit vor Fehldeutung | Ergebnis zurückhalten |
+| Anonymitätsschwelle (**gebaut**) | die Teilnehmenden vor Deanonymisierung | Ergebnis erscheint **mit Warnlabel** |
+
+Beim Anlegen einer Umfrage geht der Wert als `min_anonymity_threshold` in ihren
+`POLL_OPEN`-Eintrag und liegt damit unter der Merkle-Wurzel — vor der ersten Stimme festgelegt und
+danach nicht mehr still zu ändern. Der Grund ist derselbe wie beim Token-Schlüssel: Eine Schwelle,
+die erst beim Auszählen gewählt wird, ließe sich so setzen, dass das Warnlabel gerade ausbleibt.
+Wer den Export prüft, sieht sie; `verifikation.py` gibt sie im Bericht aus und markiert die
+Unterschreitung.
+
+Liegt die Stimmenzahl darunter, steht über den Balken ein Label, das benennt, **was** klein ist:
+die Menge, in der sich eine einzelne Stimme verbirgt — nicht die Aussagekraft, die steht in der
+Beteiligungsquote daneben. Das Ergebnis erscheint unverändert; alles andere wäre ein Verstoß
+gegen KODEX § 8. Wie der Zugangshinweis geht der Satz über `/api/status/{poll_id}` mit heraus
+(`min_anonymity_threshold`, `anonymitaetswarnung`, `anonymitaetshinweis`) und steht dafür in
+`config.py`, nicht im Template.
+
+Ob 100 der richtige Startwert ist, ist offen — `EIP-RPT-20260731-001` misst, wie groß die
+Anonymitätsmenge unter der Batch-Veröffentlichung tatsächlich wird.
 
 **Schlüssel und ihre Lebensdauer.** Es gibt keinen globalen Token-Signaturschlüssel mehr
 (EIP-T-069). Jede Umfrage bekommt beim Anlegen zwei eigene, beide in der Datenbank, beide beim
@@ -706,9 +756,10 @@ textbook-Chaum des Prototyps, aber kein Ersatz für einen Audit.
 Die beiden Seiten tragen daran ungleich. Im serverseitigen Stimmweg lief genau eine selbst
 geschriebene Operation: die rohe RSA-Privatoperation in `blind_sign()`. Die übrigen Schritte laufen
 im Browser (`static/blind.js`); ihre Python-Zwillinge in `blind.py` bedienen den Testvektor und die
-Angriffsdemos. Für die Browserseite gäbe es eine gepflegte Bibliothek (EIP-T-008), für die
-Serverseite änderte eine Bibliothek nichts — sie rechnete dasselbe. Die serverseitige Schuld war
-deshalb nicht der fehlende Zukauf, sondern das Zeitverhalten; sie ist mit EIP-T-093 abgetragen.
+Angriffsdemos. Für die Browserseite gibt es eine gepflegte Bibliothek — geprüft und aus drei Gründen
+abgelehnt (2026-08-03, unten) —, für die Serverseite änderte eine Bibliothek nichts, sie rechnete
+dasselbe. Die serverseitige Schuld war deshalb nicht der fehlende Zukauf, sondern das Zeitverhalten;
+sie ist mit EIP-T-093 abgetragen.
 
 **Wie serverseitig signiert wird (seit 2026-08-02, EIP-T-093).** `blind_sign()` rechnet
 `m^d mod n` nicht mehr mit CPythons `pow()`, sondern mit OpenSSL: `app/rsa_raw.py` bindet
@@ -758,12 +809,38 @@ ein Roundtrip-Test nicht sieht. Es schließt *nicht* aus, was ein Audit sähe: S
 Zeitverhalten, Speicherbehandlung von Schlüsselmaterial. Der Vektor sagt „richtig gerechnet", nicht
 „sicher implementiert".
 
-**Für die Browser-Seite gibt es inzwischen eine Bibliothek, sie ist aber nicht eingebaut.**
-`@cloudflare/blindrsa-ts` (0.4.6, Stand 2026-08-01) setzt RFC 9474 um und wird von Cloudflare für
-Privacy Pass gepflegt. Der Einbau zieht eine npm-/Bundler-Toolchain in eine App, die heute nacktes
-ES-Modul ausliefert und jede Client-Datei einzeln hashbar hält (§ 20, EIP-T-007) — das ist eine
-Architekturentscheidung und keine Abhängigkeitspflege → EIP-T-079. Für Python gibt es weiterhin
-nichts.
+**Für die Browser-Seite gibt es eine Bibliothek. Sie ist geprüft und abgelehnt (2026-08-03,
+EIP-T-008).** `@cloudflare/blindrsa-ts` 0.4.6 (Apache-2.0, veröffentlicht 2026-06-19) setzt RFC 9474
+um, unterstützt auch die hier gebrauchte Variante `SHA384.PSSZero.Deterministic` und wird von
+Cloudflare für Privacy Pass gepflegt. Sie wird trotzdem nicht eingebaut. Drei Gründe:
+
+1. **Kein Audit, sondern Herkunft.** Die Bibliothek belegt ihre Richtigkeit so, wie diese App es
+   auch tut: mit RFC-Konformität und Testvektoren. Ein Audit ist nirgends genannt. Der Tausch
+   brächte an dieser Stelle also keinen Nachweis dazu, den es hier nicht schon gibt — beide Seiten
+   rechnen A.4 Schritt für Schritt nach (Abschnitt „Tests"). Was ein Audit leistet, leistet keine
+   von beiden.
+2. **Sie brächte eine abgekündigte Abhängigkeit mit.** Die Großzahlarithmetik rechnet nicht die
+   Bibliothek selbst, sondern **sjcl** — geführt als `sjcl@1.0.9` und zusätzlich als 86-KB-Kopie im
+   Paket (`src/sjcl/index.js`). Dessen Maintainer schreiben im eigenen Repository: „Having not been
+   updated in many years …, sjcl is deprecated. Please do not use it in new projects."
+   `static/blind.js` rechnet heute mit nativem BigInt und WebCrypto (SHA-384, PSS-Verifikation),
+   ohne jede Abhängigkeit. Der Tausch verlagerte ungeprüfte Krypto auf ungepflegte, statt sie
+   abzuschaffen.
+3. **Er kostete § 20.** Das Paket ist ESM, importiert aber über einen bare specifier; im Browser
+   läuft es erst nach Bundling oder Vendoring. Beides ersetzt „jede ausgelieferte Client-Datei ist
+   gegen das Repository *lesbar*" durch „ein Blob hat den erwarteten Hash". Der Hash bliebe prüfbar,
+   die Lesbarkeit nicht — und ein reproduzierbarer Build, der das auffinge, ist nicht eingerichtet
+   (EIP-T-007). `stand.py:client_luecken()` müsste den Bundler zusätzlich kennen, sonst behauptete
+   die Prüfung mehr, als sie weiß.
+
+Gesucht wurde breiter als dieser eine Kandidat (2026-08-03): Für JavaScript gibt es sonst nur
+`blind-signature` — textbook-Chaum, sechs Jahre alt, kein RFC 9474. Für Python weiterhin nichts.
+
+**Was die Ablehnung kostet.** § 3 bleibt gerissen, und zwar ohne Aussicht auf einen Zukauf, der ihn
+heilt. Die Browser-Krypto bleibt handgeschrieben, ungehärtet gegen Seitenkanäle und nur durch
+Testvektoren gedeckt. Abtragbar ist das nur noch durch Prüfung des eigenen Codes (EIP-T-094) — die
+an Träger und Geld hängt. Das ist die schlechtere Lage von zweien, aber die zutreffende: Der
+scheinbar billige Weg war keiner.
 
 **Der Browser prüft die entblindete Signatur selbst** (seit 2026-08-01, EIP-T-080). RFC 9474 §4.4
 Schritt 5 verlangt, dass der Client sein Ergebnis vor der Weitergabe verifiziert und bei einem

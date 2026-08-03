@@ -58,6 +58,14 @@ _PUBKEY_PEM = (
 )
 
 
+# Praeregistrierte Laufzeit und Auswertungsplan fuer von Hand gebaute Boards
+# (EIP-T-091). Beide sind Pflichtfelder des POLL_OPEN-Eintrags; ein Testboard
+# ohne sie waere keines, das die App schreiben wuerde.
+_LAUFZEIT_START = "2026-01-01T00:00:00"
+_LAUFZEIT_ENDE = "2026-01-15T00:00:00"
+_PLAN = "Auszaehlung ueber das Board, keine Untergruppen."
+
+
 def check(label: str, condition: bool, detail: str = "") -> None:
     print(f"[{OK if condition else FAIL}] {label}{(' - ' + detail) if detail else ''}")
     if not condition:
@@ -683,7 +691,13 @@ def eintragsformat() -> None:
           str(getattr(gestimmt, "choices", gestimmt)))
 
     varianten = [
-        (be.poll_open("p", "?", ["Ja", "Nein"], _PUBKEY_PEM), be.PollOpen),
+        (
+            be.poll_open(
+                "p", "?", ["Ja", "Nein"], _PUBKEY_PEM, 100,
+                _LAUFZEIT_START, _LAUFZEIT_ENDE, _PLAN,
+            ),
+            be.PollOpen,
+        ),
         (be.poll_closed("p"), be.PollClosed),
         (be.token_issued("p"), be.TokenIssued),
     ]
@@ -858,7 +872,9 @@ def pruefung_ohne_datenbank() -> None:
     # Gebaut wird mit denselben Konstruktoren wie im Server (EIP-T-046) - ein
     # von Hand getipptes Board wuerde die Pruefung gegen ein Format testen, das
     # die App gar nicht schreibt.
-    eroeffnung = board_eintrag.poll_open("p", "?", options, pub_pem)
+    eroeffnung = board_eintrag.poll_open(
+        "p", "?", options, pub_pem, 100, _LAUFZEIT_START, _LAUFZEIT_ENDE, _PLAN
+    )
     ausgabe1 = board_eintrag.token_issued("p")
     ausgabe2 = board_eintrag.token_issued("p")
     stimme1 = board_eintrag.vote("p", t1, s1, ["Ja"])
@@ -2271,6 +2287,305 @@ def enthaltungspflicht() -> None:
               angelegt.status_code == 200, f"status={angelegt.status_code}")
 
 
+def anonymitaetsschwelle() -> None:
+    """Warnlabel unterhalb der Anonymitaetsschwelle - Label *und* Ergebnis (EIP-T-090).
+
+    Der Punkt, an dem dieser Test haengt, ist die Abgrenzung zur geloeschten
+    Veroeffentlichungsschwelle (KODEX-PROTOKOLL Version 24): Unterschreitung
+    fuehrt zu einer Warnung, nicht zum Wegfall des Ergebnisses. Ein Label, das
+    das Ergebnis verschwinden laesst, waere ein Verstoss gegen KODEX §8 - und
+    genau die Verwechslung, aus der die Schwelle einmal entstanden ist. Deshalb
+    wird in beiden Faellen geprueft, dass die Zahlen dastehen.
+
+    Zweitens: Die Schwelle kommt aus dem POLL_OPEN-Eintrag und nicht aus den
+    Einstellungen. Eine Schwelle, die der laufende Betrieb setzt, waere
+    nachtraeglich zu drehen, bis das Label ausbleibt.
+    """
+    import secrets
+
+    from config import anonymitaetshinweis as hinweis_text
+
+    eigene = create_app(
+        store_path=Path(tempfile.mkdtemp()) / "schwelle.sqlite3",
+        # Schwelle 3 statt 100: Der Mechanismus ist derselbe, und drei Stimmen
+        # sind in einem Smoke-Test abzugeben.
+        settings=Settings(
+            admin_token="admin", batch_k=1, antwort_floor_s=0, anonymitaetsschwelle=3
+        ),
+    )
+    dienst = eigene.state.deps.service
+    admin = TestClient(eigene)
+    admin.post("/api/admin/login", json={"token": "admin"})
+
+    def stimme_ab(poll: str, nummer: int, wahl: str) -> bool:
+        # Eigene Instanz, eigener Eligibility-Ledger: dieselben Zugangscodes wie
+        # im Hauptdurchlauf sind hier unverbraucht.
+        c = TestClient(eigene)
+        c.post("/api/auth", json={"credential": f"testperson{nummer}"})
+        token = secrets.token_bytes(32)
+        n, e = dienst.poll_params(poll)
+        blinded, inv = blind.blind(token, n, e)
+        antwort = c.post(f"/api/token/{poll}", json={"blinded": blinded.hex()})
+        if antwort.status_code != 200:
+            return False
+        sig = blind.finalize(bytes.fromhex(antwort.json()["blind_sig"]), inv, n)
+        return c.post(
+            f"/api/vote/{poll}",
+            json={"token": token.hex(), "sig": sig.hex(), "choices": [wahl]},
+        ).status_code == 200
+
+    # -- Die Schwelle steht in der Poll-Definition, nicht in der Konfiguration
+    admin.post("/api/admin/create",
+               json={"poll_id": "knapp", "question": "Knapp?",
+                     "options": ["Ja", "Nein", "Enthaltung"]})
+    eroeffnung = [
+        json.loads(e.payload)
+        for b in dienst.pruefbericht("knapp").batches
+        for e in b.entries
+        if json.loads(e.payload).get("type") == "POLL_OPEN"
+    ]
+    check("Anonymitaetsschwelle: steht im POLL_OPEN-Eintrag des Boards",
+          len(eroeffnung) == 1 and eroeffnung[0].get("min_anonymity_threshold") == 3,
+          str(eroeffnung[0] if eroeffnung else None)[:120])
+    check("Anonymitaetsschwelle: aus dem Board gelesen, nicht aus den Einstellungen",
+          dienst.pruefbericht("knapp").anonymitaetsschwelle == 3)
+
+    # -- Unterhalb der Schwelle: Label UND Ergebnis
+    check("Anonymitaetsschwelle: zwei Stimmen abgegeben",
+          stimme_ab("knapp", 1, "Ja") and stimme_ab("knapp", 2, "Nein"))
+    admin.post("/api/admin/close/knapp")
+
+    bericht = dienst.pruefbericht("knapp")
+    check("Anonymitaetsschwelle: 2 Stimmen bei Schwelle 3 loesen die Warnung aus",
+          bericht.anonymitaetswarnung, f"n_votes={bericht.accounting.n_votes}")
+
+    seite = admin.get("/board/knapp").text
+    check("Anonymitaetsschwelle: Warnlabel steht auf der Board-Seite",
+          "Kleine Anonymitätsmenge" in seite)
+    check("Anonymitaetsschwelle: Label benennt die Anonymitaetsmenge, nicht die Aussagekraft",
+          "verbirgt" in seite and "sagt das nichts" in seite)
+    # Der eigentliche Unterschied zur Veroeffentlichungsschwelle: Die Zahlen
+    # stehen trotzdem da.
+    check("Anonymitaetsschwelle: Ergebnis erscheint trotz Unterschreitung (§8)",
+          dienst.tally("knapp") == {"Ja": 1, "Nein": 1, "Enthaltung": 0},
+          str(dienst.tally("knapp")))
+    check("Anonymitaetsschwelle: Ergebnisbalken stehen neben dem Label auf der Seite",
+          "bar-fill" in seite and "Beteiligung:" in seite)
+
+    status = admin.get("/api/status/knapp").json()
+    check("Anonymitaetsschwelle: Schwelle und Warnung gehen ueber die API mit",
+          status.get("min_anonymity_threshold") == 3 and status.get("anonymitaetswarnung") is True,
+          str(status)[:140])
+    check("Anonymitaetsschwelle: Wortlaut in API und Seite ist derselbe",
+          status.get("anonymitaetshinweis") == hinweis_text(2, 3)
+          and hinweis_text(2, 3) in seite)
+    check("Anonymitaetsschwelle: API haelt das Ergebnis nicht zurueck (§8)",
+          status.get("result") == {"Ja": 1, "Nein": 1, "Enthaltung": 0}, str(status.get("result")))
+
+    # -- Auf der Schwelle: kein Label, Ergebnis wie immer
+    admin.post("/api/admin/create",
+               json={"poll_id": "reicht", "question": "Reicht?",
+                     "options": ["Ja", "Nein", "Enthaltung"]})
+    abgegeben = all(stimme_ab("reicht", i, "Ja") for i in (1, 2, 3))
+    admin.post("/api/admin/close/reicht")
+    check("Anonymitaetsschwelle: drei Stimmen abgegeben", abgegeben)
+    check("Anonymitaetsschwelle: erreichte Schwelle loest keine Warnung aus",
+          not dienst.pruefbericht("reicht").anonymitaetswarnung)
+    check("Anonymitaetsschwelle: ohne Warnung kein Label auf der Seite",
+          "Kleine Anonymitätsmenge" not in admin.get("/board/reicht").text)
+
+    # -- Je Umfrage ueberschreibbar, und der Wert landet im Board
+    dienst.create_poll("eigene", "Eigene?", ["Ja", "Nein", "Enthaltung"],
+                       min_anonymity_threshold=7)
+    check("Anonymitaetsschwelle: je Umfrage ueberschreibbar",
+          dienst.pruefbericht("eigene").anonymitaetsschwelle == 7)
+
+    # -- Ein Board ohne Schwelle ist unlesbar, nicht stillschweigend Vorgabe 100
+    import board_eintrag as _be
+    from verifikation import Batch, BoardEntry, pruefe
+
+    ohne = BoardEntry.from_payload(
+        {"type": "POLL_OPEN", "poll": "x", "question": "?", "options": ["Ja"],
+         "pubkey": _PUBKEY_PEM},
+        batch=0,
+    )
+    root = _be.merkle_root([ohne.leaf_hash])
+    fremd = pruefe(
+        [Batch(n=0, merkle_root=root,
+               batch_root=_be.batch_root(root, _be.GENESIS), entries=(ohne,))],
+        ["Ja"],
+    )
+    check("Anonymitaetsschwelle: POLL_OPEN ohne Schwelle wird als unlesbar gemeldet",
+          fremd.unlesbar is not None
+          and "min_anonymity_threshold" in fremd.unlesbar.grund,
+          str(fremd.unlesbar))
+    check("Anonymitaetsschwelle: fremdes Board ohne Angabe warnt nicht nach eigenem Massstab",
+          fremd.anonymitaetsschwelle is None and not fremd.anonymitaetswarnung)
+
+
+def praeregistrierung() -> None:
+    """Laufzeit und Auswertungsplan stehen vor dem Start fest (EIP-T-091, KODEX §7).
+
+    Der Punkt dieses Tests ist nicht, dass die Felder existieren, sondern dass
+    sie *binden*: Nach dem POLL_OPEN-Eintrag darf es keinen Weg geben, die
+    Laufzeit zu verlaengern - weder ueber die Einstellungen noch ueber die
+    Datenbank noch dadurch, dass nach dem Ende einfach weiter abgestimmt werden
+    kann. Genau das ist der Verstoss, den § 7 mit "Verlaengerung einer
+    laufenden Umfrage wegen des Zwischenstands" benennt, und ohne diese
+    Pruefungen waere die Praeregistrierung eine Anzeige.
+    """
+    import secrets
+
+    eigene = create_app(
+        store_path=Path(tempfile.mkdtemp()) / "laufzeit.sqlite3",
+        settings=Settings(admin_token="admin", batch_k=1, antwort_floor_s=0, laufzeit_tage=14),
+    )
+    dienst = eigene.state.deps.service
+    admin = TestClient(eigene)
+    admin.post("/api/admin/login", json={"token": "admin"})
+
+    def eroeffnung_von(poll: str) -> dict:
+        for b in dienst.pruefbericht(poll).batches:
+            for e in b.entries:
+                daten = json.loads(e.payload)
+                if daten.get("type") == "POLL_OPEN":
+                    return daten
+        return {}
+
+    # -- Beides steht im Board, nicht in der Datenbank
+    admin.post("/api/admin/create",
+               json={"poll_id": "frist", "question": "Frist?",
+                     "options": ["Ja", "Nein", "Enthaltung"]})
+    offen = eroeffnung_von("frist")
+    check("Praeregistrierung: Laufzeit steht im POLL_OPEN-Eintrag des Boards",
+          "laufzeit_start" in offen and "laufzeit_ende" in offen, str(offen.keys()))
+    check("Praeregistrierung: Auswertungsplan steht im POLL_OPEN-Eintrag des Boards",
+          bool(offen.get("auswertungsplan")))
+    check("Praeregistrierung: Vorgabe der Instanz landet als 14 Tage im Eintrag",
+          datetime.fromisoformat(offen["laufzeit_ende"])
+          - datetime.fromisoformat(offen["laufzeit_start"]) == timedelta(days=14),
+          offen.get("laufzeit_ende", ""))
+
+    bericht = dienst.pruefbericht("frist")
+    check("Praeregistrierung: Pruefung liest beides aus dem Board",
+          bericht.laufzeit_ende is not None and bericht.auswertungsplan is not None)
+
+    seite = admin.get("/board/frist").text
+    check("Praeregistrierung: Laufzeit steht auf der Board-Seite",
+          "Vorab festgelegt" in seite and "Laufzeit:" in seite)
+    check("Praeregistrierung: Auswertungsplan steht auf der Board-Seite",
+          "Auswertungsplan:" in seite and "Untergruppen-Auswertungen" in seite)
+    # Vor dem Ergebnis, nicht darunter - derselbe Grund wie beim Nenner (§8).
+    check("Praeregistrierung: steht vor dem Ergebnis auf der Seite",
+          seite.index("Vorab festgelegt") < seite.index("<h2>Ergebnis</h2>"))
+
+    status = admin.get("/api/status/frist").json()
+    check("Praeregistrierung: geht ueber die API mit",
+          status.get("laufzeit_ende") is not None and status.get("auswertungsplan"),
+          str(status.get("laufzeit_ende")))
+
+    # -- Der Zusatz ergaenzt den Grundplan, er ersetzt ihn nicht
+    dienst.create_poll("zusatz", "Zusatz?", ["Ja", "Nein", "Enthaltung"],
+                       auswertungsplan_zusatz="Ergebnis wird dem Petitionsausschuss vorgelegt.")
+    plan = eroeffnung_von("zusatz").get("auswertungsplan", "")
+    check("Praeregistrierung: Zusatz steht neben dem Grundplan, nicht an seiner Stelle",
+          "Petitionsausschuss" in plan and "Untergruppen-Auswertungen" in plan)
+
+    # -- Abgelaufene Laufzeit: kein Token, keine Stimme, automatisches Schliessen
+    #
+    # Angelegt mit einem Ende in der Vergangenheit geht nicht (create_poll weist
+    # das ab, und zu Recht). Stattdessen ein sehr kurzes Ende und danach die
+    # Zeitgrenze ueberschreiten - geprueft wird der Zustand "Ende vorbei,
+    # Umfrage noch offen", also genau die Minute vor dem Schliessen.
+    dienst.create_poll("kurz", "Kurz?", ["Ja", "Nein", "Enthaltung"],
+                       laufzeit_ende=datetime.now() + timedelta(seconds=4))
+    c = TestClient(eigene)
+    c.post("/api/auth", json={"credential": "testperson1"})
+    token = secrets.token_bytes(32)
+    n, e = dienst.poll_params("kurz")
+    blinded, inv = blind.blind(token, n, e)
+    frueh = c.post("/api/token/kurz", json={"blinded": blinded.hex()})
+    check("Praeregistrierung: innerhalb der Laufzeit wird ein Token ausgegeben",
+          frueh.status_code == 200, f"status={frueh.status_code}")
+    sig = blind.finalize(bytes.fromhex(frueh.json()["blind_sig"]), inv, n)
+
+    import time as _time
+    _time.sleep(4.2)
+
+    spaet = TestClient(eigene)
+    spaet.post("/api/auth", json={"credential": "testperson2"})
+    token2 = secrets.token_bytes(32)
+    blinded2, _ = blind.blind(token2, n, e)
+    antwort = spaet.post("/api/token/kurz", json={"blinded": blinded2.hex()})
+    check("Praeregistrierung: nach dem Ende wird kein Token mehr ausgegeben",
+          antwort.status_code != 200 and "Laufzeit" in antwort.text,
+          f"status={antwort.status_code}")
+    # Das rechtzeitig geholte Token verfaellt mit. Die Haerte ist gewollt: eine
+    # Nachfrist waere eine Verlaengerung, ueber deren Laenge jemand nach Sicht
+    # des Zwischenstands entscheiden koennte.
+    stimme = c.post("/api/vote/kurz",
+                    json={"token": token.hex(), "sig": sig.hex(), "choices": ["Ja"]})
+    check("Praeregistrierung: nach dem Ende wird keine Stimme mehr angenommen",
+          stimme.status_code != 200 and "Laufzeit" in stimme.text,
+          f"status={stimme.status_code}")
+
+    # -- Abweichung ist ein Befund, nicht nur ein Text
+    befunde = dienst.check_consistency("kurz")
+    check("Praeregistrierung: offene Umfrage ueber ihrem Ende ist eine Inkonsistenz",
+          any("praeregistrierte Laufzeit hinaus" in f for f in befunde), str(befunde))
+
+    check("Praeregistrierung: das automatische Schliessen greift",
+          dienst.schliesse_abgelaufene() == ["kurz"] and dienst.poll("kurz").closed)
+    check("Praeregistrierung: nach dem Schliessen ist die Abweichung weg",
+          not any("praeregistrierte Laufzeit hinaus" in f
+                  for f in dienst.check_consistency("kurz")))
+
+    # -- Verkuerzung bleibt moeglich, faellt aber einmal auf. Einmal und nicht
+    # dauerhaft: ein Befund, der ab dann bei jeder vorzeitig geschlossenen
+    # Umfrage leuchtet, wird weggeklickt.
+    from debug import log as _betriebslog
+
+    admin.post("/api/admin/close/frist")
+    meldungen = [e.message for e in _betriebslog.events()]
+    check("Praeregistrierung: vorzeitiges Schliessen wird einmal vermerkt",
+          any("vor ihrem praeregistrierten Ende" in m for m in meldungen))
+    check("Praeregistrierung: Verkuerzung ist kein dauerhafter Befund",
+          not any("praeregistrierten Ende" in f
+                  for f in dienst.check_consistency("frist")))
+
+    # -- Ein Ende vor dem Anfang ist keine Laufzeit
+    from poll_service import Rejected as _Rejected
+
+    try:
+        dienst.create_poll("rueck", "Rueckwaerts?", ["Ja", "Nein", "Enthaltung"],
+                           laufzeit_ende=datetime.now() - timedelta(days=1))
+        abgewiesen = False
+    except _Rejected:
+        abgewiesen = True
+    check("Praeregistrierung: Ende vor dem Beginn wird abgewiesen", abgewiesen)
+
+    # -- Ein Board ohne Laufzeit ist unlesbar, nicht stillschweigend unbegrenzt
+    import board_eintrag as _be
+    from verifikation import Batch, BoardEntry, pruefe
+
+    ohne = BoardEntry.from_payload(
+        {"type": "POLL_OPEN", "poll": "x", "question": "?", "options": ["Ja"],
+         "pubkey": _PUBKEY_PEM, "min_anonymity_threshold": 3},
+        batch=0,
+    )
+    root = _be.merkle_root([ohne.leaf_hash])
+    fremd = pruefe(
+        [Batch(n=0, merkle_root=root,
+               batch_root=_be.batch_root(root, _be.GENESIS), entries=(ohne,))],
+        ["Ja"],
+    )
+    check("Praeregistrierung: POLL_OPEN ohne Laufzeit wird als unlesbar gemeldet",
+          fremd.unlesbar is not None and "laufzeit" in fremd.unlesbar.grund.lower(),
+          str(fremd.unlesbar))
+    check("Praeregistrierung: fremdes Board ohne Angabe bekommt keine erfundene Laufzeit",
+          fremd.laufzeit_ende is None and fremd.auswertungsplan is None)
+
+
 def main() -> int:
     client = TestClient(app)
 
@@ -2430,6 +2745,8 @@ def main() -> int:
     demo_schalter()
     eid_simulation()
     enthaltungspflicht()
+    anonymitaetsschwelle()
+    praeregistrierung()
 
     # Angriff 1 - Ballot-Stuffing wird von der Abrechnung entlarvt
     open_poll = "stuffdemo"

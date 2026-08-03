@@ -15,6 +15,100 @@
 
 ## Änderungsprotokoll
 
+### Version 34 — 2026-08-03
+
+**§ 7 ist eingelöst — Laufzeit und Auswertungsplan stehen vor dem Start fest**
+(EIP-T-091). Damit kennt die App alle fünf Größen
+aus der Regel, und der Paragraph verlässt die Schuldenübersicht: 12 → 11. **V-006 ist geschlossen**
+— der Verstoß, der seit dem ersten Tag des öffentlichen Betriebs lief.
+
+**Keine Regel wurde geändert.** § 7 stand seit Version 1 so da; was fehlte, war die Umsetzung. Die
+Statuszeile geht von „der erste Satz ist `offen`" auf `bindend` für beide Sätze.
+
+**Was gebaut wurde.** Beide Größen liegen im `POLL_OPEN`-Eintrag des Boards, unter der Merkle-Wurzel
+und in der Batch-Kette — dieselbe Stelle und dieselbe Begründung wie beim Token-Schlüssel
+(EIP-T-069) und der Anonymitätsschwelle (EIP-T-090). In einer Datenbankspalte wären sie lautlos zu
+verschieben gewesen, und der Verstoß hätte keine Spur hinterlassen.
+
+Die Laufzeit ist dabei nicht nur festgehalten, sondern **wirksam**: Nach ihrem Ende nimmt die
+Instanz weder Berechtigungen noch Stimmen an, und die Umfrage schließt im Minutentakt von selbst.
+Das war eine Entscheidung gegen die schwächere Lesart, § 7 verlange nur eine Aufzeichnung: Eine
+Laufzeit, die nicht endet, ist keine, und ein Ende, das jemand von Hand herbeiführen muss, ist eines,
+das er beim Blick auf den Zwischenstand aufschieben kann.
+
+Der Auswertungsplan ist **fest und nicht je Umfrage gewählt** — die Begründung ist die des Nenners
+aus § 8: Was vor jedem Start neu formuliert wird, ist zum Zeitpunkt des Ergebnisses so weit
+gewandert, wie es dem Ergebnis nützt. Je Umfrage gibt es nur einen Zusatz, der ebenfalls vorab
+feststeht.
+
+**Was das nicht erzwingt**, und deshalb im Paragraphen steht: den *Inhalt* des Grundplans. Ein Plan,
+der nichts zusagt, wäre formal eingehalten und praktisch wertlos — dagegen hilft nur der Text selbst.
+Und ein vorzeitiges Schließen bleibt möglich; es ist keine Verlängerung, aber eine Wahl über den
+Zeitpunkt. Sie wird vermerkt, sie ist nicht verhindert — dieselbe Grenze des Einzelbetreibers wie in
+EIP-ADR-20260802-003.
+
+**Der Baustopp gilt weiter**: 11 von 20 bei einer Grenze von 8 (§ 4 b).
+
+### Version 33 — 2026-08-03
+
+**§ 3 kann seine Browser-Hälfte nicht mehr durch Zukauf abtragen**
+(EIP-T-008). Die einzige gepflegte RFC-9474-Umsetzung für
+JavaScript, `@cloudflare/blindrsa-ts` 0.4.6, ist geprüft und **abgelehnt**. Die Schuldenzeile in der
+Übersicht nennt deshalb nicht mehr EIP-T-008, sondern EIP-T-094: Was §
+3 an dieser Stelle noch auflösen kann, ist die Prüfung des eigenen Codes.
+
+**Warum abgelehnt.** Drei Gründe, in dieser Reihenfolge:
+
+1. **Kein Audit, sondern Herkunft.** Die Bibliothek belegt ihre Richtigkeit mit RFC-Konformität und
+   Testvektoren — genau die Beweisklasse, die `blind.js` seit dem 2026-08-01 selbst vorlegt (RFC 9474
+   A.4, Schritt für Schritt, mit dem Blendfaktor aus dem RFC). Ein Audit steht nirgends. „Von
+   Cloudflare" ist kein Prüfsiegel, und § 3 verlangt geprüfte Bibliotheken, nicht bekannte.
+2. **Sie brächte eine abgekündigte Abhängigkeit mit.** Die Großzahlarithmetik rechnet sjcl — als
+   `sjcl@1.0.9` in `package.json` und als 86-KB-Kopie im ausgelieferten Paket
+   (`src/sjcl/index.js`). Dessen Maintainer schreiben selbst: „Having not been updated in many years
+   …, sjcl is deprecated. Please do not use it in new projects." `blind.js` rechnet heute mit
+   nativem BigInt und WebCrypto, ohne jede Abhängigkeit. Der Tausch verlagerte ungeprüfte Krypto,
+   statt sie abzuschaffen — und zwar auf Code, den niemand mehr pflegt.
+3. **Er kostete § 20.** Der Einbau braucht eine Toolchain (bare specifier) oder ein Vendoring des
+   Pakets. Beides ersetzt „jede ausgelieferte Client-Datei ist gegen das Repository lesbar" durch
+   „ein Blob hat den erwarteten Hash" — und ein reproduzierbarer Build ist nicht eingerichtet
+   (EIP-T-007).
+
+**Kein Alleinbefund.** Gesucht wurde breiter als der eine Kandidat: Für JavaScript gibt es außer
+`@cloudflare/blindrsa-ts` nur `blind-signature` — textbook-Chaum, sechs Jahre alt, kein RFC 9474,
+also dieselbe Klasse wie der Prototyp, den diese App hinter sich hat. Für Python weiterhin nichts
+(PyPI-Suche 2026-08-01, elf Namen).
+
+**Die Zahl ändert sich nicht.** 12 belastete Paragraphen — § 3 war belastet und bleibt es. Diese
+Version trägt keine Schuld ab; sie hält fest, dass eine Schuld teurer ist als gedacht. Das ist die
+ehrlichere Buchung: Bis heute stand in der Übersicht ein Ticket, dessen Auflösung nach fremder
+Arbeit aussah und in Wahrheit nicht existierte.
+
+**Nachgezogen: der Versionskopf des Kodex.** Er stand auf „Version 31", während dieses Protokoll
+bereits Version 32 führte — der Bump ist in Version 32 liegengeblieben. Ein Dokument, das seine
+eigene Fassung falsch angibt, ist derselbe Fehlertyp wie ein Paragraph, der mehr behauptet als der
+Code hergibt; deshalb hier vermerkt statt still korrigiert. Der Kopf steht jetzt auf Version 33.
+
+### Version 32 — 2026-08-03
+
+**§ 8 hält die gebaute Anonymitätsschwelle fest**
+(EIP-T-090). Der Abgrenzungsabsatz am Ende des Paragraphen
+verwies bisher auf das Ticket als offenen Umsetzungsstand. Die Schwelle ist gebaut: Sie steht als
+`min_anonymity_threshold` im `POLL_OPEN`-Eintrag des Boards, und unterhalb ihrer erscheint das
+Ergebnis mit Warnlabel.
+
+**Warum das § 8 überhaupt berührt.** Der Paragraph verbietet das Zurückhalten von Ergebnissen. Ein
+Warnlabel, das in der Umsetzung zum Wegfall der Zahlen geriete, wäre die
+Veröffentlichungsschwelle, die Version 24 aus der Regel entfernt hat — dieselbe Verwechslung, aus
+der sie einmal entstanden ist. Der Satz hält deshalb nicht fest, dass gewarnt wird, sondern dass
+das Ergebnis **erscheint**, und benennt den Smoke-Test, der genau das prüft. Ein Paragraph, dessen
+Einhaltung nur behauptet ist, war der Befund aus
+EIP-AUD-20260801-004.
+
+**Die Zahl ändert sich nicht.** 12 belastete Paragraphen — § 8 war seit Version 24 unbelastet, die
+Anonymitätsschwelle stand nie in der Übersicht. Diese Version trägt also keine Schuld ab; wie die
+Arbeit dahinter unter dem Baustopp zu bewerten ist, steht in V-008 und nicht hier.
+
 ### Version 31 — 2026-08-03
 
 **`Disziplin` deckt ab jetzt auch fremdverursachte Lücken**
@@ -1462,7 +1556,8 @@ Hälfte, an der das Wahlgeheimnis unmittelbar hängt.
 
 ### V-006 — Ergebnisdarstellung ohne Nenner, Schwelle und Zugangshinweis
 **Datum des Eintrags:** 2026-08-01 · **Paragraphen:** § 7, § 8, § 11, § 18 ·
-**Ticket:** EIP-T-025 · **Status:** offen
+**Ticket:** EIP-T-025 · **Status:** behoben 2026-08-03
+(EIP-T-091)
 
 **Was geschah.** Drei bindende Sätze hängen an derselben Lücke im Datenmodell:
 
@@ -1556,6 +1651,20 @@ feststehen muss: Laufzeit und Auswertungsplan aus § 7
 (EIP-T-091). Dazu die Veröffentlichungsschwelle
 aus § 8 Satz 2, die seit Version 24 kein Rückstand mehr ist, sondern eine gestrichene Regel.
 
+**Nachtrag 2026-08-03 — Verstoß behoben.**
+(EIP-T-091, Kodex Version 34.) Laufzeit und
+Auswertungsplan stehen im `POLL_OPEN`-Eintrag und damit vor der ersten Stimme fest; die Laufzeit
+wirkt zusätzlich, statt nur dazustehen. § 7 verlässt die Schuldenübersicht, und dieser Eintrag ist
+damit in allen vier Paragraphen erledigt.
+
+**Wie lange er lief.** 2026-07-27 bis 2026-08-03 — sieben Tage öffentlicher Betrieb, in denen jedes
+angezeigte Ergebnis unter mindestens einem der vier Sätze stand. Das ist die eigentliche Zahl dieses
+Eintrags, und sie gehört hierher und nicht in eine Erfolgsmeldung: Aufgefallen ist die Lücke nicht im
+Betrieb, sondern erst beim ersten vollständigen Durchgang durch die bindenden Sätze
+(EIP-AUD-20260801-004), also vier Tage nach dem Start. Ein Verfahren,
+das solche Sätze laufend prüft, gibt es weiterhin nicht
+→ EIP-T-084.
+
 ### V-007 — Feature mit Außenwirkung während des Baustopps gebaut
 **Datum des Eintrags:** 2026-08-02 · **Paragraphen:** § 4 b, § 18 ·
 **Ticket:** EIP-T-095 · **Status:** offen
@@ -1605,3 +1714,53 @@ ob die Kennzeichnungsleiste den Probandentest verfälscht: EIP-T-010 fragt, ob T
 die Anonymität glauben, und eine Seite, die sich als Attrappe zu erkennen gibt, beeinflusst diese
 Antwort. Das ist kein Argument, die Leiste zu entfernen — es ist eines, die Beobachtung mit ihr
 zu planen.
+
+### V-008 — Anonymitätsschwelle mit Warnlabel während des Baustopps gebaut
+**Datum des Eintrags:** 2026-08-03 · **Paragraphen:** § 4 b, § 18 ·
+**Ticket:** EIP-T-090 · **Status:** offen
+
+**Was geschah.** Auf Entscheidung des Auftraggebers wurde EIP-T-090 vollständig gebaut:
+`min_anonymity_threshold` steht als Pflichtangabe im `POLL_OPEN`-Eintrag jeder Umfrage, und
+unterhalb der Schwelle erscheint das Ergebnis mit einem Warnlabel auf der Board-Seite und in
+`/api/status/{id}`. Der Konflikt mit § 4 b wurde vor dem Bau benannt und die Entscheidung dennoch
+so getroffen.
+
+**Warum das ein Verstoß ist.** Die Schuldenübersicht steht bei 12 von 20 Paragraphen, die Grenze
+liegt bei 8. In diesem Zustand darf nur gebaut werden, was eine Schuld abträgt, einen Fehler oder
+Verstoß behebt, prüft oder dokumentiert. Diese Arbeit trägt keinen Vermerk der Übersicht ab: § 8
+war seit Version 24 unbelastet, und der Kodex sagt dort ausdrücklich, dass die Anonymitätsschwelle
+nicht zu diesem Paragraphen gehört. Das Warnlabel ist neue Anzeige auf der öffentlich erreichbaren
+Instanz, also ein Feature mit Außenwirkung. Stoppfrage 7 der Prüfliste fällt auf `ja`.
+
+Das mögliche Gegenargument ist benannt und trägt nicht: Die Basisidee führt die Schwelle als
+Pflichtangabe, `EIP-AUD-20260731-001` §1.2 hält sie als „fehlt" fest, und eine dokumentierte
+Kursabweichung zu schließen sieht nach erlaubter Arbeit aus. § 4 b verbietet aber, „die Grenze
+durch Umdeklarieren eines Features zu Wartung zu umgehen", und eine Abweichung von der Basisidee
+ist keine Schuld der Übersicht — sonst wäre jedes offene Ticket eine Schuld und die Grenze
+bedeutungslos. Das Ticket datiert seine eigene Fälligkeit auf `produktiv`; auf der jetzigen Stufe
+ist mit Demodaten niemand zu deanonymisieren. Es gab also keine Dringlichkeit, die die Regel
+überwiegt. Wer den Baustopp für falsch priorisiert hält, ändert ihn nach § 17. Das ist bewusst
+nicht geschehen.
+
+**Was dabei eingehalten wurde.** Der Verstoß betrifft § 4 b, und nur ihn.
+
+- § 8 (kein Zurückhalten): Der Kern des Vorhabens war, das Label **nicht** zur
+  Veröffentlichungsschwelle werden zu lassen. Unterhalb der Schwelle stehen Label und Ergebnis
+  nebeneinander, auf der Seite wie über die API; der Smoke-Test prüft in beiden Wegen, dass die
+  Zahlen da sind, nicht nur, dass gewarnt wird.
+- § 9 (Sprachregeln): Der Wortlaut benennt die Anonymitätsmenge und sagt ausdrücklich, dass er
+  über die Aussagekraft nichts sagt — die steht in der Beteiligungsquote darüber. Er steht in
+  `config.py` und nicht im Template, damit er über die API mitgeht statt beim Weitertragen
+  abzufallen; derselbe Grund wie beim Zugangshinweis aus EIP-T-092.
+- § 7 (Board als einzige Quelle): Die Schwelle wird aus dem `POLL_OPEN`-Eintrag gelesen, nicht aus
+  der laufenden Konfiguration. Eine Schwelle, die der Betrieb setzt, wäre nachträglich zu drehen,
+  bis das Label ausbleibt — dieselbe Begründung, aus der der Token-Schlüssel seit EIP-T-069 dort
+  liegt. Boards ohne die Angabe werden abgewiesen statt still auf einen Vorgabewert gesetzt.
+
+**Was offen bleibt.** Der Rückstand ist zum zweiten Mal um ein Vorhaben gewachsen, ohne dass eine
+Schuld gefallen wäre. V-007 endete mit dem Satz, der nächste Bau müsse wieder eine Schuld
+abtragen — das ist nicht eingehalten worden, und zwei Ausnahmen hintereinander sind der Punkt, an
+dem eine Grenze aufhört, eine zu sein. Der Baustopp gilt unverändert weiter. Offen bleibt zudem
+der Startwert 100 aus der Spec: EIP-RPT-20260731-001 Anonymitaetsmenge-Batch-Simulation misst,
+wie groß die Anonymitätsmenge unter der Batch-Veröffentlichung tatsächlich wird, und kann ergeben,
+dass die Zahl falsch gewählt ist.

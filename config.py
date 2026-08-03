@@ -35,6 +35,30 @@ def _flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def anonymitaetshinweis(stimmen: int, schwelle: int) -> str:
+    """Warnlabel am Ergebnis unterhalb der Anonymitaetsschwelle (EIP-T-090).
+
+    Der Wortlaut steht hier und nicht im Template, weil er ueber die API genauso
+    mitgehen muss wie ueber die Seite - derselbe Grund wie beim
+    ``zugang_hinweis``. Ein Hinweis, der beim Weitertragen abfaellt, fehlt genau
+    dort, wo er noetig waere.
+
+    Was der Satz benennt, ist die **Anonymitaetsmenge**, nicht die Aussagekraft:
+    Die steht in der Beteiligungsquote daneben, und beides zu vermischen war der
+    Fehler, aus dem die geloeschte Veroeffentlichungsschwelle entstanden ist
+    (KODEX-PROTOKOLL Version 24). Der letzte Satz ist deshalb kein Zusatz,
+    sondern die Abgrenzung: Zurueckgehalten wird nichts (KODEX §8).
+    """
+    return (
+        f"{stimmen} abgegebene Stimmen liegen unter der Schwelle von {schwelle}, die für diese "
+        "Umfrage vor der ersten Stimme festgelegt und im Eröffnungseintrag des Boards "
+        "mitveröffentlicht wurde. Die Menge, in der sich eine einzelne Stimme verbirgt, ist "
+        "damit klein: Wer weiß, wer teilgenommen hat, kann eher auf einzelne Stimmen schließen. "
+        "Über die Aussagekraft des Ergebnisses sagt das nichts — dafür steht die Beteiligung "
+        "daneben. Zurückgehalten wird deshalb nichts; das Ergebnis erscheint unverändert."
+    )
+
+
 @dataclass(frozen=True)
 class Settings:
     """Alles, was der Betriebsmodus an der App verstellt."""
@@ -93,6 +117,23 @@ class Settings:
     # geht (Abbruch, spaeter derselbe Browser), und laesst den Rest verfallen.
     # 0 schaltet den Puffer ab; dann gilt wieder "Anspruch weg, Token weg".
     retry_cache_h: float = 24.0
+    # Anonymitaetsschwelle der Poll-Definition (EIP-T-090, Basisidee
+    # spec-phase0-protokoll.md §3.1). Unterschreitet die Teilnehmerzahl diesen
+    # Wert, erscheint das Ergebnis mit Warnlabel - es erscheint trotzdem.
+    # Zurueckhalten waere ein Verstoss gegen KODEX §8; das Label ist eine Zugabe
+    # an Information, keine Einschraenkung der Veroeffentlichung.
+    #
+    # Nicht zu verwechseln mit der frueheren Veroeffentlichungsschwelle
+    # (KODEX-PROTOKOLL Version 24, gestrichen): Die schuetzte die Oeffentlichkeit
+    # vor Fehldeutung, diese hier schuetzt die Teilnehmenden vor
+    # Deanonymisierung. Was klein ist, ist die Anonymitaetsmenge, nicht die
+    # Aussagekraft - die steht in der Beteiligungsquote daneben.
+    #
+    # Der Wert ist nur der *Vorgabewert* fuer neue Umfragen. Verbindlich ist der
+    # Wert, der beim Anlegen in den POLL_OPEN-Eintrag geschrieben wird: Dort
+    # liegt er unter der Merkle-Root und ist danach nicht mehr still zu
+    # aendern - dieselbe Begruendung wie beim Token-Schluessel (EIP-T-069).
+    anonymitaetsschwelle: int = 100
     # Nenner der Beteiligungsquote (EIP-T-025): Deutsche ab 18 im Inland,
     # Schaetzung der Bundeswahlleiterin zur Bundestagswahl 2025. Amtlich,
     # registerbasiert, datiert - und zu jeder Bundestagswahl neu festgestellt.
@@ -128,6 +169,34 @@ class Settings:
         "zugehörige PIN hat. Der Nenner umfasst dagegen alle Wahlberechtigten — ein großer "
         "Teil davon hatte zu diesem Verfahren keinen Zugang. Wer teilnimmt, unterscheidet "
         "sich deshalb systematisch von wem nicht teilnimmt."
+    )
+    # Laufzeit neuer Umfragen in Tagen (EIP-T-091, KODEX § 7). Wie die
+    # Anonymitaetsschwelle nur der *Vorgabewert*: Verbindlich ist der Zeitpunkt,
+    # den create_poll in den POLL_OPEN-Eintrag schreibt. Danach aendert ihn kein
+    # Parameter und kein Neustart mehr - eine Umfrage, deren Ende sich mit einer
+    # Umgebungsvariable verschieben liesse, hat keine praeregistrierte Laufzeit,
+    # sondern eine gerade geltende.
+    laufzeit_tage: float = 14.0
+    # Auswertungsplan, Grundlage fuer jede Umfrage (EIP-T-091, KODEX § 7).
+    #
+    # Fest und nicht je Umfrage gewaehlt, aus demselben Grund wie der Nenner:
+    # Was vor jedem Start neu formuliert wird, ist zum Zeitpunkt des Ergebnisses
+    # genau so weit gewandert, wie es dem Ergebnis nuetzt. Je Umfrage gibt es
+    # deshalb nur einen *Zusatz* (create_poll), der ebenfalls vorab feststeht
+    # und mit in den POLL_OPEN-Eintrag geht - er darf ergaenzen, was diese eine
+    # Frage betrifft, aber nichts von dem hier zuruecknehmen.
+    auswertungsplan: str = (
+        "Ausgezählt wird ausschließlich über das öffentliche Board: alle VOTE-Einträge der "
+        "verifizierten Batch-Kette, ein Token eine Stimme. Der Vote-Ledger wird nicht "
+        "ausgezählt, er hält nur verbrauchte Token. — Berichtet werden die absolute "
+        "Stimmenzahl je vorab festgelegter Antwortoption und die Beteiligungsquote gegen den "
+        "vorab festgelegten Nenner, im Wortlaut nach KODEX § 8. — Untergruppen-Auswertungen "
+        "sind ausgeschlossen, und zwar technisch: Es werden keine Merkmale erhoben, weder "
+        "Alter noch Ort noch Geschlecht (EIP-ADR-20260802-001). Eine nachträgliche "
+        "Aufschlüsselung ist aus diesen Daten nicht möglich. — Während der Laufzeit wird kein "
+        "Zwischenstand über den reinen Teilnahmezähler hinaus ausgewiesen. — Das Ergebnis "
+        "erscheint nach dem Ende der Laufzeit unverändert, auch bei sehr kleiner Beteiligung; "
+        "zurückgehalten wird nichts."
     )
     seed_demo: bool = False
     seed_poll_id: str = "demo"
@@ -167,7 +236,11 @@ class Settings:
             anker_upgrade_h=float(os.environ.get("EIDPOLL_ANKER_UPGRADE_H", "24") or 24),
             anker_toleranz_min=float(os.environ.get("EIDPOLL_ANKER_TOLERANZ_MIN", "15") or 15),
             retry_cache_h=float(os.environ.get("EIDPOLL_RETRY_CACHE_H", "24") or 24),
+            anonymitaetsschwelle=int(
+                os.environ.get("EIDPOLL_ANONYMITAETSSCHWELLE", "") or 100
+            ),
             nenner=int(os.environ.get("EIDPOLL_NENNER", "") or 59_200_000),
+            laufzeit_tage=float(os.environ.get("EIDPOLL_LAUFZEIT_TAGE", "") or 14),
             # Demo-Umfrage beim Start, wenn noch keine existiert. Auf
             # Gratis-Hosting ohne persistente Platte ist die Datenbank nach
             # jedem Neustart leer - ohne das hier stuende ein Besucher vor einer
@@ -211,7 +284,15 @@ class Settings:
             + " (EIP-T-070)"
         )
         lines.append(
+            f"Anonymitaetsschwelle neuer Umfragen: {self.anonymitaetsschwelle} Stimmen - "
+            "darunter erscheint das Ergebnis mit Warnlabel, nicht spaeter (EIP-T-090)"
+        )
+        lines.append(
             f"Nenner der Beteiligungsquote: {self.nenner:,} ".replace(",", ".")
             + f"{self.nenner_bezeichnung} - {self.nenner_quelle} (EIP-T-025)"
+        )
+        lines.append(
+            f"Laufzeit neuer Umfragen: {self.laufzeit_tage} Tage - danach schliesst die "
+            "Umfrage von selbst, eine Verlaengerung gibt es nicht (EIP-T-091, KODEX §7)"
         )
         return lines
