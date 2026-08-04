@@ -61,14 +61,23 @@
       {% endfor %}
     </div>
     {# Art. 13 DSGVO: Die Unloeschbarkeit muss vor der Stimmabgabe bekannt sein, nicht erst
-       im Beleg danach - EIP-RFC-20260803-001 Abschnitt 6. #}
+       im Beleg danach - EIP-RFC-20260803-001 Abschnitt 6. Der sichtbare Satz traegt die
+       Aussage allein; die Begruendung steckt im <details> (EIP-T-101). #}
     <p class="step-hint">
-      Dein Eintrag bleibt dauerhaft im Board. Entfernen könnten wir ihn nur, indem wir die Prüfkette
-      brechen — und damit die Nachprüfbarkeit <em>jeder</em> anderen Stimme. Deshalb tun wir es
-      nicht, auch nicht auf Verlangen. Dein Name steht nicht darin; wer seinen Beleg aufbewahrt,
-      kann die eigene Stimme aber darin wiederfinden. Was das für Auskunft und Löschung bedeutet,
-      steht im <a href="/transparenz">Transparenzbericht</a>.
+      Dein Eintrag bleibt dauerhaft im Board und lässt sich nicht mehr löschen.
     </p>
+    <details class="explain" style="margin-bottom:16px">
+      <summary>Warum, und was das für dich bedeutet</summary>
+      <div class="explain-body">
+        <p>
+          Entfernen könnten wir ihn nur, indem wir die Prüfkette brechen — und damit die
+          Nachprüfbarkeit <em>jeder</em> anderen Stimme. Deshalb tun wir es nicht, auch nicht auf
+          Verlangen. Dein Name steht nicht darin; wer seinen Beleg aufbewahrt, kann die eigene
+          Stimme aber darin wiederfinden. Was das für Auskunft und Löschung bedeutet, steht im
+          <a href="/transparenz">Transparenzbericht</a>.
+        </p>
+      </div>
+    </details>
     <button class="big" id="vote-button"
       {% if poll.closed %}disabled{% elif not pseudonym %}aria-disabled="true"{% endif %}>
       {{ 'Erst ausweisen' if not pseudonym else 'Stimme abgeben' }}
