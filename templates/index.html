@@ -1,14 +1,19 @@
 {% extends "base.html" %}
 {% set active = 'index' %}
-{% block title %}Umfragen — eID-Umfrage{% endblock %}
+{% block title %}Umfragen — ePulse{% endblock %}
 
 {% block content %}
 <h1>Abstimmen</h1>
+<p class="muted small">
+  Der digitale Puls der Gemeinschaft — deine Stimme fordert, anonym schon jetzt.
+  <strong>Sicher</strong> und <strong>wirksam</strong> gilt erst, sobald der echte Ausweis-Check
+  läuft und der Signaturschlüssel nicht mehr bei einer einzelnen Stelle allein liegt.
+</p>
 <p class="lead">
-  Mit dem Online-Ausweis anmelden, einmal abstimmen — und danach selbst nachprüfen, dass die eigene
-  Stimme richtig gezählt wurde. Was gewählt wurde, steht am Ende öffentlich; dein Name nirgends.
-  Wie weit die Anonymität heute trägt und wo sie noch auf unserer Selbstbindung beruht statt auf
-  Mathematik, steht im <a href="/manifest">Manifest</a>.
+  ePulse ist eine Umfrage, bei der du hinterher selbst nachprüfen kannst, dass deine Stimme richtig
+  gezählt wurde — ohne dass jemand weiß, dass du es warst. Dafür meldest du dich mit dem
+  Online-Ausweis an und stimmst einmal ab; was gewählt wurde, steht am Ende öffentlich, dein Name
+  nirgends. Wie weit wir heute stehen, steht im <a href="/manifest">Manifest</a>.
 </p>
 
 {% if not rows %}
@@ -24,18 +29,24 @@
           <div class="row-title"><a href="/poll/{{ row.poll.poll_id }}">{{ row.poll.question }}</a></div>
           <div class="muted small">
             {{ row.poll.options | join(' · ') }}
-            <span class="faint">· {{ row.participation }} haben abgestimmt</span>
+            <span class="muted">· {{ row.participation }} haben abgestimmt</span>
           </div>
         </div>
         <span class="tag {{ 'closed' if row.poll.closed else 'open' }}">
           {{ 'GESCHLOSSEN' if row.poll.closed else 'OFFEN' }}
         </span>
-        {% if not row.accounting.ok %}<span class="tag err">ABRECHNUNG SCHIEF</span>{% endif %}
+        {% if not row.accounting.ok %}<span class="tag err">ZAHLEN PASSEN NICHT — ERGEBNIS NICHT VERLÄSSLICH</span>{% endif %}
         <a href="/board/{{ row.poll.poll_id }}" class="small">Nachweise</a>
       </div>
+      {% if not row.accounting.ok %}
+        <div class="muted small">
+          Hier stehen mehr Stimmen, als Berechtigungen ausgegeben wurden — bis das unter
+          „Nachweise" geklärt ist, gilt kein Ergebnis dieser Umfrage.
+        </div>
+      {% endif %}
     {% endfor %}
   </div>
-  <p class="faint small" style="margin-top:14px">
+  <p class="muted small" style="margin-top:14px">
     Der ablesbare Zwischenstand hinkt hinterher, und dass jemand ihn selbst mitzählt, können wir
     nicht verhindern — die abgegebenen Stimmen stehen von Anfang an unter „Nachweise".
   </p>
@@ -44,7 +55,7 @@
     <div class="explain-body">
       <p>
         Das ausgewiesene Ergebnis erscheint erst nach dem Ende der Umfrage. Unter „Nachweise"
-        erscheinen abgegebene Stimmen in Blöcken von {{ batch_k }}, spätestens nach
+        erscheinen abgegebene Stimmen in Blöcken (Batches) von {{ batch_k }}, spätestens nach
         {{ batch_deckel_h }} Stunden — der ablesbare Stand hinkt also bis zu {{ batch_deckel_h }}
         Stunden hinterher. Das ist eine Maßnahme gegen Verkettung, kein Schutz vor dem Mitzählen.
       </p>

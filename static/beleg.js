@@ -44,15 +44,15 @@ export function receiptPaper(pollId, state, origin = location.origin) {
     return r;
   };
 
-  paper.append(el("div", "rc-title", "DEIN BELEG"), el("div", "rc-sub", "eID-Umfrage"));
+  paper.append(el("div", "rc-title", "DEIN BELEG"), el("div", "rc-sub", "ePulse"));
   paper.append(row("Umfrage", pollId));
-  paper.append(row("Batch (zugesagt)", String(state.batch)));
+  paper.append(row("Bündel, zugesagt (Batch)", String(state.batch)));
   paper.append(el("div", "rc-divider"));
-  paper.append(el("div", "rc-label", "Blatt-Prüfsumme"), el("div", "rc-hex", state.leaf));
-  paper.append(el("div", "rc-label", "Signatur des Betreibers"), el("div", "rc-hex", state.belegSig));
+  paper.append(el("div", "rc-label", "Prüfwert deines Eintrags (Blatt-Prüfsumme)"), el("div", "rc-hex", state.leaf));
+  paper.append(el("div", "rc-label", "Unterschrift des Betreibers (Signatur)"), el("div", "rc-hex", state.belegSig));
   paper.append(el("div", "rc-divider"));
 
-  paper.append(el("div", "rc-label", "Stimm-Token"));
+  paper.append(el("div", "rc-label", "Dein Prüf-Code (Stimm-Token)"));
   if (state.token) {
     const tokenValue = el("div", "rc-hex", state.token);
     tokenValue.id = "receipt-token"; // stabiler Hook fuer browser_test.py

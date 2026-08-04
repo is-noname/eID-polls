@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}eID-Umfrage{% endblock %}</title>
+  <title>{% block title %}ePulse{% endblock %}</title>
   {# Theme vor dem ersten Paint setzen, sonst blitzt beim Umschalter Hell auf.
      Klassisches, blockierendes Skript - und eine eigene Datei, weil nur
      /static-Dateien von aussen gegen das Repository gehalten werden koennen
@@ -19,7 +19,7 @@
   <div class="pulse-bg" aria-hidden="true"><i></i><i></i><i></i></div>
 
   <div class="topbar">
-    <a href="/" class="brand"><span class="brand-dot"></span>EID<span>POLL</span></a>
+    <a href="/" class="brand"><span class="brand-dot"></span>ePulse</a>
     <nav>
       <a href="/" class="{{ 'active' if active == 'index' }}">Umfragen</a>
       <a href="/manifest" class="{{ 'active' if active == 'manifest' }}">Manifest</a>

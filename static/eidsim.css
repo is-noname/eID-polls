@@ -200,12 +200,14 @@ h2 { margin: 26px 0 10px; font-size: 14px; text-transform: uppercase; letter-spa
 .eingabe label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
 .eingabe input {
   width: 100%;
+  min-height: 44px;
   padding: 9px 11px;
   border: 1px solid var(--sim-rand-stark);
   border-radius: var(--sim-r);
   font: inherit;
   background: #fff;
   color: var(--sim-text);
+  box-sizing: border-box;
 }
 .eingabe input:focus {
   outline: 2px solid var(--sim-akzent);
@@ -234,12 +236,17 @@ code { background: #f2f4f7; border: 1px solid var(--sim-rand); border-radius: 3p
 }
 .knopfreihe form { margin: 0; }
 button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
   font: inherit;
   font-size: 14px;
   padding: 9px 17px;
   border-radius: var(--sim-r);
   border: 1px solid transparent;
   cursor: pointer;
+  box-sizing: border-box;
 }
 button.primaer { background: var(--sim-akzent); color: #fff; font-weight: 600; }
 button.primaer:hover { background: var(--sim-akzent-stark); }

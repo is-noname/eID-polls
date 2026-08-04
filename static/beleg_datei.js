@@ -37,7 +37,9 @@ export function receiptText(pollId, state, origin = location.origin) {
     ? `${TOKEN_LABEL}  ${state.token}`
     : `${TOKEN_LABEL}  ${OHNE_TOKEN} — nur noch in deinem gespeicherten Beleg.`;
   return [
-    "DEIN BELEG — eID-Umfrage",
+    "DEIN BELEG — ePulse",
+    "(Blatt = Prüfwert deines Eintrags, Batch = das Bündel darum, Zeitdeckel = Zeitgrenze,",
+    " Signatur = Unterschrift des Betreibers, Stimm-Token = dein Prüf-Code)",
     `${POLL_LABEL}      ${pollId}`,
     `Blatt:        ${state.leaf}`,
     `Batch:        ${state.batch} (zugesagt)`,

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% set active = 'index' %}
-{% block title %}Board {{ poll.poll_id }} — eID-Umfrage{% endblock %}
+{% block title %}Board {{ poll.poll_id }} — ePulse{% endblock %}
 
 {% block content %}
 <h1>{{ poll.question }}</h1>
@@ -41,7 +41,7 @@
         Dieses Board nennt keinen vorab festgelegten Auswertungsplan (<a href="/kodex">§ 7</a>).
       </p>
     {% endif %}
-    <div class="faint small" style="margin-top:10px">
+    <div class="muted small" style="margin-top:10px">
       Beides steht im Eröffnungseintrag des Boards und damit unter der Merkle-Wurzel des ersten
       Bündels: Wer es nachträglich ändert, bricht die Kette und wird oben als Bruch angezeigt.
       Ohne diese Festlegung gäbe es nichts, woran sich eine nachträgliche Änderung messen ließe —
@@ -63,7 +63,7 @@
 <div class="stats">
   <div class="stat">
     <div class="value {{ 'good' if status.ok else 'bad' }}">{{ 'OK' if status.ok else 'BRUCH' }}</div>
-    <div class="label">Batch-Kette — nichts nachträglich geändert{% if not status.ok %} (Batch {{ status.broken_at }}){% endif %}</div>
+    <div class="label">Bündel-Kette (Batch-Kette) — nichts nachträglich geändert{% if not status.ok %} (Bündel {{ status.broken_at }}){% endif %}</div>
   </div>
   <div class="stat">
     <div class="value {{ 'good' if status.signatures_ok else 'bad' }}">{{ 'OK' if status.signatures_ok else 'FEHLER' }}</div>
@@ -91,7 +91,7 @@
 {% endif %}
 {% if not status.ok %}
   <div class="banner err">
-    Ein Eintrag wurde nachträglich verändert — in Batch {{ status.broken_at }} passen die Einträge
+    Ein Eintrag wurde nachträglich verändert — in Bündel {{ status.broken_at }} passen die Einträge
     nicht mehr zur veröffentlichten Prüfsumme.
     <small>
       Reichweite dieser Prüfung: Sie entlarvt nur einen Angreifer, der die Prüfsummen stehen lässt.
@@ -109,7 +109,9 @@
   </div>
 {% endif %}
 
-<p class="faint small" style="margin-top:12px">
+{# Zwischenstands-Vorbehalt (EIP-T-103, F5): wortgleich mit dem Ergebnis nach oben.
+   Er ist die Bedingung, unter der die Zahl gezeigt werden darf, nicht ihre Fussnote. #}
+<p class="muted small" style="margin-top:12px">
   Einträge erscheinen hier nicht sofort, sondern gebündelt: veröffentlicht wird, sobald mindestens
   {{ batch_k }} neue <strong>Stimmen</strong> vorliegen, spätestens nach {{ batch_deckel_h }} Stunden,
   in jedem Fall beim Ende der Umfrage. Innerhalb eines Bündels gibt es keine Reihenfolge — so lässt
@@ -118,7 +120,7 @@
 </p>
 
 {% if kleinste_menge is not none %}
-  <p class="faint small" style="margin-top:12px">
+  <p class="muted small" style="margin-top:12px">
     Wie groß die Bündel tatsächlich geworden sind, steht weiter unten an jedem Batch — gemessen an
     diesem Board, nicht zugesagt. Maßgeblich ist das kleinste: In ihm
     {{ 'liegt' if kleinste_menge == 1 else 'liegen' }}
@@ -126,14 +128,97 @@
     Deckung gibt es dort nicht.
     {% if kleinste_menge < batch_k %}
       Das ist <strong>weniger als die zugesagten {{ batch_k }}</strong> — so weit trägt die Zusage
-      hier also nicht. Es passiert, wenn der Zeitdeckel ausläuft oder die Umfrage endet, bevor genug
+      hier also nicht. Es passiert, wenn die Zeitgrenze (Zeitdeckel) ausläuft oder die Umfrage endet, bevor genug
       Stimmen zusammenkommen; bei geringer Beteiligung ist das der Normalfall und durch keine
       Einstellung zu beheben.
     {% endif %}
   </p>
 {% endif %}
 
-<p class="faint small" style="margin-top:12px">
+<h2>Ergebnis</h2>
+{% if result %}
+  {# Anteil an den Abstimmenden, nicht an der staerksten Option: bei Gleichstand
+     waere sonst jeder Balken randvoll und die Grafik sagte nichts aus. Weil
+     Mehrfachauswahl erlaubt ist, koennen sich die Anteile auf ueber 100 % summieren. #}
+  {% set voters = accounting.n_votes %}
+  {# Beteiligungsquote vor dem Ergebnis, nicht darunter (EIP-T-025, KODEX §8):
+     Der Unterschied zu einer gewoehnlichen Onlineumfrage ist der benannte
+     Nenner. Steht er hinter dem Ergebnis, liest ihn niemand. #}
+  {% set quote = (100 * voters / nenner) if nenner else 0 %}
+  <div class="banner" style="margin-bottom:12px">
+    Beteiligung: <strong>{{ voters }} von {{ "{:,}".format(nenner) | replace(",", ".") }}</strong>
+    {{ nenner_bezeichnung }}
+    — {% if quote >= 0.01 %}{{ ("%.2f" % quote) | replace(".", ",") }} %{% else %}unter 0,01 %{% endif %}
+    {# KODEX §11 (EIP-T-092): Die Zugangsvoraussetzung steht an der Quote, nicht
+       weiter unten - wer die Zahl weitertraegt, kopiert diesen Satz mit oder
+       laesst ihn genau dort weg, wo er noetig waere. #}
+    <div style="margin-top:6px">{{ zugang_hinweis }}</div>
+    <small>
+      Nenner: {{ nenner_quelle }}, <a href="{{ nenner_quelle_url }}" rel="noreferrer">Quelle</a>.
+      Vorab und dauerhaft festgelegt, nicht je Umfrage gewählt — ein nachträglich passender
+      Nenner wäre genau der Methodentrick, gegen den dieses Verfahren antritt.
+    </small>
+  </div>
+  {# Anonymitaetsschwelle (EIP-T-090, Basisidee §3.1). Vor den Balken aus
+     demselben Grund wie der Nenner: Was man nach dem Ergebnis liest, liest man
+     nicht. Das Label sagt, dass die *Anonymitaetsmenge* klein ist - ueber die
+     Aussagekraft steht der Satz darueber. Und es haelt nichts zurueck: Das
+     Ergebnis folgt unveraendert, alles andere waere ein Verstoss gegen §8. #}
+  {% if anonymitaetshinweis %}
+    <div class="banner warn" style="margin-bottom:12px">
+      Kleine Anonymitätsmenge
+      <small>{{ anonymitaetshinweis }}</small>
+    </div>
+  {% endif %}
+  <div class="rows">
+    {% for option, count in result.items() %}
+      {% set share = (100 * count / voters) if voters else 0 %}
+      <div class="bar-row">
+        <div class="bar-head">
+          <span class="bar-label">{{ option }}</span>
+          <span class="bar-count">{{ count }} <span class="muted small">({{ share | round | int }} %)</span></span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill" style="width: {{ [share, 100] | min | round(1) }}%"></div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+  <p class="muted small" style="margin-top:10px">
+    Anteil der {{ voters }} Abstimmenden. Da mehrere Antworten möglich sind, kann die Summe über
+    100 % liegen.
+  </p>
+  {# V-006 ist mit EIP-T-025 (Nenner, Quote) und EIP-T-092 (Zugangshinweis)
+     aufgeloest - beides steht jetzt oben an der Zahl, nicht hier unten. Was
+     hier bleibt, ist die Folgerung daraus, und die traegt nur, wenn die
+     Voraussetzung darueber gelesen wurde. Eine Veroeffentlichungsschwelle gibt
+     es bewusst nicht: Wir zeigen die Quote und sagen, was sie ist. #}
+  <div class="banner warn" style="margin-top:12px">
+    Was diese Zahlen nicht sagen
+    <small>
+      Die Prozente an den Balken beziehen sich auf die {{ voters }} Abstimmenden — also auf sich
+      selbst; wie viel das gemessen an allen Berechtigten ist und wer gar nicht erst teilnehmen
+      konnte, steht oben. Das Ergebnis ist damit das Votum der Teilnehmenden, nie eine Aussage
+      über die Bevölkerung. Solange kein echter eID-Flow läuft, ist diese Darstellung ohnehin eine
+      Vorführung des Verfahrens.
+    </small>
+  </div>
+{% else %}
+  <div class="card"><div class="card-body muted">{{ result_error }}</div></div>
+{% endif %}
+
+<h2>Selbst nachprüfen</h2>
+<div class="rows" style="margin-bottom:20px">
+  <div class="row">
+    <div class="grow">
+      <div class="row-title">Hast du selbst abgestimmt?</div>
+      <div class="muted small">Mit deinem Prüf-Code (Stimm-Token) aus dem Beleg findest du deine eigene Stimme wieder.</div>
+    </div>
+    <a href="/verify#poll={{ poll.poll_id }}"><button class="ghost">Stimme prüfen</button></a>
+  </div>
+</div>
+
+<p class="muted small" style="margin-top:12px">
   Was diese Prüfungen nicht abdecken: Die Signatur belegt, dass eine Berechtigung mit dem Schlüssel
   dieses Betreibers ausgestellt wurde — nicht, dass dahinter ein Ausweis stand. Solange dieser
   Schlüssel bei einer einzigen Stelle liegt, könnte sie sich selbst Berechtigungen ausstellen, und
@@ -152,7 +237,7 @@
     </small>
   </div>
 {% else %}
-  <p class="faint small">
+  <p class="muted small">
     Jede Batch-Wurzel wird bei zwei voneinander unabhängigen Diensten datiert. Das schließt eine
     bestimmte Manipulation aus: Wir können ein Board nicht nachträglich umschreiben, denn die alte
     Wurzel ist außerhalb unserer Reichweite bezeugt, und einen neuen Zeitstempel bekämen wir nur mit
@@ -215,7 +300,7 @@
     </div>
   </details>
 
-  <p class="faint small" style="margin-top:12px">
+  <p class="muted small" style="margin-top:12px">
     <strong>Was der Zeitstempel nicht leistet.</strong> Er verhindert nicht, dass wir von Anfang an
     zwei verschiedene Boards führen und sie verschiedenen Betrachtern zeigen. Beide Wurzeln ließen
     sich ehrlich datieren, jede zu ihrer Zeit. Dagegen hilft kein Zeitstempel, sondern nur, dass
@@ -225,96 +310,13 @@
   </p>
 {% endif %}
 
-<h2>Ergebnis</h2>
-{% if result %}
-  {# Anteil an den Abstimmenden, nicht an der staerksten Option: bei Gleichstand
-     waere sonst jeder Balken randvoll und die Grafik sagte nichts aus. Weil
-     Mehrfachauswahl erlaubt ist, koennen sich die Anteile auf ueber 100 % summieren. #}
-  {% set voters = accounting.n_votes %}
-  {# Beteiligungsquote vor dem Ergebnis, nicht darunter (EIP-T-025, KODEX §8):
-     Der Unterschied zu einer gewoehnlichen Onlineumfrage ist der benannte
-     Nenner. Steht er hinter dem Ergebnis, liest ihn niemand. #}
-  {% set quote = (100 * voters / nenner) if nenner else 0 %}
-  <div class="banner" style="margin-bottom:12px">
-    Beteiligung: <strong>{{ voters }} von {{ "{:,}".format(nenner) | replace(",", ".") }}</strong>
-    {{ nenner_bezeichnung }}
-    — {% if quote >= 0.01 %}{{ ("%.2f" % quote) | replace(".", ",") }} %{% else %}unter 0,01 %{% endif %}
-    {# KODEX §11 (EIP-T-092): Die Zugangsvoraussetzung steht an der Quote, nicht
-       weiter unten - wer die Zahl weitertraegt, kopiert diesen Satz mit oder
-       laesst ihn genau dort weg, wo er noetig waere. #}
-    <div style="margin-top:6px">{{ zugang_hinweis }}</div>
-    <small>
-      Nenner: {{ nenner_quelle }}, <a href="{{ nenner_quelle_url }}" rel="noreferrer">Quelle</a>.
-      Vorab und dauerhaft festgelegt, nicht je Umfrage gewählt — ein nachträglich passender
-      Nenner wäre genau der Methodentrick, gegen den dieses Verfahren antritt.
-    </small>
-  </div>
-  {# Anonymitaetsschwelle (EIP-T-090, Basisidee §3.1). Vor den Balken aus
-     demselben Grund wie der Nenner: Was man nach dem Ergebnis liest, liest man
-     nicht. Das Label sagt, dass die *Anonymitaetsmenge* klein ist - ueber die
-     Aussagekraft steht der Satz darueber. Und es haelt nichts zurueck: Das
-     Ergebnis folgt unveraendert, alles andere waere ein Verstoss gegen §8. #}
-  {% if anonymitaetshinweis %}
-    <div class="banner warn" style="margin-bottom:12px">
-      Kleine Anonymitätsmenge
-      <small>{{ anonymitaetshinweis }}</small>
-    </div>
-  {% endif %}
-  <div class="rows">
-    {% for option, count in result.items() %}
-      {% set share = (100 * count / voters) if voters else 0 %}
-      <div class="bar-row">
-        <div class="bar-head">
-          <span class="bar-label">{{ option }}</span>
-          <span class="bar-count">{{ count }} <span class="muted small">({{ share | round | int }} %)</span></span>
-        </div>
-        <div class="bar-track">
-          <div class="bar-fill" style="width: {{ [share, 100] | min | round(1) }}%"></div>
-        </div>
-      </div>
-    {% endfor %}
-  </div>
-  <p class="faint small" style="margin-top:10px">
-    Anteil der {{ voters }} Abstimmenden. Da mehrere Antworten möglich sind, kann die Summe über
-    100 % liegen.
-  </p>
-  {# V-006 ist mit EIP-T-025 (Nenner, Quote) und EIP-T-092 (Zugangshinweis)
-     aufgeloest - beides steht jetzt oben an der Zahl, nicht hier unten. Was
-     hier bleibt, ist die Folgerung daraus, und die traegt nur, wenn die
-     Voraussetzung darueber gelesen wurde. Eine Veroeffentlichungsschwelle gibt
-     es bewusst nicht: Wir zeigen die Quote und sagen, was sie ist. #}
-  <div class="banner warn" style="margin-top:12px">
-    Was diese Zahlen nicht sagen
-    <small>
-      Die Prozente an den Balken beziehen sich auf die {{ voters }} Abstimmenden — also auf sich
-      selbst; wie viel das gemessen an allen Berechtigten ist und wer gar nicht erst teilnehmen
-      konnte, steht oben. Das Ergebnis ist damit das Votum der Teilnehmenden, nie eine Aussage
-      über die Bevölkerung. Solange kein echter eID-Flow läuft, ist diese Darstellung ohnehin eine
-      Vorführung des Verfahrens.
-    </small>
-  </div>
-{% else %}
-  <div class="card"><div class="card-body muted">{{ result_error }}</div></div>
-{% endif %}
-
-<h2>Selbst nachprüfen</h2>
-<div class="rows" style="margin-bottom:20px">
-  <div class="row">
-    <div class="grow">
-      <div class="row-title">Hast du selbst abgestimmt?</div>
-      <div class="muted small">Mit dem Stimm-Token aus deinem Beleg findest du deine eigene Stimme wieder.</div>
-    </div>
-    <a href="/verify#poll={{ poll.poll_id }}"><button class="ghost">Stimme prüfen</button></a>
-  </div>
-</div>
-
 <details class="explain">
   <summary>Alle {{ n_entries }} Einträge in {{ batches | length }} Batches ansehen</summary>
   <div class="explain-body">
     <p>
-      Jeder Batch ist eine Menge von Einträgen ohne Reihenfolge, zusammengefasst zu einer
-      Merkle-Wurzel. Die Wurzeln sind untereinander verkettet — deshalb fällt jede nachträgliche
-      Änderung und jede gelöschte Zeile auf.
+      Jedes Bündel (Batch) ist eine Menge von Einträgen — unten „Blatt" genannt — ohne Reihenfolge,
+      zusammengefasst zu einer Merkle-Wurzel. Die Wurzeln sind untereinander verkettet — deshalb
+      fällt jede nachträgliche Änderung und jede gelöschte Zeile auf.
     </p>
     {% for batch in batches %}
       <p class="mono small" style="margin:14px 0 4px">

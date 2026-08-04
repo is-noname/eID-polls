@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% set active = 'admin' %}
-{% block title %}Admin — eID-Umfrage{% endblock %}
+{% block title %}Admin — ePulse{% endblock %}
 
 {% block content %}
 <h1>Admin</h1>
@@ -20,7 +20,7 @@
       {# Die Voreinstellung nur auf dem Betreiberrechner nennen - im Netz waere das
          eine Einladung zum Ausprobieren (EIP-T-018). #}
       {% if is_local %}
-      <div class="faint">Voreinstellung: <code>admin</code> — änderbar über <code>EIDPOLL_ADMIN_TOKEN</code>.</div>
+      <div class="muted">Voreinstellung: <code>admin</code> — änderbar über <code>EIDPOLL_ADMIN_TOKEN</code>.</div>
       {% endif %}
     </div>
   </div>
@@ -33,7 +33,7 @@
       <div class="field">
         <label for="options">Optionen (eine pro Zeile, mindestens zwei)</label>
         <textarea id="options" rows="4" placeholder="Ja&#10;Nein&#10;Enthaltung"></textarea>
-        <div class="faint" style="margin-top:6px">
+        <div class="muted" style="margin-top:6px">
           Eine Zeile muss genau <code>Enthaltung</code>, <code>Weiß nicht</code> oder
           <code>Weiss nicht</code> lauten — Antwortlisten ohne Enthaltung sind nach
           <a href="/kodex">§ 12</a> verboten und werden abgewiesen.
@@ -45,7 +45,7 @@
       <div class="field">
         <label for="laufzeit-ende">Ende der Laufzeit</label>
         <input type="datetime-local" id="laufzeit-ende">
-        <div class="faint" style="margin-top:6px">
+        <div class="muted" style="margin-top:6px">
           Leer lassen übernimmt die Vorgabe dieser Instanz ({{ laufzeit_tage }} Tage).
           <strong>Danach ist das Ende nicht mehr zu verschieben</strong> — die Umfrage schließt zu
           diesem Zeitpunkt von selbst, und eine Verlängerung wegen des Zwischenstands verbietet
@@ -55,7 +55,7 @@
       <div class="field">
         <label for="auswertungsplan-zusatz">Auswertungsplan — Zusatz für diese Umfrage (optional)</label>
         <textarea id="auswertungsplan-zusatz" rows="3" placeholder="Was zusätzlich zum Grundplan für genau diese Frage gilt."></textarea>
-        <div class="faint" style="margin-top:6px">
+        <div class="muted" style="margin-top:6px">
           Der Grundplan gilt immer und ist nicht je Umfrage wählbar — aus demselben Grund wie der
           Nenner. Der Zusatz darf ergänzen, nichts davon zurücknehmen, und ist nachträglich nicht
           erweiterbar:
@@ -63,7 +63,7 @@
         <div class="muted small" style="margin-top:6px">{{ auswertungsplan }}</div>
       </div>
       <button id="create-button">Anlegen</button>
-      <span class="faint" style="margin-left:10px">Eine Frage, feste Optionen, kein Freitext (§8).</span>
+      <span class="muted" style="margin-left:10px">Eine Frage, feste Optionen, kein Freitext (§8).</span>
     </div>
   </div>
 
@@ -142,7 +142,7 @@
           <input type="text" id="demo-leaf" placeholder="z. B. 3fa9c2">
         </div>
       </div>
-      <div class="faint">
+      <div class="muted">
         Stuffing ist kryptografisch nicht von einer echten Stimme zu unterscheiden — nur die
         Ledger-Abrechnung entlarvt es. Das Umschreiben bricht die Kette, weil die Hashes stehen
         bleiben; ein Betreiber würde sie neu rechnen (§9, Prototyp-Fund 2).

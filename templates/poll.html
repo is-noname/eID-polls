@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% set active = 'index' %}
-{% block title %}{{ poll.question }} — eID-Umfrage{% endblock %}
+{% block title %}{{ poll.question }} — ePulse{% endblock %}
 
 {% block content %}
 <h1>{{ poll.question }}</h1>
@@ -120,10 +120,10 @@
     <div class="banner ok" id="receipt-head">
       Deine Stimme ist angenommen — der Beleg bindet uns ab sofort beweisbar.
       <small>
-        Öffentlich sichtbar wird dein Eintrag mit dem nächsten Batch — der wird veröffentlicht,
+        Öffentlich sichtbar wird dein Eintrag mit dem nächsten Bündel (Batch) — das wird veröffentlicht,
         sobald {{ batch_k }} Stimmen beisammen sind, spätestens nach {{ batch_deckel_h }} Stunden und
         in jedem Fall beim Ende der Umfrage. Deine Stimme liegt dann unter diesen {{ batch_k }};
-        löst der Zeitdeckel oder das Ende der Umfrage aus, können es auch weniger sein — das Board
+        löst die Zeitgrenze (Zeitdeckel) oder das Ende der Umfrage aus, können es auch weniger sein — das Board
         nennt die tatsächliche Zahl. Fehlt dein Eintrag, ist dein Beleg der Nachweis dafür.
       </small>
     </div>
