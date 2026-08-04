@@ -15,9 +15,30 @@ const POLL_ID = params.poll_id;
 const N_HEX = params.n;
 const E_HEX = params.e;
 
+const stepAuth = document.getElementById("step-auth");
 const stepVote = document.getElementById("step-vote");
 const stepReceipt = document.getElementById("step-receipt");
 const voteButton = document.getElementById("vote-button");
+const choiceRows = document.querySelector("#step-vote .rows");
+
+/** EIP-T-100: Schritt 2 ist bis zur Anmeldung gesperrt - die Checkboxen tragen
+ * dafuer schon `disabled`, aber ein Klick soll nicht ins Leere laufen, sondern
+ * zu Schritt 1 zeigen. */
+function redirectToAuth() {
+  stepAuth.scrollIntoView({ behavior: "smooth", block: "center" });
+  stepAuth.classList.add("flash");
+  setTimeout(() => stepAuth.classList.remove("flash"), 1200);
+  toast("Erst ausweisen, dann geht's hier weiter.", "err");
+}
+
+// mousedown statt click: ein `disabled` Checkbox unterdrueckt sein eigenes
+// click-Ereignis vollstaendig, mousedown feuert aber trotzdem und laesst sich
+// per preventDefault auch vorm Ankreuzen abfangen.
+choiceRows.addEventListener("mousedown", (e) => {
+  if (!stepVote.classList.contains("blocked")) return;
+  e.preventDefault();
+  redirectToAuth();
+});
 
 function render() {
   const state = loadState(POLL_ID);
@@ -42,11 +63,14 @@ function showReceipt(state) {
   stepReceipt.classList.remove("hidden");
   document.getElementById("receipt-body").replaceChildren(receiptPaper(POLL_ID, full));
   const verifyLink = document.getElementById("receipt-verify");
+  const copyButton = document.getElementById("receipt-copy");
   if (full.token) {
     verifyLink.href = verifyUrl(POLL_ID, full.token);
     verifyLink.classList.remove("hidden");
+    copyButton.classList.remove("hidden");
   } else {
     verifyLink.classList.add("hidden");
+    copyButton.classList.add("hidden"); // ohne Token gibt es nichts zu kopieren
   }
 }
 
@@ -57,6 +81,8 @@ function showReceipt(state) {
 // entfallen - Fehler aus dem Flow stehen jetzt serverseitig auf der Seite.
 
 voteButton.addEventListener("click", async () => {
+  if (stepVote.classList.contains("blocked")) { redirectToAuth(); return; }
+
   const choices = [...document.querySelectorAll("input[name=choice]:checked")].map((c) => c.value);
   if (!choices.length) { toast("Bitte mindestens eine Option wählen.", "err"); return; }
 
@@ -82,6 +108,23 @@ document.getElementById("receipt-download").addEventListener("click", () => {
   const state = loadState(POLL_ID);
   if (!state || !state.voted) return;
   download(`beleg_${POLL_ID}.txt`, receiptText(POLL_ID, withToken(state)));
+});
+
+// Token in die Zwischenablage (EIP-T-099). Wer am selben Rechner prueft, soll
+// die 64 Zeichen nicht aus dem Kassenbon markieren muessen - dabei rutscht ein
+// Zeilenumbruch mit, und die Suche endet in "kein Eintrag", also in der
+// Meldung, die sonst den Betreiber belastet.
+document.getElementById("receipt-copy").addEventListener("click", async () => {
+  const token = withToken(loadState(POLL_ID) || {}).token;
+  if (!token) { toast("Dieser Browser hat das Token nicht mehr — nur der gespeicherte Beleg.", "err"); return; }
+  try {
+    await navigator.clipboard.writeText(token);
+    toast("Token kopiert. Es liegt jetzt in der Zwischenablage — wie eine Quittung behandeln.", "ok");
+  } catch (_) {
+    // Ohne sicheren Kontext oder ohne Erlaubnis gibt es keine Zwischenablage.
+    // Dann bleibt das Token sichtbar auf dem Beleg stehen - der Weg von Hand.
+    toast("Kopieren hat der Browser nicht erlaubt. Das Token steht auf dem Beleg.", "err");
+  }
 });
 
 render();

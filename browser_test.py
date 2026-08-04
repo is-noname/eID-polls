@@ -58,7 +58,13 @@ def anmelden(page, code: str, pin: str = "123456") -> None:
 
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
-    page = browser.new_page()
+    # accept_downloads: Der gespeicherte Beleg ist seit EIP-T-099 nicht nur eine
+    # Datei zum Aufheben, sondern die Eingabe von /verify - er muss echt durch
+    # den Download gegangen sein, damit der Test etwas ueber den Alltag sagt.
+    page = browser.new_context(
+        accept_downloads=True,
+        permissions=["clipboard-read", "clipboard-write"],
+    ).new_page()
     errors: list[str] = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.on("pageerror", lambda e: errors.append(str(e)))
@@ -83,6 +89,19 @@ with sync_playwright() as p:
     check("Punkt 1: Umfrage angelegt, auf Startseite sichtbar", POLL in page.content())
     check("Punkt 1b: OFFEN-Status auf der Startseite", "OFFEN" in page.content())
     page.screenshot(path=f"{SHOTS}/01_start.png", full_page=True)
+
+    # --- EIP-T-100: Schritt 2 ist vor der Anmeldung gesperrt, nicht nur optisch
+    page.goto(f"{BASE}/poll/{POLL}")
+    page.wait_for_load_state("networkidle")
+    check("T-100: Auswahlfelder vor der Anmeldung disabled",
+          page.get_attribute("input[value='Ja']", "disabled") is not None)
+    page.click("label.choice", force=True)
+    check("T-100: Klick auf eine Auswahl vor der Anmeldung setzt kein Haekchen",
+          not page.is_checked("input[value='Ja']"))
+    check("T-100: Klick fuehrt zu Schritt 1 statt ins Leere",
+          "ausweisen" in page.inner_text(".toast.err").lower())
+    check("T-100: Abgabeknopf nennt den Grund statt nur grau zu sein",
+          page.inner_text("#vote-button").strip() == "Erst ausweisen")
 
     # --- Punkt 2: authentifizieren und Token holen (Phase A, Blinding im Browser)
     page.goto(f"{BASE}/poll/{POLL}")
@@ -129,6 +148,21 @@ with sync_playwright() as p:
     if token is None:
         browser.close()
         sys.exit(1)
+
+    # Den Beleg wirklich speichern - diese Datei geht spaeter auf /verify zurueck.
+    beleg_pfad = os.path.join(SHOTS, "beleg.txt")
+    with page.expect_download() as dl:
+        page.click("#receipt-download")
+    dl.value.save_as(beleg_pfad)
+    with open(beleg_pfad, encoding="utf-8") as fh:
+        beleg_text = fh.read()
+    check("Punkt 4c: Beleg gespeichert, Token steht unter seinem Label",
+          f"Stimm-Token:  {token.group(1)}" in beleg_text, beleg_text.splitlines()[1][:60])
+
+    page.click("#receipt-copy")
+    page.wait_for_selector(".toast", timeout=5000)
+    check("Punkt 4d: Token kopieren meldet sich", "Token kopiert" in page.inner_text(".toast"),
+          page.inner_text(".toast"))
 
     # --- Punkt 5: zweiter Abstimmversuch
     page.check("input[value='Nein']")
@@ -290,6 +324,35 @@ with sync_playwright() as p:
           "Token gefunden" in page.content() and "Ja" in page.inner_text("#verify-result"))
     page.screenshot(path=f"{SHOTS}/05_verify.png", full_page=True)
 
+    # Derselbe Weg noch einmal, aber so, wie ihn jemand ohne zweites Geraet geht
+    # (EIP-T-099): die gespeicherte Datei ablegen, statt 64 Zeichen abzutippen.
+    # Genommen wird die Datei aus Punkt 4c - der echte Download, nicht ein hier
+    # zusammengebauter Text.
+    page.goto(f"{BASE}/verify")
+    page.wait_for_load_state("networkidle")
+    page.set_input_files("#beleg-file", beleg_pfad)
+    page.wait_for_selector("#verify-result.ok", timeout=10_000)
+    check("Punkt 4e: Beleg-Datei auf /verify eingelesen, Suche laeuft von selbst",
+          "Token gefunden" in page.content() and page.input_value("#token") == token.group(1),
+          page.input_value("#token")[:20])
+    check("Punkt 4f: Umfrage aus der Datei uebernommen", page.input_value("#poll") == POLL,
+          page.input_value("#poll"))
+
+    # Eine fremde Datei muss abgewiesen werden, ohne das Board anzufassen.
+    fremd_pfad = os.path.join(SHOTS, "einkaufsliste.txt")
+    with open(fremd_pfad, "w", encoding="utf-8") as fh:
+        fh.write("Einkaufsliste\nMilch\nBrot\n")
+    page.goto(f"{BASE}/verify")
+    page.wait_for_load_state("networkidle")
+    board_abrufe: list[str] = []
+    page.on("request", lambda r: board_abrufe.append(r.url) if "/api/board/" in r.url else None)
+    page.set_input_files("#beleg-file", fremd_pfad)
+    page.wait_for_selector("#verify-result.err", timeout=10_000)
+    check("Punkt 4g: fremde Datei nennt den Grund und laedt das Board nicht",
+          "Stimm-Token" in page.inner_text("#verify-result") and not board_abrufe,
+          page.inner_text("#verify-result").replace("\n", " ")[:90])
+    page.screenshot(path=f"{SHOTS}/06_verify_datei.png", full_page=True)
+
     # --- Punkt 7: Abrechnung und Kettenpruefung als oeffentliche Seite
     page.goto(f"{BASE}/board/{POLL}")
     page.wait_for_load_state("networkidle")
@@ -321,7 +384,7 @@ with sync_playwright() as p:
     check("Debug-Modul zeigt Ereignisse", "abgewiesen" in page.content())
     check("Debug-Seite zeigt den Authentifizierungsmodus unuebersehbar",
           "Authentifizierungsmodus" in page.content())
-    page.screenshot(path=f"{SHOTS}/06_debug.png", full_page=True)
+    page.screenshot(path=f"{SHOTS}/07_debug.png", full_page=True)
 
     page.goto(f"{BASE}/admin")
     page.wait_for_load_state("networkidle")

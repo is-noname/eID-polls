@@ -433,6 +433,22 @@ body.dense button.big { width: auto; padding: 7px 14px; font-size: 13px; }
 
 .button-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
 
+/* Ablageflaeche fuer die Beleg-Datei (EIP-T-099). Gestrichelt, weil sie kein
+   Feld ist, das etwas absendet, sondern eine Flaeche, auf die man etwas legt. */
+.dropzone {
+  border: 2px dashed var(--border-mid);
+  border-radius: var(--r-sm);
+  background: var(--raised);
+  padding: 22px 18px;
+  margin-bottom: 20px;
+  text-align: center;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.dropzone-main { font-weight: 700; margin-bottom: 12px; }
+.dropzone small { display: block; margin-top: 12px; color: var(--faint); }
+.dropzone.over { border-color: var(--accent); background: var(--accent-tint); }
+body.dense .dropzone { padding: 12px; margin-bottom: 12px; }
+
 /* Auswahlflaechen: bewusst gross, damit niemand danebentippt. */
 .choice {
   display: flex;
@@ -468,10 +484,17 @@ body.dense button.big { width: auto; padding: 7px 14px; font-size: 13px; }
   transition: border-color 0.15s ease, opacity 0.15s ease;
 }
 .step.done { border-color: var(--accent); }
-/* Nur optisch zurueckgenommen: den Knopf sperrt das Template selbst
-   (disabled), damit ein blockierter Schritt lesbar bleibt statt zu
-   verschwinden. */
+/* Nur optisch zurueckgenommen: Checkboxen und Knopf sperrt das Template selbst
+   (disabled/aria-disabled), damit ein blockierter Schritt lesbar bleibt statt
+   zu verschwinden (EIP-T-100). */
 .step.blocked { opacity: 0.6; }
+.step.blocked .rows,
+.step.blocked #vote-button { cursor: not-allowed; }
+@keyframes step-flash {
+  0%, 100% { box-shadow: var(--shadow-sm); }
+  30% { box-shadow: 0 0 0 3px var(--accent); }
+}
+.step.flash { animation: step-flash 1.2s ease; }
 .step-head {
   display: flex;
   align-items: center;
