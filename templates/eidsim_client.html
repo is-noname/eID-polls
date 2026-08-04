@@ -5,12 +5,16 @@
 {% block inhalt %}
 {# Vier Zustaende in einer Seite, serverseitig umgeschaltet. Kein JavaScript:
    Was hier gezeigt wird, ist ein Schrittwechsel mit Seitenwechsel - genau das,
-   was im Ernstfall passiert, wenn eine zweite Anwendung uebernimmt. #}
+   was im Ernstfall passiert, wenn eine zweite Anwendung uebernimmt.
+
+   Ohne eigene Ziffern (EIP-T-102): Die Fensterleiste sagt bereits "Teil von
+   Schritt 1 der Umfrage" - eine zweite 1-2-3 hier wuerde damit konkurrieren
+   statt sich ihr unterzuordnen. #}
 
 <div class="schrittleiste">
-  <span class="{{ 'jetzt' if schritt == 'karte' else 'fertig' }}">1 Ausweis</span>
-  <span class="{{ 'jetzt' if schritt == 'auskunft' else ('fertig' if schritt in ('pin',) else '') }}">2 Auskunft</span>
-  <span class="{{ 'jetzt' if schritt == 'pin' }}">3 PIN</span>
+  <span class="{{ 'jetzt' if schritt == 'karte' else 'fertig' }}">Ausweis</span>
+  <span class="{{ 'jetzt' if schritt == 'auskunft' else ('fertig' if schritt in ('pin',) else '') }}">Auskunft</span>
+  <span class="{{ 'jetzt' if schritt == 'pin' }}">PIN</span>
 </div>
 
 {% if fehler %}<div class="meldung fehler">{{ fehler }}</div>{% endif %}

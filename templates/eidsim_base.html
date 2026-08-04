@@ -23,6 +23,11 @@
     <div class="fensterleiste">
       <span class="ampel"><i></i><i></i><i></i></span>
       <span class="fenstertitel">{% block fenstertitel %}{% endblock %}</span>
+      {# Untergeordneter Hinweis, nicht eigene Zaehlung: Diese App zaehlt fuer
+         sich selbst 1-2-3, das ist gewollt und ihr eigener Ablauf (EIP-T-095).
+         Ohne diesen Bezug konkurriert die Ziffer aber mit Schritt 1 der
+         Umfrage, aus der man kam - EIP-T-102. #}
+      <span class="fenstertitel-kontext">Teil von Schritt 1 der Umfrage</span>
     </div>
     <div class="fensterinhalt">
       {% block inhalt %}{% endblock %}
