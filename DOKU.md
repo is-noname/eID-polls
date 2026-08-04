@@ -181,10 +181,27 @@ nicht behoben.
 
 ### Eigene Stimme prüfen
 
-**Verifikation** → Umfrage wählen, Token aus dem Beleg einfügen. Die App zeigt die Auswahl, die
-unter diesem Token im Board steht. Gefunden wird nur Veröffentlichtes: Zwischen Abgabe und dem
-nächsten Batch meldet die Suche „kein Eintrag" — in diesem Zeitraum ist der signierte Beleg der
-Nachweis, nicht das Board.
+**Verifikation** → Es gibt drei Wege, und sie führen zum selben Ergebnis:
+
+1. **Beleg-Datei ablegen** — die gespeicherte `beleg_<umfrage>.txt` auf die Fläche oben ziehen oder
+   über „Datei auswählen" holen. Umfrage und Token werden daraus gelesen, die Suche startet von
+   selbst. Der bequemste Weg für alle, die am selben Rechner prüfen.
+2. **QR-Code scannen** — für das zweite Gerät, solange der Beleg noch am Bildschirm steht.
+3. **Token abtippen** — 64 Zeichen aus dem Beleg ins Feld. Auf der Beleg-Seite steht dafür auch
+   „Token kopieren".
+
+Die App zeigt dann die Auswahl, die unter diesem Token im Board steht. Gefunden wird nur
+Veröffentlichtes: Zwischen Abgabe und dem nächsten Batch meldet die Suche „kein Eintrag" — in
+diesem Zeitraum ist der signierte Beleg der Nachweis, nicht das Board. Sieht das Token schon dem
+Format nach falsch aus, sagt die Seite das und lädt das Board gar nicht erst; „so kann ein Token
+nicht aussehen" und „dazu steht noch nichts im Board" sind zwei verschiedene Auskünfte und dürfen
+nicht gleich klingen (`EIP-T-107`).
+
+> **Die Beleg-Datei wird im Browser gelesen, nicht hochgeladen** (`EIP-T-099`) — und auch nicht
+> gespeichert: kein `localStorage`, kein Cookie, nichts auf dem Server. Nach dem Neuladen hält der
+> Browser wieder nichts, was Gerät und abgegebene Stimme verbindet. Die Zeile `Stimm-Token:  <hex>`
+> im Beleg ist damit eine **Schnittstelle**: Wird sie umformuliert, sind alle bereits gespeicherten
+> Belege unlesbar. `beleg_datei_test.mjs` hält Schreiben und Lesen gegeneinander.
 
 Dieser Beleg ist zugleich eine **Quittung** — wer ihn vorzeigt, beweist, wie er gestimmt hat. Das
 ist eine bewusste Entscheidung: individuelle Verifizierbarkeit und Quittungsfreiheit schließen
@@ -545,7 +562,8 @@ static/ballot.js (+ blind.js)            web.py          HTTP, Cookies
 | `rfc9474_a4.json` | Der Testvektor aus RFC 9474 Anhang A.4, wörtlich übernommen. Python und JavaScript prüfen gegen dieselbe Datei — zwei getrennte Kopien könnten getrennt falsch werden. |
 | `static/blind.js` | Dieselbe Krypto im Browser. Beide Seiten müssen bitgenau gleich rechnen. `finalizeGeprueft()` verifiziert die entblindete Signatur vor der Weitergabe (RFC 9474 §4.4) — mit WebCrypto, nicht mit der eigenen PSS-Implementierung. |
 | `static/ballot.js` | Der Weg einer Stimme im Browser: Token erzeugen, verblinden, signieren lassen, entblinden, abgeben — plus der Zwischenstand, wenn die Abgabe danach abbricht (EIP-ADR-20260725-002). `blind.js` rechnet, `ballot.js` führt. `templates/poll.html` enthält nur noch die DOM-Verdrahtung. |
-| `static/beleg.js` | Der Beleg: Kassenbon, QR-Code, Textdatei. Reine Darstellung — kein Krypto, kein Netz, kein Speicher. |
+| `static/beleg.js` | Der Beleg als Kassenbon samt QR-Code. Reine Darstellung — kein Krypto, kein Netz, kein Speicher. |
+| `static/beleg_datei.js` | Die **Textform** des Belegs und ihr Leser, bewusst in einer Datei (EIP-T-099): Seit `/verify` die gespeicherte Datei annimmt, ist `Stimm-Token:  <hex>` eine Schnittstelle zwischen zwei Ständen der App, keine Formulierung. Ohne Import aus dem Browser, damit `beleg_datei_test.mjs` beide Seiten unter node gegeneinander halten kann. |
 | `store.py` | SQLite der **Board-Seite**: `polls`, `spent`, `board`, `batches`, `anker` — ohne Eingangsreihenfolge (`WITHOUT ROWID`, EIP-T-033 E). Puffert Einträge und veröffentlicht sie als Batch. Enthält auch die gemeinsame Basis beider Speicher (`SqliteStore`: config, `vernichte_config`, `kopiere_ohne_geheimnisse`). Alle Zugriffe — auch lesende — laufen über ein `RLock`, weil sich alle Threads eine Verbindung teilen (EIP-T-019). |
 | `berechtigung_store.py` | SQLite der **Berechtigungsseite** (EIP-T-033, Baustein G): `eligibility`, der kurzlebige `issue_retry` (EIP-T-070) und alle Schlüssel, die mit dem Pseudonym zu tun haben (`poll_secret`, `poll_key`, `cookie_secret`). Eigene Datei neben der Board-Datenbank — ein Join über beide Seiten ist damit eine bewusste Handlung über zwei Verbindungen, kein `SELECT` über zwei Tabellen derselben Datei. Die Trennlinie ist die künftige Betreibergrenze aus Stufe 2. |
 | `board_eintrag.py` | Das Eintragsformat: kanonisches JSON, Blatt-Hash, Merkle-Baum, Batch-Kette, Konstruktoren (`vote`, `token_issued`, `poll_open` — trägt den öffentlichen Token-Schlüssel der Umfrage —, `poll_closed`) und `parse(entry) -> Vote \| TokenIssued \| PollOpen \| PollClosed \| Unlesbar`. Rohe Dicts baut und liest niemand mehr selbst. Ein Eintrag, den `parse` nicht deuten kann, wird zu `Unlesbar` — er zählt nirgends mit und macht das Ergebnis unbelastbar, statt still zu verschwinden. |
@@ -609,6 +627,12 @@ GET-Parameter entgegen — wer nach der Abstimmung angemeldet prüfte, lieferte 
 (`static/verify.js`): Der Server liefert das Board als Datei aus, gesucht wird lokal, und das Token
 steht im URL-Fragment (`#`), das der Browser nie mitsendet. Der Server erfährt nur, dass jemand das
 Board dieser Umfrage geladen hat.
+
+Die Beleg-Datei (EIP-T-099) ändert daran nichts: Sie wird im Browser gelesen und nirgends abgelegt.
+Aus demselben Grund melden misslungene Dateien und unbrauchbare Token **nicht** ins Debug-Modul —
+ein Ping von dieser Seite wäre ein Request mit Sekundenstempel, also genau das Signal „hier prüft
+gerade jemand", das der Umbau entfernt hat; bei einem unbrauchbaren Token gäbe es sonst überhaupt
+keinen Request. Der Preis ist, dass der Betreiber nicht sieht, wie oft das Einlesen scheitert.
 
 **Getrennte Speicher und getrennte Logs (EIP-T-033, Baustein G):** Eligibility-Ledger und Board
 liegen in zwei Datenbankdateien (`store.py` / `berechtigung_store.py`, der Pfad der zweiten wird aus
@@ -709,6 +733,8 @@ python3 app/smoke_test.py    # sieben Abnahmepunkte serverseitig, plus beide Ang
                              # und beide Vektorprüfungen (die JS-Seite über node)
 node app/ballot_test.mjs     # Stimmzettel-Flow ohne Browser: Abbruch zwischen Signatur
                              # und Abgabe, Wiederverwendung derselben Berechtigung
+node app/beleg_datei_test.mjs  # Beleg schreiben und wieder einlesen (läuft auch im
+                               # smoke_test mit)
 
 cd app && EIDPOLL_DB=/tmp/bt.sqlite3 python3 -m uvicorn web:app --port 8899 &
 python3 app/browser_test.py  # derselbe Durchlauf im echten Browser
@@ -724,6 +750,11 @@ Die drei Krypto-Tests prüfen verschiedene Dinge und ersetzen einander nicht:
   weist der Server die Stimme als „Token-Signatur ungültig" ab.
 - **`ballot_test.mjs`** prüft die Krypto ausdrücklich nicht — dort ist der Server gestellt und die
   Signatur eine Attrappe; geprüft wird allein der Zustandsverlauf um EIP-ADR-20260725-002.
+
+`beleg_datei_test.mjs` gehört nicht dazu, prüft aber nach demselben Muster: `receiptText()` gegen
+`belegLesen()`, nicht gegen einen abgeschriebenen Beispieltext. Ein abgeschriebener Text machte
+jede Umformulierung stillschweigend mit — und genau das ist der Fall, der weh tut, weil er die
+Belege von letzter Woche unlesbar macht.
 
 Fehlt `node`, meldet `smoke_test.py` die Browser-Seite als ungeprüfte Lücke statt den Prüffall
 stillschweigend zu überspringen.

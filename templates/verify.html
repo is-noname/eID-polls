@@ -5,13 +5,27 @@
 {% block content %}
 <h1>Deine Stimme prüfen</h1>
 <p class="lead">
-  Nimm das Stimm-Token aus deinem Beleg. Damit siehst du, was tatsächlich gezählt wird.
+  Leg deine gespeicherte Beleg-Datei hier ab — oder tippe das Stimm-Token ab. Damit siehst du,
+  was tatsächlich gezählt wird.
 </p>
 
 <div id="verify-result" class="banner hidden"></div>
 
 <div class="card">
   <div class="card-body">
+    {# Die Datei wird im Browser gelesen (FileReader/File.text()), nicht
+       hochgeladen - deshalb steht sie ausserhalb des <form> und hat kein
+       name-Attribut: Es gibt nichts abzusenden. #}
+    <div class="dropzone" id="beleg-drop">
+      <div class="dropzone-main">Beleg-Datei hierher ziehen</div>
+      <button type="button" class="ghost" id="beleg-pick">Datei auswählen</button>
+      <input type="file" id="beleg-file" accept=".txt,text/plain" hidden>
+      <small>
+        Die Datei wird in deinem Browser gelesen und nirgends hochgeladen — auch nicht zu uns.
+        Gespeichert wird sie hier ebenfalls nicht: Nach dem Neuladen der Seite ist nichts mehr da.
+      </small>
+    </div>
+
     <form id="verify-form">
       <div class="field">
         <label for="poll">Welche Umfrage?</label>

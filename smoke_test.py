@@ -668,6 +668,33 @@ def rfc9474_testvektor() -> None:
           lauf.returncode == 0, zeilen[-1][:110] if zeilen else "")
 
 
+def beleg_datei_lesbar() -> None:
+    """Der gespeicherte Beleg bleibt einlesbar (EIP-T-099).
+
+    Seit /verify die Beleg-Datei annimmt, ist die Zeile ``Stimm-Token: <hex>``
+    eine Schnittstelle zwischen zwei Staenden der App: Wer heute speichert,
+    prueft womoeglich gegen eine spaetere Version. Wird das Label umformuliert,
+    sind alle bereits gespeicherten Belege stumm - und zwar bei dem Schritt,
+    der das ganze Verfahren rechtfertigt.
+
+    Der Test laeuft ueber node, weil beide Seiten im Browser leben, und haelt
+    ``receiptText()`` gegen ``belegLesen()`` - nicht gegen einen abgeschriebenen
+    Beispieltext, der eine Umformulierung stillschweigend mitmachte. Fehlt node,
+    faellt der Prueffall nicht aus, sondern meldet sich als Luecke.
+    """
+    node = shutil.which("node")
+    if node is None:
+        check("Beleg: gespeicherte Datei bleibt auf /verify einlesbar", False,
+              "node nicht gefunden - Schreiben und Lesen des Belegs sind ungeprueft")
+        return
+    lauf = subprocess.run([node, "beleg_datei_test.mjs"], cwd=Path(__file__).parent,
+                          capture_output=True, text=True)
+    zeilen = (lauf.stdout + lauf.stderr).strip().splitlines()
+    fehler = [z for z in zeilen if z.startswith("FAIL")]
+    check("Beleg: was receiptText() schreibt, liest /verify wieder ein",
+          lauf.returncode == 0, "; ".join(fehler)[:140] or (zeilen[-1][:110] if zeilen else ""))
+
+
 def eintragsformat() -> None:
     """Konstruktoren und Parser (EIP-T-046) - ohne Board, ohne Store.
 
@@ -2590,6 +2617,7 @@ def main() -> int:
     client = TestClient(app)
 
     rfc9474_testvektor()
+    beleg_datei_lesbar()
     eintragsformat()
     pruefung_ohne_datenbank()
     umfrage_schluessel()

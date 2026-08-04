@@ -11,6 +11,12 @@
 
 import { qrSvg } from "./qr.js";
 
+// Die Textform steht in beleg_datei.js, zusammen mit ihrem Leser: Seit
+// EIP-T-099 nimmt /verify die gespeicherte Datei entgegen, damit ist sie eine
+// Schnittstelle und keine blosse Darstellung mehr. Hier bleibt sie
+// weiterexportiert, damit poll.js unveraendert einen Ort fuer den Beleg hat.
+export { receiptText } from "./beleg_datei.js";
+
 /** Direktlink auf die Pruefseite, Token schon eingesetzt.
  *
  * Das Token steht im URL-Fragment (#), nicht in den Query-Parametern: Das
@@ -19,34 +25,6 @@ import { qrSvg } from "./qr.js";
  */
 export function verifyUrl(pollId, token, origin = location.origin) {
   return `${origin}/verify#poll=${encodeURIComponent(pollId)}&token=${encodeURIComponent(token)}`;
-}
-
-/** Beleg als Text - Inhalt identisch zum Kassenbon. */
-export function receiptText(pollId, state, origin = location.origin) {
-  const tokenLine = state.token
-    ? `Stimm-Token:  ${state.token}`
-    : "Stimm-Token:  nicht mehr in diesem Browser — nur noch in deinem gespeicherten Beleg.";
-  return [
-    "DEIN BELEG — eID-Umfrage",
-    `Umfrage:      ${pollId}`,
-    `Blatt:        ${state.leaf}`,
-    `Batch:        ${state.batch} (zugesagt)`,
-    `Signatur:     ${state.belegSig}`,
-    tokenLine,
-    "",
-    "Dein Eintrag erscheint mit Batch " + state.batch + " im öffentlichen Board —",
-    "gebündelt mit anderen, spätestens nach dem Zeitdeckel, in jedem Fall beim",
-    "Ende der Umfrage. Die Signatur bindet den Betreiber ab jetzt: Fehlt der",
-    "Eintrag dann, ist dieser Beleg der Nachweis dafür.",
-    "",
-    "So prüfst du deine Stimme:",
-    `  1. ${origin}/verify aufrufen`,
-    "  2. Umfrage wählen und das Stimm-Token oben einfügen",
-    "  3. Die angezeigte Auswahl muss deiner Stimme entsprechen",
-    "",
-    "Bewahre den Beleg wie eine Quittung auf: Wer das Stimm-Token hat, kann deine",
-    "Stimme nachschlagen. Es ist zugleich der einzige Weg, sie selbst zu prüfen.",
-  ].join("\n");
 }
 
 /** Baut den Beleg als Kassenbon (Design 1). Inhalt identisch zu receiptText(). */
@@ -89,7 +67,7 @@ export function receiptPaper(pollId, state, origin = location.origin) {
   const steps = el("ol", "rc-steps");
   for (const text of [
     `${origin}/verify aufrufen`,
-    "Umfrage wählen und das Stimm-Token oben einfügen",
+    "Die gespeicherte Beleg-Datei dort ablegen — oder das Stimm-Token einfügen",
     "Die angezeigte Auswahl muss deiner Stimme entsprechen",
   ]) steps.append(el("li", null, text));
   paper.append(steps);
