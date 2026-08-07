@@ -6,7 +6,10 @@
 // Inline-Block steckt in der gerenderten Seite und ist dort mit nichts mehr
 // vergleichbar.
 try {
-  if (localStorage.getItem("eidpoll:theme") === "dark") {
+  if (localStorage.getItem("eidpoll:theme") !== "light") {
     document.documentElement.setAttribute("data-theme", "dark");
   }
-} catch (e) { /* localStorage gesperrt - dann eben hell */ }
+} catch (e) {
+  // localStorage gesperrt - dann eben Dunkel, die Voreinstellung.
+  document.documentElement.setAttribute("data-theme", "dark");
+}

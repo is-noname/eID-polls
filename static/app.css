@@ -344,6 +344,40 @@ body.dense .rows { border-radius: var(--r-sm); }
 body.dense .row { padding: 8px 12px; gap: 12px; }
 body.dense .row-title { font-size: 13px; font-weight: 400; }
 
+/* -- Erklaerschritte -------------------------------------------------------- */
+/* Eigenstaendig statt in .rows/.row: Erklaertext ist keine Datenzeile, und die
+   frueheren Kreis-Ziffern kopierten das Aussehen einer echten Zustandsanzeige
+   (.step-num in poll.html), obwohl hier nichts erledigt oder blockiert ist -
+   das ist genau der generische "1-2-3-Card"-Blick, den es zu vermeiden gilt.
+   Die duenne Linie zwischen den Ziffern zitiert die Board-Kette (RFC §7), statt
+   ein beliebiges Icon zu waehlen. */
+.explainer-item {
+  display: flex;
+  gap: 16px;
+  padding: 2px 0 26px;
+  position: relative;
+}
+.explainer-item:last-child { padding-bottom: 0; }
+.explainer-item:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 28px;
+  bottom: 2px;
+  width: 1px;
+  background: var(--border-mid);
+}
+.explainer-num {
+  flex: none;
+  width: 34px;
+  text-align: center;
+  padding-top: 1px;
+  font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
 /* -- Stats ---------------------------------------------------------------- */
 .stats {
   display: grid;
@@ -744,8 +778,24 @@ body.dense .receipt-paper { font-size: 10px; padding: 16px 14px 20px; }
    winzigem Versatz uebereinander und driften mit verschieden langen,
    teilerfremden Perioden. Weil das Motiv aus feinen Linien besteht,
    interferieren die Kopien und es entstehen wandernde Helligkeiten - das
-   Mesh wirkt lebendig, obwohl die Kurve stillsteht. Kein Canvas, kein
-   JavaScript, ein einziges Bild im Netzwerk.
+   Mesh wirkt lebendig, obwohl die Kurve stillsteht.
+
+   Die Bildquelle selbst kommt seit EIP-T-lifeline nicht mehr aus einer
+   Datei, sondern wird einmal pro Seitenaufruf per Canvas erzeugt
+   (static/lifeline.js, feste Werte fuer Seed/Dichte/Palette - kein
+   Regler-UI). static/pulse.webp bleibt als Fallback fuer den Fall, dass
+   JavaScript aus ist oder das Skript noch nicht gelaufen ist.
+
+   Die Aufteilung (EIP-T-109): lifeline.js liefert nur die Quelle, als
+   --pulse-src auf .pulse-bg gesetzt und von dort auf die drei <i>-Kopien
+   vererbt. Wie sie benutzt wird, entscheidet ausschliesslich dieses
+   Stylesheet je Theme - dunkel als background-image, hell als mask-image
+   vor einem Verlauf (siehe unten). Vorher setzte lifeline.js beides direkt
+   per Inline-style, was im dunklen Theme eine ungewollte Eigenmaskierung
+   erzeugte und im hellen Theme den Verlauf blockierte, weil Inline-Styles
+   jede Stylesheet-Regel schlagen. --pulse-src faellt ohne JavaScript auf
+   url("/static/pulse.webp") zurueck. Die Drift-Mechanik hier bleibt
+   unveraendert - nur woher das Bild kommt, hat sich geaendert.
 
    Die Drift bleibt bewusst unter einem Prozent: Wird sie groesser, liest man
    sie als Schwenk statt als Flimmern, und der Schleier faengt an, vom Text
@@ -779,7 +829,7 @@ body.dense .receipt-paper { font-size: 10px; padding: 16px 14px 20px; }
   min-height: 150px;
   max-height: 240px;
   transform-origin: 50% 70%;
-  background: url("/static/pulse.webp") no-repeat center bottom / 100% 100%;
+  background: var(--pulse-src, url("/static/pulse.webp")) no-repeat center bottom / 100% 100%;
   /* Keine Verlaufsmaske: Die weichen Kanten kommen aus dem Alphakanal des
      Bildes, und jeder Verlauf ueber die Hoehe hat die Spitze weggeschnitten -
      uebrig blieb ein Fransenbuschel ohne erkennbaren Puls. */
@@ -808,8 +858,8 @@ body.dense .receipt-paper { font-size: 10px; padding: 16px 14px 20px; }
    Amberpunkte gehen dabei verloren; auf Weiss waeren sie ohnehin Dreck. */
 html:not([data-theme="dark"]) .pulse-bg i {
   background: linear-gradient(to bottom, #6b5fa8 0%, #4a7f96 55%, #3f6f5e 100%);
-  -webkit-mask: url("/static/pulse.webp") no-repeat center bottom / 100% 100%;
-  mask: url("/static/pulse.webp") no-repeat center bottom / 100% 100%;
+  -webkit-mask: var(--pulse-src, url("/static/pulse.webp")) no-repeat center bottom / 100% 100%;
+  mask: var(--pulse-src, url("/static/pulse.webp")) no-repeat center bottom / 100% 100%;
 }
 html:not([data-theme="dark"]) .pulse-bg i:nth-child(1) { opacity: 0.26; }
 html:not([data-theme="dark"]) .pulse-bg i:nth-child(2) { opacity: 0.17; }
