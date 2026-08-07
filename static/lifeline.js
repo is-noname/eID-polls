@@ -31,10 +31,24 @@
   const PALETTE = ["#f3f0ff", "#c9bdf0", "#9a7de0", "#4fb3a0", "#e0a75a"];
 
   // Interne Aufloesung des erzeugten Bildes, unabhaengig vom Viewport - die
-  // CSS-Regel `background: ... / 100% 100%` streckt es ohnehin passend.
+  // CSS-Regel `background: ... / 100% 100%` streckt es ohnehin passend. Nah
+  // an der Anzeigeflaeche (Band, kein Quadrat): frueher 1600x420 gegen ein
+  // ~198px hohes Band gestreckt, das stauchte jede Linie fast auf null und
+  // liess ein Fuenftel des Bildes ungenutzt (EIP-T-110).
   const RENDER_W = 1600;
-  const RENDER_H = 420;
+  const RENDER_H = 220;
   const EXPORT_SCALE = 2;
+
+  // Fester Massstab fuer Knoten, Streuung und Linien - haengt bewusst nicht
+  // an Math.min(drawW, drawH). Bei einer 1600x420-Flaeche bestimmte die
+  // Hoehe (der kurze Rand) den Massstab, und alles klebte am Kurvenverlauf
+  // statt ein Geflecht zu bilden (EIP-T-110). generateLifeLine() und
+  // drawLifeLine() rechnen beide mit demselben Wert - vorher liefen sie mit
+  // 0.024 bzw. 0.028 auseinander.
+  const UNIT = 15;
+  // Mindestbreite in Canvas-Pixeln, damit duenne Verbindungen nicht im
+  // Antialiasing verschwinden (EIP-T-110).
+  const MIN_LINE_WIDTH = 0.5;
 
   function mulberry32(seed) {
     seed = seed >>> 0;
@@ -125,9 +139,13 @@
 
   function generateLifeLine(seed, density, avgConnections, chaos, drawW, drawH) {
     const rng = mulberry32(seed);
-    const unit = Math.min(drawW, drawH) * 0.024;
-    const centerY = drawH * 0.56;
-    const ampY = drawH * 0.38;
+    const unit = UNIT;
+    // Naeher an der Mitte und mit mehr Ausschlag als vorher (0.56/0.38): die
+    // Kurve allein soll schon einen Grossteil der Bildhoehe erreichen, sonst
+    // bleibt der Rand leer, egal wie weit die Satellitenknoten streuen
+    // (EIP-T-110, Akzeptanzkriterium getbbox >= 85 %).
+    const centerY = drawH * 0.5;
+    const ampY = drawH * 0.43;
     const nodes = [];
     const connections = [];
     const chaosFactor = chaos / 100;
@@ -162,12 +180,19 @@
       return lo;
     }
 
+    // Vertikal absichtlich weiter als horizontal: Ohne das haengen die
+    // Satellitenknoten an der Kurve wie Rauhreif und das Bild bleibt eine
+    // Linie mit Funken. VERTICAL_REACH ist keine CSS-Kompensation (die
+    // Renderflaeche liegt jetzt selbst nah am Bandformat), sondern schafft
+    // das Geflecht abseits der Kurve, das der Kommentar in app.css verspricht
+    // (EIP-T-110).
+    const VERTICAL_REACH = 2.2;
     for (let i = numMain; i < density; i++) {
       const parent = nodes[pickWeighted()];
       const angle = rng() * Math.PI * 2;
       const reach = unit * (0.9 + 2.8 * parent.intensity) * (0.5 + chaosFactor);
       const dist = reach * Math.sqrt(rng());
-      const stretch = 1 + 1.6 * parent.intensity;
+      const stretch = (1 + 1.6 * parent.intensity) * VERTICAL_REACH;
       const x = parent.x + Math.cos(angle) * dist;
       const y = parent.y + Math.sin(angle) * dist * stretch;
       const size = parent.size * (0.2 + rng() * 0.55);
@@ -216,7 +241,7 @@
         const skip = Math.floor(rng() * (2 + chaosFactor * 3));
         const pick = cand[Math.min(j + skip, cand.length - 1)];
         const near = 1 - Math.min(1, pick.dist / maxLink);
-        const thickness = unit * 0.02 * near * (0.4 + rng() * 0.6);
+        const thickness = Math.max(MIN_LINE_WIDTH, unit * 0.02 * near * (0.4 + rng() * 0.6));
         const alpha = 0.03 + 0.4 * near * (0.6 + rng() * 0.4);
         connections.push({
           a: nodeA,
@@ -238,7 +263,7 @@
       connections.push({
         a: nodes[idxA],
         b: nodes[idxB],
-        width: unit * 0.012 * (0.3 + rng() * 0.7),
+        width: Math.max(MIN_LINE_WIDTH, unit * 0.012 * (0.3 + rng() * 0.7)),
         alpha: 0.02 + rng() * 0.15,
         clusterIdx: (nodes[idxA].clusterIdx + nodes[idxB].clusterIdx) / 2,
         dist,
@@ -291,7 +316,7 @@
       ctx.moveTo(curve.pts[0].x, curve.pts[0].y);
       for (let i = 1; i <= CURVE_RES; i++) ctx.lineTo(curve.pts[i].x, curve.pts[i].y);
       ctx.strokeStyle = `rgba(${r},${g},${b},${layer.a})`;
-      ctx.lineWidth = unit * layer.w;
+      ctx.lineWidth = Math.max(MIN_LINE_WIDTH, unit * layer.w);
       ctx.stroke();
     });
     ctx.restore();
@@ -359,10 +384,9 @@
     canvas.height = RENDER_H * EXPORT_SCALE;
     const ctx = canvas.getContext("2d");
     ctx.scale(EXPORT_SCALE, EXPORT_SCALE);
-    const unit = Math.min(RENDER_W, RENDER_H) * 0.028;
     const data = generateLifeLine(SEED, DENSITY, CONNECTIONS, CHAOS, RENDER_W, RENDER_H);
     const drawRng = mulberry32(SEED + 12345);
-    drawLifeLine(ctx, data, unit, drawRng);
+    drawLifeLine(ctx, data, UNIT, drawRng);
     return canvas.toDataURL("image/png");
   }
 
